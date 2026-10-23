@@ -38,19 +38,45 @@ and replayed by hand.
 
 ## Recording runs
 
-Every run that matters (each feature's final run, each run on `main`) is
-recorded as a **test run** entry: one item per run with its id, date,
-commit, environment, pass/fail per test, and links to logs and screenshots,
-kept as a history that can be searched and compared.
+Every run on `main`, and each feature's final run, is recorded as a **test
+run**: a GitHub issue labelled `test-run`.
 
-The recording mechanism is chosen by the owner from these options:
+- Title: `Run <run id>: <passed|failed> @ <commit>`, labels `test-run` and
+  `run:passed` or `run:failed`.
+- Body: result, commit, totals, a link to the workflow run whose artifacts
+  hold the logs, screenshots and traces, then the run's `summary.md`.
+- A green run is closed at once; a red one stays open until the fix lands
+  and links back to it. The issue list filtered by `label:test-run` is the
+  run history.
 
-| Option | What a run becomes | History | Notes |
-|---|---|---|---|
-| **A. GitHub Issue per run** (proposed) | An issue labelled `test-run`, title `Run <id>: <result> @ <commit>`, body = summary table, links to artifacts; closed when green | Issue list, filters by label, result, branch | Closest to a test run work item: id, state, discussion, links to fixes. Needs the Issues permission on the token. Logs and screenshots live as workflow artifacts (kept 90 days) |
-| **B. Allure report on GitHub Pages** | A report page per run with trends across runs | Built-in trend graphs | Pages on a private repository needs a paid plan; fits once public |
-| **C. Check run per commit** (test-reporter action) | A check with a per-test table and failure annotations on the commit | Per commit only, no trend | Good addition to A, not a replacement |
-| **D. Runs committed to the repo** | Markdown files under `docs/test-runs/` | Git history | Rejected: logs and screenshots risk leaking private data into permanent history |
+`scripts/record-run.sh <run directory>` creates the entry. CI calls it after
+every run outside pull requests; a local run can be recorded by hand.
 
-The proposal is A for the entity, with C added in CI and B once the
-repository is public.
+In CI each run also gets a **check run** with a per-test table and failure
+annotations on the commit (the test-reporter action reading
+`results.xml`), and its run directory is kept as a workflow artifact for 90
+days.
+
+```mermaid
+sequenceDiagram
+    participant CI as CI workflow
+    participant E as scripts/e2e.sh
+    participant GH as GitHub
+    CI->>E: run suite
+    E-->>CI: test-runs/<id>/ (summary, results.xml, logs, screens, traces)
+    CI->>GH: upload run directory as artifact
+    CI->>GH: check run from results.xml
+    CI->>GH: issue "Run <id>: result @ commit" (closed if passed)
+```
+
+### The suite's contract
+
+Each repository provides `scripts/e2e.sh`. It builds the throwaway test
+environment, runs the suite, writes one run directory under `test-runs/`
+with at least `summary.md` and `results.xml` (JUnit), and exits non-zero if
+any test failed. Until a repository has one, CI skips the test steps.
+
+Considered and not used: an Allure report on GitHub Pages (needs a paid plan
+while private; may be added for trends once public), and committing runs to
+the repository (logs and screenshots would risk leaking private data into
+permanent history).

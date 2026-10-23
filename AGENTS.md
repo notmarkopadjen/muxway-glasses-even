@@ -109,7 +109,7 @@ limits; and that no secret appears in any response or log.
 - Every run writes a run directory: a summary, the full log of every
   component, and for UI tests a screenshot (and a trace) at each step and on
   failure.
-- Every run is recorded as a test run entry (see `docs/testing.md`) with its
+- Every run is recorded as a test run: a GitHub issue labelled `test-run` (see `docs/testing.md`), with its
   date, commit, environment, result per test, and links to the logs and
   screenshots.
 
