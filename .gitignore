@@ -1,0 +1,8 @@
+# Local only, never committed
+.denylist
+.env
+.env.*
+*.pem
+*.key
+/test-runs/
+/tmp/
