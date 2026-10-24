@@ -24,7 +24,7 @@ import {
   TextContainerUpgrade,
   type EvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
-import { MAX_IMG_H, MAX_IMG_W } from './bitmap.ts'
+import { MAX_IMG_H, MAX_IMG_W, MIN_IMG } from './bitmap.ts'
 import type { Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, clampBytes, fitWidth } from './text.ts'
 
@@ -199,12 +199,13 @@ export class Glasses {
     }
   }
 
-  /** The pictures a page may carry: at most four, none larger than a container; a larger one is
-   * dropped and logged rather than letting the firmware refuse the whole page without a word. */
+  /** The pictures a page may carry: at most four, none larger than a container and none thinner than
+   * the glasses take; one outside is dropped and logged rather than letting the firmware refuse the
+   * whole page without a word. */
   private fitting(charts: Chart[]): Chart[] {
     const ok = charts.filter((c) => {
-      if (c.w <= MAX_IMG_W && c.h <= MAX_IMG_H) return true
-      this.log(`picture ${c.key} is ${c.w}x${c.h}, over ${MAX_IMG_W}x${MAX_IMG_H}: dropped`)
+      if (c.w <= MAX_IMG_W && c.h <= MAX_IMG_H && c.w >= MIN_IMG && c.h >= MIN_IMG) return true
+      this.log(`picture ${c.key} is ${c.w}x${c.h}, not within ${MIN_IMG}x${MIN_IMG} and ${MAX_IMG_W}x${MAX_IMG_H}: dropped`)
       return false
     })
     if (ok.length > MAX_CHARTS) this.log(`${ok.length} pictures on one page: only ${MAX_CHARTS} shown`)

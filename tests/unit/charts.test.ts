@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Bitmap, G1, G3 } from '../../src/bitmap.ts'
-import { barChart, positionBar, progressBar, sparkline, timelineChart } from '../../src/charts.ts'
+import { barChart, sparkline, timelineChart } from '../../src/charts.ts'
 import { tiles } from '../../src/raster.ts'
 import type { Pane } from '../../src/protocol.ts'
 
@@ -47,13 +47,10 @@ test('timelineChart: the marker sits where the entry arrived', () => {
   assert.equal(firstLit(1), 3)
 })
 
-test('sparkline and progress bar draw something only with data', () => {
+test('sparkline draws something only with data', () => {
   assert.ok(sparkline([], 100, 40).lit <= 100)
   const s = sparkline(Array.from({ length: 50 }, (_, i) => Math.abs(Math.sin(i / 3))), 100, 40)
   assert.ok(s.lit > 150)
-  assert.ok(progressBar(0.5, 100, 8).lit > progressBar(0, 100, 8).lit)
-  assert.ok(positionBar(100, 0, 8, 8, 160).lit > 0)
-  assert.equal(positionBar(0, 0, 8, 8, 160).lit, 160)
 })
 
 test('tiles: a wide picture is cut into containers the glasses accept', () => {

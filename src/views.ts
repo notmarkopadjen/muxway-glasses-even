@@ -3,11 +3,10 @@
 // top, a hint at the foot, bold title bands, bordered boxes.
 
 import { ANSWERS, short, type Answer } from './answers.ts'
-import { positionBar, progressBar, sparkline } from './charts.ts'
+import { sparkline } from './charts.ts'
 import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, type Attention, type Host, type Pane } from './protocol.ts'
-import { MAX_IMG_H } from './bitmap.ts'
 import { BAND_H, band, tiles, type Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, textWidth, wrapRows } from './text.ts'
 
@@ -52,7 +51,6 @@ export interface Reader {
 // --- geometry ------------------------------------------------------------------------------
 const BODY_Y = TOP + BAND_H + 4
 const COL_GAP = 8
-const BAR_W = 8
 const FOOT_Y = TOP + 140 + 6
 const FOOT_H = HINT_Y - 6 - FOOT_Y
 
@@ -118,7 +116,7 @@ export function rowLabel(p: Pane, now: number, selected = false): string {
 /** Rows on the list at once: the page's eight text containers less the head and the hint; the window slides under the cursor. */
 export const LIST_ROWS = 6
 export const MAX_SELECTED = 3
-const ROW_W = CANVAS_W - BAR_W - 8
+const ROW_W = CANVAS_W - 4
 
 export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
@@ -173,11 +171,11 @@ export function listPage(m: Model, now: number): Page {
     const text = items[at] ?? ' '
     blocks.push({ name: 'row' + at, x: 2, y: TOP + i * LINE_H, w: ROW_W, h: LINE_H, lines: [text], level: at === cursor && m.loaded ? 4 : 3 })
   }
-  const bar = positionBar(items.length, Math.max(0, items.length - start - LIST_ROWS), LIST_ROWS, BAR_W, Math.min(MAX_IMG_H, LIST_ROWS * LINE_H))
-  const charts = tiles(bar, CANVAS_W - BAR_W, TOP, `list:${items.length}:${start}`)
   const n = selectedPanes(m).length
-  const base = !m.loaded ? 'reading the hub…' : n ? `▽ move · ● open · hold to select · ${MAX_SELECTED} at most · ×× exit` : '▽ move · ● open · hold to select · ×× exit'
-  return { kind: 'dash', head: statusHead(m), ...hint(m, base), blocks, charts, items: [], menu: [] }
+  // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
+  const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
+  const base = !m.loaded ? 'reading the hub…' : where + (n ? `▽ move · ● open · hold to select · ${MAX_SELECTED} at most · ×× exit` : '▽ move · ● open · hold to select · ×× exit')
+  return { kind: 'dash', head: statusHead(m), ...hint(m, base), blocks, charts: [], items: [], menu: [] }
 }
 
 // --- side by side -------------------------------------------------------------------------
@@ -225,7 +223,7 @@ export interface PaneState {
 }
 
 const BAND_W = 376
-const BODY_W = CANVAS_W - BAR_W - 8
+const BODY_W = CANVAS_W - 4
 const PIN_LINES = 2
 
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState): Page {
@@ -245,8 +243,6 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   while (lines.length < size) lines.unshift('')
   blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: size * LINE_H, lines, level: 3 })
   if (pin) blocks.push({ name: 'pinned', x: 0, y: BODY_Y + size * LINE_H + 4, w: BODY_W, h: pin * LINE_H + 12, lines: s.pinned.slice(-pin), level: 4, border: true })
-  const bar = positionBar(s.body.length, st.offset * size, size, BAR_W, total * LINE_H)
-  charts.push(...tiles(bar, CANVAS_W - BAR_W, BODY_Y, `pos:${s.body.length}:${st.offset}:${size}`))
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
   menu.push({ id: MENU.bottom, label: 'Bottom' })
@@ -310,7 +306,6 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
     blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: BAND_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
     const graph = sparkline(v.levels, GRAPH_W, GRAPH_H)
     charts.push(...tiles(graph, 8, BODY_Y, `levels:${v.levels.length}:${v.levels.slice(-6).map((l) => Math.round(l * 20)).join(',')}`))
-    charts.push(...tiles(progressBar(v.seconds / 60, GRAPH_W, 8), 8, BODY_Y + GRAPH_H + 8, `progress:${Math.round(v.seconds)}`))
     blocks.push({ name: 'note', x: 8, y: BODY_Y + GRAPH_H + 24, w: CANVAS_W - 16, h: LINE_H * 2, lines: [`${Math.round(v.seconds)} of 60 s · tap when done`, 'what you say goes to your hub, then to its transcriber'], level: 2 })
     return { kind: 'dash', head: statusHead(m), ...hint(m, '● stop · ×× cancel'), blocks, charts, items: [], menu: [] }
   }

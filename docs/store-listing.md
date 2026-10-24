@@ -49,7 +49,7 @@ On the glasses, under a status line that counts the panes that need you:
 
 - The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word that says only what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold selects it.
 - Side by side: hold two or three panes and open them in columns, each under its bold title, all following. The scroll opens one; a double tap comes back to the columns, and once more to the list.
-- A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome; a position bar shows where you are in its history.
+- A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome.
 - Answers: a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
 - Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the pane's menu takes you there.
 
@@ -118,7 +118,7 @@ From the simulator against the test hub, 576 x 288, synthetic panes
 | `store/shots/01-list.png` | the pane list: panes waiting first, with their words |
 | `store/shots/02-selected.png` | two rows held, the open and clear rows under them |
 | `store/shots/03-split.png` | two panes side by side, one marked |
-| `store/shots/04-pane.png` | a pane, following, with its title band and position bar |
+| `store/shots/04-pane.png` | a pane, following, with its title band |
 | `store/shots/05-lens.png` | Claude Code through the lens: the conversation, the typed box framed |
 | `store/shots/06-answers.png` | the answers |
 | `store/shots/07-listening.png` | listening, with the graph of your voice |

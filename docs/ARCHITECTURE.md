@@ -27,7 +27,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
 | `src/views.ts` | what every page says and draws: the status line, the pane list, the columns, the pane, the answers, the voice pages |
 | `src/glasses.ts` | the two page kinds, head and hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
-| `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline, sparkline, progress and position charts, the bold title band drawn in the canvas |
+| `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline and sparkline charts, the bold title band drawn in the canvas |
 | `src/api.ts` | the calls: listings in JSON, pane content in text mode, caps, timeouts, ETag, errors in words |
 | `src/protocol.ts` | the listings' JSON, pane names, URL and token rules |
 | `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
@@ -53,6 +53,9 @@ the whole design:
   OS's lists;
 - a page holds at most eight text containers, the head and the hint
   among them: six blocks, so the pane list shows six rows at a time;
+- the glasses refused a page with an 8 px wide picture that the
+  simulator took, so no picture thinner than 16 px is sent; where the
+  window sits is said in words;
 - a text container shorter than its text hides the overflow, so every
   line is wrapped by the app with the font's measured advance widths and
   the blocks are whole lines;
@@ -70,7 +73,7 @@ the whole design:
 Every page is the **status line** (brightest), a **body** and a **hint**
 line (dimmest) naming the gestures that work there. Pictures, four greys
 in image containers of at most 288 x 144, carry what text cannot: the
-bars beside the rows, the loudness graph, the position bar, and the bold
+the loudness graph and the bold
 title bands drawn in the WebView's canvas. A picture is pushed once and
 skipped while its key is unchanged; a page the wearer has left stops its
 pushes. A 240 x 140 bar chart is 34 KB of pixels, a title band 9 KB.

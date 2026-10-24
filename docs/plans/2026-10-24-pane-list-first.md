@@ -260,6 +260,15 @@ Deviations:
   under it, so `→ next N more` is gone.
 - **A fourth hold is told in the hint's banner** for three seconds, the
   same way a notification is shown.
+- **No thin bars.** On the real glasses the first build of this feature
+  showed nothing: the phone's log said `rebuildPageContainer refused`
+  on every draw, which the app does only after the first page was
+  refused. The one shape the simulator does not check is a picture's
+  size, and the list's 8 px wide position bar was the only picture on
+  that page; the 0.3.0 pane page carried the same bar and left the app
+  when opened. The list says where its window sits in the hint, the
+  pane in its state, the listening page counts the seconds, and no
+  picture thinner than 16 px is sent.
 
 ## Test run
 

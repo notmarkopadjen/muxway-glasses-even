@@ -10,6 +10,8 @@ export const G3 = 255
 
 export const MAX_IMG_W = 288
 export const MAX_IMG_H = 144
+/** The glasses refused an 8 px wide picture the simulator took; nothing thinner than this is sent. */
+export const MIN_IMG = 16
 
 export class Bitmap {
   readonly w: number

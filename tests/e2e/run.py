@@ -282,10 +282,11 @@ def s30(run, name):
     check(len(rows(page)) == 6, f"{len(rows(page))} rows")
     for row in rows(page):
         check("-" not in row.split("·")[-1], f"a negative age: {row}")
-    check(len(page["charts"]) == 1, "the position bar")
+    check(page["charts"] == [] and page["hint"].startswith("1–6 of 200 · "), f"the list page: {page['charts']} {page['hint']}")
     sim.shot("hostile-list")
     sim.move(9)
     page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "row4", "the window slid")
+    check(page["hint"].startswith("5–10 of 200 · "), page["hint"])
     sim.shot("hostile-list-slid")
     time.sleep(1)
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
@@ -468,19 +469,17 @@ def f11(run, name):
     check(time.time() - t0 < 6, "the new line took too long")
 
 
-@test("F12", "Scroll up pages back and pauses following; down past the end follows again; the position bar moves", "UI")
+@test("F12", "Scroll up pages back and pauses following; down past the end follows again", "UI")
 def f12(run, name):
     core, proxy, sim, tok = setup(run, name)
     core.keys("seq 1 40", "Enter")
     open_pane(sim)
     sim.expect(lambda p: any(l == "40" for l in (sim.block("body", p) or [])), "the sequence")
-    bar0 = [c["key"] for c in sim.last()["charts"] if c["key"].startswith("pos:")]
+    check(not any(c["w"] < 16 or c["h"] < 16 for c in sim.last()["charts"]), "a picture too thin for the glasses")
     sim.shot("bottom")
     sim.scroll("up")
     page = sim.head("paused · 1 page up", "one page up")
     check("40" not in (sim.block("body", page) or []), "the view did not move")
-    bar1 = [c["key"] for c in page["charts"] if c["key"].startswith("pos:")]
-    check(bar0 != bar1, "the position bar did not move")
     sim.shot("one-up")
     sim.scroll("up")
     sim.head("paused · 2 pages up", "two pages up")
@@ -724,20 +723,20 @@ def f33(run, name):
     sim.shot("list-after")
 
 
-@test("F35", "Listening: the graph grows with the tone and the progress bar advances; heard this in its box", "UI")
+@test("F35", "Listening: the graph grows with the tone and the seconds count; heard this in its box", "UI")
 def f35(run, name):
     core, proxy, sim, tok = setup(run, name, stt=True)
     open_pane(sim)
     say_it(sim)
     time.sleep(1)
-    lit0 = sim.lit()
-    k0 = [c["key"] for c in sim.last()["charts"] if c["key"].startswith("progress:")]
+    k0 = [c["key"] for c in sim.last()["charts"] if c["key"].startswith("levels:")]
+    n0 = sim.block("note")[0]
     time.sleep(3)
-    lit1 = sim.lit()
     page = sim.last()
-    k1 = [c["key"] for c in page["charts"] if c["key"].startswith("progress:")]
-    check(lit1 > lit0, f"the graph did not grow: {lit0:.4f} -> {lit1:.4f}")
-    check(k0 != k1, "the progress bar did not advance")
+    k1 = [c["key"] for c in page["charts"] if c["key"].startswith("levels:")]
+    check(k0 and k1 and k0 != k1, f"the graph did not take new frames: {k0} -> {k1}")
+    check(sim.block("note", page)[0] != n0 and "of 60 s" in sim.block("note", page)[0], "the seconds did not count")
+    check(not any(c["w"] < 16 or c["h"] < 16 for c in page["charts"]), "a picture too thin for the glasses")
     check(any(c["key"].startswith("levels:") for c in page["charts"]), "no graph")
     sim.shot("listening-graph")
     sim.tap()

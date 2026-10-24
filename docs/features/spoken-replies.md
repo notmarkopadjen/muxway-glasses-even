@@ -38,7 +38,7 @@ opens with **» Say it**. It leads through three pages:
 
 - **Listening**: the microphone opens, frames are kept in memory, a
   **graph** of your loudness over the last fourteen seconds runs across
-  the page, a **progress bar** shows the sixty-second cap filling, and
+  the page, the seconds count towards the sixty-second cap, and
   the line above counts the seconds. **Tap** when done. Four seconds without a frame gives `no audio from the mic ·
   let the Even app use it`; sixty seconds is the longest clip, after
   which the app stops by itself; under half a second is `too short`.

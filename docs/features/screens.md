@@ -60,12 +60,12 @@ doing before the hub has said so.
 
 ```
 ★ 1  ≡ 4  ● alice-laptop  16:51
-» ★ build · claude · needs permission          ▏
-» ● tests · bash · done                        ▏
-  · logs · tail · active                       █
-  · api · claude · quiet 4m                    █
-  → open 2 side by side                        ▏
-  → clear selection                            ▏
+» ★ build · claude · needs permission
+» ● tests · bash · done
+  · logs · tail · active
+  · api · claude · quiet 4m
+  → open 2 side by side
+  → clear selection
 ▽ move · ● open · hold to select · 3 at most · ×× exit
 ```
 
@@ -90,7 +90,8 @@ reported it ([notifications](notifications.md)).
 
 The list is drawn by the app, six rows at a time, with a **cursor** on
 the brightest row; the scroll moves it and the rows slide under it, and
-a thin **position bar** at the right edge shows where the window sits.
+with more panes than rows the hint starts with where the window sits,
+`5–10 of 200`.
 A **tap** opens the pane under the cursor. A **hold** selects it, drawn
 with `» ` in front, or unselects it; three at most, and a fourth hold
 says so in the hint. With a selection two action rows follow the panes:
@@ -130,10 +131,10 @@ kept.
 
 ```
 ★ 1  ≡ 3  ● alice-laptop  16:51
-█ ★ build · claude █              needs permission   ▏
-  ● Bash(make test)                                   ▏
-    ok                                                █
-  ...                                                 █
+█ ★ build · claude █              needs permission
+  ● Bash(make test)
+    ok
+  ...
 ┌────────────────────────────────────────────────────┐
 │ > y                                                │
 └────────────────────────────────────────────────────┘
@@ -149,9 +150,8 @@ y, Enter`, `read only`). The body is the last lines of the pane,
 `GET /v1/panes/{address}` in text mode with `lines` (setting, default
 200) and `width=400`, wrapped by the app to the body's width, through
 the [lens](lenses.md). Six lines fit; with a pinned box, four and the box
-in its **frame**. At the right edge a thin **position bar** shows where
-the window sits in the pane's history, lit for the window, a tick at the
-foot while following.
+in its **frame**. The state says where the window sits while paging
+(`paused · 2 pages up`).
 
 - **Following**: at the bottom, the pane is read every *follow* seconds
   with `If-None-Match`, and a `304` costs nothing on the glasses.

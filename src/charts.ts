@@ -85,26 +85,3 @@ export function sparkline(values: number[], w: number, h: number): Bitmap {
   b.rect(w - 3, Math.round(prev ?? 0) - 1, 3, 3, G3)
   return b
 }
-
-/** A progress bar: the done part solid on a framed track. */
-export function progressBar(frac: number, w: number, h: number): Bitmap {
-  const b = new Bitmap(w, h)
-  b.frame(0, 0, w, h, G1)
-  const inner = Math.round(clampFrac(frac) * (w - 4))
-  if (inner > 0) b.rect(2, 2, inner, h - 4, G3)
-  return b
-}
-
-/** Where a window of `shown` rows sits in `total`, as a thin vertical bar; the window lit, a tick at the foot while at the end. */
-export function positionBar(total: number, offsetFromEnd: number, shown: number, w: number, h: number): Bitmap {
-  const b = new Bitmap(w, h)
-  b.vline(Math.floor(w / 2), 0, h, G1)
-  if (total <= 0) return b
-  const end = Math.max(0, total - offsetFromEnd)
-  const start = Math.max(0, end - shown)
-  const y0 = Math.round((start / total) * (h - 2))
-  const y1 = Math.max(y0 + 4, Math.round((end / total) * (h - 2)))
-  b.rect(1, y0, w - 2, Math.min(h - y0, y1 - y0), G3)
-  if (offsetFromEnd === 0) b.rect(0, h - 3, w, 3, G2)
-  return b
-}
