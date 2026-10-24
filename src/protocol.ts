@@ -1,5 +1,6 @@
-// Protocol v1 in text mode: the lines the hub answers, and the rules a
-// hub URL and a token have to pass before they are used.
+// Protocol v1: the listings as the hub answers them in JSON, and the
+// rules a hub URL and a token have to pass before they are used. Pane
+// content is read in text mode, see api.ts.
 
 import { clean } from './text.ts'
 
@@ -16,7 +17,18 @@ export interface Pane {
   writable: boolean
   command: string
   title: string
+  alias: string
   attention: Attention | ''
+  /** When the attention arrived, seconds since the epoch; 0 when unknown. */
+  attentionAt: number
+  attentionText: string
+  /** The pane's last activity, seconds since the epoch; 0 when unknown. */
+  activity: number
+}
+
+export interface Host {
+  name: string
+  online: boolean
 }
 
 export interface Event {
@@ -29,12 +41,14 @@ export interface Event {
 
 const ATTENTION = ['question', 'permission', 'idle', 'done'] as const
 const HOST = /^[a-z0-9-]{1,32}$/
+const MAX_LIST = 500
 
-function attention(s: string): Attention | '' {
-  return (ATTENTION as readonly string[]).includes(s) ? (s as Attention) : ''
+function attention(s: unknown): Attention | '' {
+  return typeof s === 'string' && (ATTENTION as readonly string[]).includes(s) ? (s as Attention) : ''
 }
 
-function address(s: string): { host: string; path: string } | null {
+function address(s: unknown): { host: string; path: string } | null {
+  if (typeof s !== 'string') return null
   const slash = s.indexOf('/')
   if (slash < 1 || s.length > 200) return null
   const host = s.slice(0, slash)
@@ -43,29 +57,69 @@ function address(s: string): { host: string; path: string } | null {
   return { host, path }
 }
 
-/** One pane per line: address, mode, command, title, attention. A line that is not one is skipped. */
-export function parsePanes(body: string): Pane[] {
+function str(v: unknown, max: number): string {
+  return typeof v === 'string' ? clean(v).trim().slice(0, max) : ''
+}
+
+/** A time in seconds since the epoch, or 0 for anything else; a time in the future counts as now. */
+function when(v: unknown, now: number): number {
+  if (typeof v !== 'number' || !isFinite(v) || v <= 0) return 0
+  return Math.min(Math.floor(v), now)
+}
+
+/** The hub's JSON listing of panes; an entry that is not a pane is skipped, and at most 500 are read. */
+export function parsePanes(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return []
+  }
+  const list = (raw as { panes?: unknown })?.panes
+  if (!Array.isArray(list)) return []
   const out: Pane[] = []
-  for (const line of body.split('\n')) {
-    const f = line.replace(/\r$/, '').split('\t')
-    if (f.length < 2) continue
-    const a = address(f[0])
+  for (const item of list.slice(0, MAX_LIST)) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    const a = address(o.address)
     if (!a) continue
+    const att = o.attention && typeof o.attention === 'object' ? (o.attention as Record<string, unknown>) : null
     out.push({
-      address: f[0],
+      address: o.address as string,
       host: a.host,
       path: a.path,
-      writable: f[1] === 'write',
-      command: clean(f[2] ?? '').trim().slice(0, 32),
-      title: clean(f[3] ?? '').trim().slice(0, 64),
-      attention: attention(f[4] ?? ''),
+      writable: o.mode === 'write',
+      command: str(o.command, 32),
+      title: str(o.title, 64),
+      alias: str(o.alias, 32),
+      attention: attention(att?.kind),
+      attentionAt: att ? when(att.at, now) : 0,
+      attentionText: att ? str(att.text, 200) : '',
+      activity: when(o.activity, now),
     })
   }
   return out
 }
 
-/** The name a pane goes by: its title, unless the title says nothing. */
+/** The hub's JSON listing of hosts. */
+export function parseHosts(body: string): Host[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return []
+  }
+  const list = (raw as { hosts?: unknown })?.hosts
+  if (!Array.isArray(list)) return []
+  return list
+    .slice(0, MAX_LIST)
+    .filter((h): h is Record<string, unknown> => !!h && typeof h === 'object' && typeof (h as Record<string, unknown>).name === 'string' && HOST.test((h as Record<string, unknown>).name as string))
+    .map((h) => ({ name: h.name as string, online: h.online === true }))
+}
+
+/** The name a pane goes by: its alias, else its title, unless the title says nothing. */
 export function paneName(p: Pane): string {
+  if (p.alias) return p.alias
   let title = p.title
   // Claude Code's mark in front of its title is decoration; the list has marks of its own.
   if (title.startsWith('✳ ') || title.startsWith('* ')) title = title.slice(2).trim()
@@ -74,20 +128,26 @@ export function paneName(p: Pane): string {
   return title
 }
 
-/** Events, oldest first, and the cursor from the last line. */
+/** The hub's JSON events, oldest first, and the cursor. */
 export function parseEvents(body: string): { events: Event[]; next: number | null } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return { events: [], next: null }
+  }
+  const o = (raw ?? {}) as Record<string, unknown>
+  const next = typeof o.next === 'number' && Number.isInteger(o.next) && o.next >= 0 ? o.next : null
   const events: Event[] = []
-  let next: number | null = null
-  for (const line of body.split('\n')) {
-    const f = line.replace(/\r$/, '').split('\t')
-    if (f[0] === 'next' && f.length === 2 && /^\d{1,15}$/.test(f[1])) {
-      next = Number(f[1])
-      continue
+  if (Array.isArray(o.events)) {
+    for (const item of o.events.slice(0, 100)) {
+      if (!item || typeof item !== 'object') continue
+      const e = item as Record<string, unknown>
+      const kind = e.kind
+      if (typeof e.seq !== 'number' || !address(e.address) || typeof kind !== 'string') continue
+      if (!(ATTENTION as readonly string[]).includes(kind) && kind !== 'working') continue
+      events.push({ seq: e.seq, at: typeof e.at === 'number' ? e.at : 0, address: e.address as string, kind: kind as EventKind, text: str(e.text, 200) })
     }
-    if (f.length < 4 || !/^\d{1,15}$/.test(f[0]) || !/^\d{1,15}$/.test(f[1]) || !address(f[2])) continue
-    const kind = f[3]
-    if (!(ATTENTION as readonly string[]).includes(kind) && kind !== 'working') continue
-    events.push({ seq: Number(f[0]), at: Number(f[1]), address: f[2], kind: kind as EventKind, text: clean(f.slice(4).join(' ')).trim().slice(0, 200) })
   }
   return { events, next }
 }

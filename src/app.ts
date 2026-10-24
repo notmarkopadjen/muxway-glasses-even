@@ -1,44 +1,32 @@
-// The app on the glasses: a stack of pages, the gestures, the polling of
-// the open pane and the pane list, the long poll for events, and the
-// answers that go back.
+// The app on the glasses: a ring of pages, the pane list, one pane or
+// two or three side by side, the answers, spoken replies; the polling of
+// what is on screen and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
 import { ANSWERS, short, type Answer } from './answers.ts'
 import { ApiError, api } from './api.ts'
-import { BODY_LINES, Glasses, PIN_LINES, SPLIT_LINES, type Block, type MenuSpec, type Page } from './glasses.ts'
-import { runsClaude, shapeClaude } from './lens.ts'
-import { paneName, parseEvents, parsePanes, type Attention, type Pane } from './protocol.ts'
-import { forgetToken, getSettings, isConfigured } from './settings.ts'
-import { LINE_PX, rows as splitRows, textWidth, typed, wrapRows } from './text.ts'
+import { Glasses, type Page } from './glasses.ts'
+import { paneName, parseEvents, parseHosts, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
+import { forgetToken, getSettings, isConfigured, saveSettings } from './settings.ts'
+import { rows as splitRows, typed } from './text.ts'
+import * as V from './views.ts'
 import { GRACE_SECONDS, MIN_SECONDS, Recorder, toneFrame } from './voice.ts'
 
 type View =
-  | { kind: 'panes'; page: number }
-  | { kind: 'pane'; pane: Pane }
+  | { kind: 'ring'; page: V.RingPage }
+  | { kind: 'list'; page: number }
+  | { kind: 'pane'; pane: Pane; fromSplit: boolean }
   | { kind: 'answers'; pane: Pane }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
   | { kind: 'listen'; pane: Pane }
   | { kind: 'heard'; pane: Pane }
 
-type VoicePhase = 'recording' | 'working' | 'review' | 'error'
-
 interface Voice {
-  phase: VoicePhase
+  phase: 'recording' | 'working' | 'review' | 'error'
   seconds: number
   text: string
   error: string
 }
-
-const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
-const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
-const LIST_EVERY_MS = 10_000
-const TOAST_MS = 10_000
-const FLASH_MS = 4_000
-const MENU_CLOSE_MS = 1500
-const ROWS_PER_LIST_PAGE = 19
-
-const MENU = { refresh: 1, reveal: 2, bottom: 3, panes: 4, needsYou: 5, typeOnly: 6, sayAgain: 7 }
-const SAY_IT = '» Say it'
 
 interface Attn {
   kind: Attention
@@ -46,27 +34,35 @@ interface Attn {
   at: number
 }
 
+const LIST_EVERY_MS = 10_000
+const TOAST_MS = 10_000
+const FLASH_MS = 4_000
+const MENU_CLOSE_MS = 1500
+
 export class App {
+  private bridge: EvenAppBridge
+  private log: (m: string, cls?: '' | 'ok' | 'bad') => void
   private view: Glasses
-  private stack: View[] = [{ kind: 'panes', page: 0 }]
+  private stack: View[] = [{ kind: 'ring', page: 0 }]
   private panes: Pane[] = []
+  private hosts: Host[] = []
   private attention = new Map<string, Attn>()
   private listError: string | null = null
   private listBusy = false
   private listTimer: ReturnType<typeof setTimeout> | null = null
-  /** The open pane: its rows as the hub sent them, the lines they became, and where the view is. */
-  private raw: string[] = []
-  private etag = ''
-  private body: string[] = []
-  private pinned: string[] = []
+  /** What was read of each pane, by address; the pages wrap it to their width. */
+  private readers = new Map<string, V.Reader & { etag: string }>()
+  private readBusy = false
+  private readTimer: ReturnType<typeof setTimeout> | null = null
   private offset = 0
   private reveal = false
-  private paneError: string | null = null
-  private paneBusy = false
-  private paneTimer: ReturnType<typeof setTimeout> | null = null
+  /** The selected column's pane, an index into the sorted panes; -1 when none is selected. */
+  private selected = -1
+  private winStart = 0
   private flash: { text: string; until: number } | null = null
   private toast: { text: string; until: number } | null = null
   private clearTimer: ReturnType<typeof setTimeout> | null = null
+  private clockTimer: ReturnType<typeof setInterval> | null = null
   private cursor: number | null = null
   private eventsRunning = false
   private eventsGen = 0
@@ -74,7 +70,6 @@ export class App {
   private foreground = true
   private menuAt = 0
   private unsubscribe: (() => void) | null = null
-  /** The hub has a transcriber: the answers offer Say it. Asked once the token has proven itself. */
   private canSpeak = false
   private probed = false
   private recorder: Recorder
@@ -85,9 +80,6 @@ export class App {
   private toneTimer: ReturnType<typeof setInterval> | null = null
   /** The phone pane is told which pane is open, for its reply box. */
   onPane: ((pane: Pane | null) => void) | null = null
-
-  private bridge: EvenAppBridge
-  private log: (m: string, cls?: '' | 'ok' | 'bad') => void
 
   constructor(bridge: EvenAppBridge, log: (m: string, cls?: '' | 'ok' | 'bad') => void, trace: ((p: Page) => void) | null) {
     this.bridge = bridge
@@ -113,8 +105,7 @@ export class App {
   /** From the phone pane after settings were saved: start over with them. */
   async onSettingsChanged() {
     this.listError = null
-    this.paneError = null
-    this.etag = ''
+    this.readers.clear()
     this.canSpeak = false
     this.probed = false
     this.sleep()
@@ -124,23 +115,25 @@ export class App {
 
   private wake() {
     this.foreground = true
+    if (!this.clockTimer) this.clockTimer = setInterval(() => void this.redraw(), 30_000)
     if (!isConfigured()) return
     this.scheduleList(0)
-    if (this.top.kind === 'pane') this.schedulePane(0)
+    this.scheduleRead(0)
     this.runEvents()
   }
 
   private sleep() {
     this.foreground = false
     if (this.listTimer) clearTimeout(this.listTimer)
-    if (this.paneTimer) clearTimeout(this.paneTimer)
-    this.listTimer = this.paneTimer = null
+    if (this.readTimer) clearTimeout(this.readTimer)
+    if (this.clockTimer) clearInterval(this.clockTimer)
+    this.listTimer = this.readTimer = null
+    this.clockTimer = null
     this.eventsGen++
     this.eventsRunning = false
     if (this.voice?.phase === 'recording') void this.endVoice()
   }
 
-  /** Whether the hub has a transcriber; asked once, after the first list the token was allowed. */
   private async probeVoice() {
     if (!getSettings().voice) {
       this.canSpeak = false
@@ -157,6 +150,10 @@ export class App {
   }
 
   // -------------------------------------------------------------------- data
+  private get sorted(): Pane[] {
+    return V.sorted(this.panes)
+  }
+
   private scheduleList(ms: number) {
     if (this.listTimer) clearTimeout(this.listTimer)
     this.listTimer = setTimeout(() => void this.readList(), ms)
@@ -167,12 +164,13 @@ export class App {
     this.listBusy = true
     const t0 = Date.now()
     try {
-      const a = await api.panes()
+      const [a, h] = await Promise.all([api.panes(), api.hosts().catch(() => null)])
       this.panes = parsePanes(a.body)
+      if (h) this.hosts = parseHosts(h.body)
       for (const p of this.panes) {
         const have = this.attention.get(p.address)
         if (p.attention) {
-          if (!have || have.kind !== p.attention) this.attention.set(p.address, { kind: p.attention, text: have?.text ?? '', at: have?.at ?? 0 })
+          if (!have || have.kind !== p.attention) this.attention.set(p.address, { kind: p.attention, text: p.attentionText, at: p.attentionAt * 1000 || have?.at || 0 })
         } else if (have && have.at < t0 - 2000) {
           this.attention.delete(p.address)
         }
@@ -192,66 +190,61 @@ export class App {
     if (this.foreground) this.scheduleList(LIST_EVERY_MS)
   }
 
-  private schedulePane(ms: number) {
-    if (this.paneTimer) clearTimeout(this.paneTimer)
-    this.paneTimer = setTimeout(() => void this.readPane(), ms)
+  /** The panes on screen: the open pane, or the columns. */
+  private watched(): Pane[] {
+    const v = this.top
+    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'confirm' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
+    if (v.kind === 'ring' && v.page === 2) return V.window(this.sorted, getSettings().columns, this.selected, this.winStart).shown
+    return []
   }
 
-  private get open(): Pane | null {
-    for (let i = this.stack.length - 1; i >= 0; i--) {
-      const v = this.stack[i]
-      if (v.kind !== 'panes') return v.pane
-    }
-    return null
+  private scheduleRead(ms: number) {
+    if (this.readTimer) clearTimeout(this.readTimer)
+    this.readTimer = setTimeout(() => void this.readPanes(), ms)
   }
 
-  private async readPane(now = false) {
-    const pane = this.open
-    if (!pane || !this.foreground || this.paneBusy) return
-    if (this.offset > 0 && !now) return
-    this.paneBusy = true
+  /** Reads what is on screen, each pane with its own ETag; paused on a full pane, nothing is read. */
+  private async readPanes(now = false) {
+    if (!this.foreground || this.readBusy) return
+    const v = this.top
+    const paused = v.kind === 'pane' && this.offset > 0 && !now
+    const panes = paused ? [] : this.watched()
+    this.readBusy = true
     const t0 = Date.now()
     try {
-      const a = await api.pane(pane.address, this.etag)
-      if (a.status !== 304) {
-        this.raw = splitRows(a.body)
-        this.etag = a.etag
-        this.shape(pane)
+      for (const p of panes) {
+        const r = this.readers.get(p.address) ?? { raw: [], error: null, etag: '' }
+        try {
+          const a = await api.pane(p.address, r.etag)
+          if (a.status !== 304) {
+            r.raw = splitRows(a.body)
+            r.etag = a.etag
+          }
+          r.error = null
+          this.log(`GET pane ${a.status} ${a.body.length} chars ${Date.now() - t0} ms`)
+        } catch (e) {
+          r.error = await this.failed(e, 'GET pane')
+          if (!this.foreground) return
+        }
+        this.readers.set(p.address, r)
       }
-      this.paneError = null
-      this.log(`GET pane ${a.status} ${a.body.length} chars ${Date.now() - t0} ms`)
-    } catch (e) {
-      this.paneError = await this.failed(e, 'GET pane')
     } finally {
-      this.paneBusy = false
+      this.readBusy = false
     }
-    await this.redraw()
-    if (this.foreground && this.open) this.schedulePane(getSettings().every * 1000)
+    if (panes.length) await this.redraw()
+    if (this.foreground) this.scheduleRead(getSettings().every * 1000)
   }
 
-  /** The rows through the lens, then wrapped by pixels. */
-  private shape(pane: Pane) {
-    let shaped = null
-    if (getSettings().lens) shaped = shapeClaude(this.raw, this.reveal, runsClaude(pane.command))
-    this.body = wrapRows(shaped ? shaped.body : this.raw, LINE_PX)
-    this.pinned = shaped ? wrapRows(shaped.pinned, LINE_PX) : []
-    const pages = Math.max(1, Math.ceil(this.body.length / this.pageSize))
-    if (this.offset > pages - 1) this.offset = pages - 1
-  }
-
-  private get pageSize(): number {
-    return this.pinned.length ? SPLIT_LINES : BODY_LINES
-  }
-
-  /** A failed request in a few words for the head; a refused token is forgotten at once. */
+  /** A failed request in a few words; a refused token is forgotten at once. */
   private async failed(e: unknown, what: string): Promise<string> {
     const err = e instanceof ApiError ? e : new ApiError(0)
     this.log(`${what}: ${err.message}`, 'bad')
     if (err.status === 401) {
       await forgetToken()
       this.sleep()
-      this.stack = [{ kind: 'panes', page: 0 }]
+      this.stack = [{ kind: 'ring', page: 0 }]
       this.panes = []
+      this.readers.clear()
       this.onPane?.(null)
       return 'token refused · set it on the phone'
     }
@@ -301,17 +294,20 @@ export class App {
       if (pane) pane.attention = ''
     } else {
       this.attention.set(address, { kind, text, at: Date.now() })
-      if (pane) pane.attention = kind
-      this.toast = { text: `${MARK[kind]} ${name}: ${text || WORDS[kind]}`, until: Date.now() + TOAST_MS }
+      if (pane) {
+        pane.attention = kind
+        pane.attentionAt = Math.floor(Date.now() / 1000)
+        pane.attentionText = text
+      }
+      this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
       this.later(TOAST_MS)
     }
     this.log(`event ${kind} on ${name}`)
-    if (this.open?.address === address) this.schedulePane(0)
+    if (this.watched().some((p) => p.address === address)) this.scheduleRead(0)
     void this.redraw()
     this.scheduleList(0)
   }
 
-  /** Redraws once the flash or the toast has run out. */
   private later(ms: number) {
     if (this.clearTimer) clearTimeout(this.clearTimer)
     this.clearTimer = setTimeout(() => void this.redraw(), ms + 50)
@@ -350,7 +346,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind === 'pane' || this.top.kind === 'listen' || this.top.kind === 'heard') await this.onTap()
+          if (this.top.kind !== 'list' && this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -366,7 +362,6 @@ export class App {
     }
   }
 
-  /** A gesture reaches the app only while it is on screen, whatever the last foreground event said. */
   private awake() {
     if (!this.foreground) this.wake()
   }
@@ -379,41 +374,71 @@ export class App {
     this.flash = null
     this.stack.push(v)
     await this.redraw()
+    this.scheduleRead(0)
   }
 
+  /** The double tap: back one page; from the columns to the first page; out of the app from the ring. */
   private async back() {
-    if (this.stack.length === 1) {
+    const v = this.top
+    if (v.kind === 'ring') {
+      if (v.page === 2) {
+        // With a column selected the double tap expands it; with none it goes to the main menu.
+        if (this.selected >= 0) await this.expandSelected()
+        else {
+          this.stack = [{ kind: 'ring', page: 0 }]
+          await this.redraw()
+        }
+        return
+      }
       this.stop()
       await this.bridge.shutDownPageContainer()
       return
     }
-    const left = this.stack.pop()!
+    this.stack.pop()
     this.flash = null
-    if (left.kind === 'listen' || left.kind === 'heard') await this.endVoice()
-    if (left.kind === 'pane') {
-      this.raw = []
-      this.body = []
-      this.pinned = []
-      this.etag = ''
+    if (v.kind === 'listen' || v.kind === 'heard') await this.endVoice()
+    if (v.kind === 'pane') {
       this.offset = 0
       this.reveal = false
-      this.paneError = null
-      if (this.paneTimer) clearTimeout(this.paneTimer)
-      this.paneTimer = null
       this.onPane?.(null)
+      // Back on the columns nothing is selected, so the next double tap leads to the main menu.
+      if (v.fromSplit) this.selected = -1
     }
     await this.redraw()
+    this.scheduleRead(0)
   }
 
   private async onScroll(dir: 1 | -1) {
-    if (this.top.kind !== 'pane') return
-    const pages = Math.max(1, Math.ceil(this.body.length / this.pageSize))
+    const v = this.top
+    if (v.kind === 'ring') {
+      if (v.page === 2) {
+        const n = this.sorted.length
+        const was = this.selected
+        // The first scroll selects the first column; after that it walks the panes.
+        this.selected = was < 0 ? 0 : Math.max(0, Math.min(n - 1, was + dir))
+        this.winStart = V.window(this.sorted, getSettings().columns, this.selected, this.winStart).start
+        if (this.selected !== was) {
+          await this.redraw()
+          this.scheduleRead(0)
+        }
+        return
+      }
+      const next = Math.max(0, Math.min(2, v.page + dir)) as V.RingPage
+      if (next === v.page) return
+      this.stack = [{ kind: 'ring', page: next }]
+      await this.redraw()
+      if (next === 2) this.scheduleRead(0)
+      return
+    }
+    if (v.kind !== 'pane') return
+    const { size, total } = V.pageSize(v.pane, this.readers.get(v.pane.address), getSettings().lens, this.reveal)
+    const pages = Math.max(1, Math.ceil(total / size))
     const was = this.offset
     if (dir < 0) this.offset = Math.min(pages - 1, this.offset + 1)
     else this.offset = Math.max(0, this.offset - 1)
     if (this.offset === was) return
     await this.redraw()
-    if (this.offset === 0) this.schedulePane(0)
+    if (this.offset === 0) this.scheduleRead(0)
   }
 
   private async onTap() {
@@ -427,23 +452,41 @@ export class App {
       await this.sendVoice(v.pane, true)
       return
     }
+    if (v.kind === 'ring') {
+      if (v.page === 0) {
+        const first = this.sorted.find(V.needs) ?? this.sorted[0]
+        if (first) await this.openPane(first, false)
+        return
+      }
+      if (v.page === 1) {
+        await this.push({ kind: 'list', page: 0 })
+        return
+      }
+      const sel = this.selected >= 0 ? this.sorted[Math.min(this.sorted.length - 1, this.selected)] : undefined
+      if (!sel) {
+        await this.readPanes(true)
+        return
+      }
+      if (sel.writable) await this.push({ kind: 'answers', pane: sel })
+      else await this.readPanes(true)
+      return
+    }
     if (v.kind !== 'pane') return
     if (v.pane.writable) await this.push({ kind: 'answers', pane: v.pane })
-    else await this.readPane(true)
+    else await this.readPanes(true)
   }
 
   private async onSelect(idx: number) {
     const v = this.top
-    if (v.kind === 'panes') {
-      const shown = this.listed(v.page)
-      if (idx === ROWS_PER_LIST_PAGE && shown.length > ROWS_PER_LIST_PAGE) {
+    if (v.kind === 'list') {
+      const shown = this.sorted.slice(v.page * V.ROWS_PER_LIST_PAGE)
+      if (idx === V.ROWS_PER_LIST_PAGE && shown.length > V.ROWS_PER_LIST_PAGE) {
         v.page++
         await this.redraw()
         return
       }
       const pane = shown[idx]
-      if (!pane) return
-      await this.openPane(pane)
+      if (pane) await this.openPane(pane, false)
     } else if (v.kind === 'answers') {
       const offset = this.offersVoice(v.pane) ? 1 : 0
       if (offset && idx === 0) {
@@ -461,54 +504,119 @@ export class App {
     }
   }
 
-  private async openPane(pane: Pane) {
-    this.raw = []
-    this.body = []
-    this.pinned = []
-    this.etag = ''
+  /** The columns' double tap: the selected pane, full; a double tap there comes back here. */
+  private async expandSelected() {
+    const sel = this.selected >= 0 ? this.sorted[Math.min(this.sorted.length - 1, this.selected)] : undefined
+    if (sel) await this.openPane(sel, true)
+  }
+
+  private async openPane(pane: Pane, fromSplit: boolean) {
     this.offset = 0
     this.reveal = false
-    this.paneError = null
-    await this.push({ kind: 'pane', pane })
+    await this.push({ kind: 'pane', pane, fromSplit })
     this.onPane?.(pane)
-    this.schedulePane(0)
   }
 
   private async onMenu(id: number) {
+    const v = this.top
     switch (id) {
-      case MENU.refresh:
+      case V.MENU.refresh:
         this.scheduleList(0)
-        if (this.top.kind === 'pane') await this.readPane(true)
+        await this.readPanes(true)
         break
-      case MENU.reveal:
-        if (this.top.kind === 'pane') {
+      case V.MENU.reveal:
+        if (v.kind === 'pane') {
           this.reveal = !this.reveal
-          this.shape(this.top.pane)
           await this.redraw()
         }
         break
-      case MENU.bottom:
+      case V.MENU.bottom:
         this.offset = 0
         await this.redraw()
-        this.schedulePane(0)
+        this.scheduleRead(0)
         break
-      case MENU.panes:
-        while (this.stack.length > 1) await this.back()
+      case V.MENU.list:
+        await this.goHome(1)
+        await this.push({ kind: 'list', page: 0 })
         break
-      case MENU.needsYou: {
-        const pane = this.needsYou()
-        if (!pane) break
-        while (this.stack.length > 1) await this.back()
-        await this.openPane(pane)
+      case V.MENU.home:
+        await this.goHome(0)
+        break
+      case V.MENU.split:
+        await this.goHome(2)
+        break
+      case V.MENU.columns: {
+        const columns = getSettings().columns === 2 ? 3 : 2
+        await saveSettings({ columns })
+        await this.redraw()
+        this.scheduleRead(0)
         break
       }
-      case MENU.typeOnly:
-        if (this.top.kind === 'heard') await this.sendVoice(this.top.pane, false)
+      case V.MENU.needsYou: {
+        const pane = this.needsYou()
+        if (!pane) break
+        await this.goHome(0)
+        await this.openPane(pane, false)
         break
-      case MENU.sayAgain:
-        if (this.top.kind === 'heard' || this.top.kind === 'listen') await this.beginVoice(this.top.pane, true)
+      }
+      case V.MENU.typeOnly:
+        if (v.kind === 'heard') await this.sendVoice(v.pane, false)
+        break
+      case V.MENU.sayAgain:
+        if (v.kind === 'heard' || v.kind === 'listen') await this.beginVoice(v.pane, true)
         break
     }
+  }
+
+  /** Back to the ring at a page, closing whatever is open. */
+  private async goHome(page: V.RingPage) {
+    while (this.stack.length > 1) {
+      const left = this.stack.pop()!
+      if (left.kind === 'listen' || left.kind === 'heard') await this.endVoice()
+      if (left.kind === 'pane') this.onPane?.(null)
+    }
+    this.offset = 0
+    this.reveal = false
+    this.stack = [{ kind: 'ring', page }]
+    await this.redraw()
+    this.scheduleRead(0)
+  }
+
+  private async send(pane: Pane, answer: Answer) {
+    let words = 'sent ' + short(answer)
+    try {
+      for (const p of answer.pieces) {
+        if (p.text !== undefined) await api.text(pane.address, p.text)
+        else if (p.key !== undefined) await api.key(pane.address, p.key)
+      }
+      this.log(`sent ${short(answer)} to ${paneName(pane)}`, 'ok')
+    } catch (e) {
+      words = await this.failed(e, 'POST input')
+    }
+    this.flash = { text: words, until: Date.now() + FLASH_MS }
+    this.later(FLASH_MS)
+    this.offset = 0
+    await this.redraw()
+    await this.readPanes(true)
+  }
+
+  /** From the phone pane: typed text to the open or selected pane. */
+  async sendText(text: string, enter: boolean): Promise<string> {
+    const pane = this.watched()[0]
+    if (!pane) return 'open a pane on the glasses first'
+    if (!pane.writable) return 'that pane is read-only'
+    try {
+      await api.text(pane.address, text)
+      if (enter) await api.key(pane.address, 'Enter')
+    } catch (e) {
+      return await this.failed(e, 'POST input')
+    }
+    this.flash = { text: enter ? 'sent from the phone, Enter' : 'typed from the phone', until: Date.now() + FLASH_MS }
+    this.later(FLASH_MS)
+    this.offset = 0
+    await this.redraw()
+    await this.readPanes(true)
+    return ''
   }
 
   // ------------------------------------------------------------------- voice
@@ -516,7 +624,6 @@ export class App {
     return this.canSpeak && pane.writable && getSettings().voice
   }
 
-  /** Opens the mic on the Listening page; again replaces the page already there. */
   private async beginVoice(pane: Pane, again: boolean) {
     await this.endVoice()
     this.voice = { phase: 'recording', seconds: 0, text: '', error: '' }
@@ -562,14 +669,12 @@ export class App {
     await this.recorder.stop()
   }
 
-  /** Closes the mic and forgets the clip and the transcript. */
   private async endVoice() {
     await this.stopMic()
     this.recorder.reset()
     this.voice = null
   }
 
-  /** The tap on Listening: the clip goes to the hub, the text comes back for review. */
   private async finishVoice(pane: Pane) {
     const v = this.voice
     if (!v || v.phase !== 'recording') return
@@ -604,7 +709,6 @@ export class App {
     await this.redraw()
   }
 
-  /** The tap on Heard this: the text goes to the pane, with or without Enter. */
   private async sendVoice(pane: Pane, enter: boolean) {
     const text = this.voice?.text
     if (!text) return
@@ -622,64 +726,17 @@ export class App {
     this.later(FLASH_MS)
     this.offset = 0
     await this.redraw()
-    await this.readPane(true)
-  }
-
-  /** Sends the answer piece by piece and says what happened in the head. */
-  private async send(pane: Pane, answer: Answer) {
-    let words = 'sent ' + short(answer)
-    try {
-      for (const p of answer.pieces) {
-        if (p.text !== undefined) await api.text(pane.address, p.text)
-        else if (p.key !== undefined) await api.key(pane.address, p.key)
-      }
-      this.log(`sent ${short(answer)} to ${paneName(pane)}`, 'ok')
-    } catch (e) {
-      words = await this.failed(e, 'POST input')
-    }
-    this.flash = { text: words, until: Date.now() + FLASH_MS }
-    this.later(FLASH_MS)
-    this.offset = 0
-    await this.redraw()
-    await this.readPane(true)
-  }
-
-  /** From the phone pane: typed text to the open pane. */
-  async sendText(text: string, enter: boolean): Promise<string> {
-    const pane = this.open
-    if (!pane) return 'open a pane on the glasses first'
-    if (!pane.writable) return 'that pane is read-only'
-    try {
-      await api.text(pane.address, text)
-      if (enter) await api.key(pane.address, 'Enter')
-    } catch (e) {
-      return await this.failed(e, 'POST input')
-    }
-    this.flash = { text: enter ? 'sent from the phone, Enter' : 'typed from the phone', until: Date.now() + FLASH_MS }
-    this.later(FLASH_MS)
-    this.offset = 0
-    await this.redraw()
-    await this.readPane(true)
-    return ''
+    await this.readPanes(true)
   }
 
   // ------------------------------------------------------------------- pages
-  private sorted(): Pane[] {
-    const rank = (p: Pane) => (p.attention === 'question' || p.attention === 'permission' ? 0 : p.attention ? 1 : 2)
-    return this.panes.slice().sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
-  }
-
-  private listed(page: number): Pane[] {
-    return this.sorted().slice(page * ROWS_PER_LIST_PAGE)
-  }
-
   private needsYou(): Pane | null {
     let best: Pane | null = null
     let bestAt = -1
-    for (const p of this.sorted()) {
+    for (const p of this.sorted) {
       const a = this.attention.get(p.address)
       if (!a) continue
-      const at = (a.kind === 'question' || a.kind === 'permission' ? 1e13 : 0) + a.at
+      const at = (V.needs(p) ? 1e13 : 0) + a.at
       if (at > bestAt) {
         best = p
         bestAt = at
@@ -688,107 +745,68 @@ export class App {
     return best
   }
 
+  private model(): V.Model {
+    const now = new Date()
+    const s = getSettings()
+    return {
+      configured: isConfigured(),
+      panes: this.sorted,
+      hosts: this.hosts,
+      listError: this.listError,
+      needsYou: this.needsYou(),
+      flash: this.flash && this.flash.until > Date.now() ? this.flash.text : null,
+      toast: this.toast && this.toast.until > Date.now() ? this.toast.text : null,
+      clock: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      lens: s.lens,
+      canSpeak: this.canSpeak,
+      columns: s.columns,
+      selected: this.selected,
+      windowStart: this.winStart,
+      reading: (address) => this.readers.get(address),
+    }
+  }
+
   private async redraw() {
     await this.view.show(this.page())
   }
 
-  private hint(base: string): { hint: string; hintLevel: number } {
-    if (this.toast && this.toast.until > Date.now()) return { hint: this.toast.text, hintLevel: 4 }
-    return { hint: base, hintLevel: 1 }
-  }
-
   private page(): Page {
+    const m = this.model()
     const v = this.top
-    const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
-    const needs = this.needsYou()
-    if (v.kind === 'panes') {
-      let head: string
-      if (this.listError) head = 'muxway · ' + this.listError
-      else if (!isConfigured()) head = 'muxway · set the hub and token on the phone'
-      else {
-        const n = this.panes.length
-        const m = this.panes.filter((p) => p.attention === 'question' || p.attention === 'permission').length
-        head = `muxway · ${n} ${n === 1 ? 'pane' : 'panes'}` + (m ? ` · ${m} ${m === 1 ? 'needs' : 'need'} you` : '')
+    const now = Math.floor(Date.now() / 1000)
+    switch (v.kind) {
+      case 'ring':
+        if (v.page === 0) return V.needsYouPage(m, now)
+        if (v.page === 1) return V.panesPage(m, now)
+        return V.splitPage(m)
+      case 'list':
+        return V.listPage(m, v.page)
+      case 'pane': {
+        const r = this.readers.get(v.pane.address)
+        const a = this.attention.get(v.pane.address)
+        let state: string
+        if (m.flash) state = m.flash
+        else if (r?.error) state = r.error
+        else if (a) state = V.WORDS[a.kind]
+        else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
+        else state = r?.raw.length ? 'following' : 'reading…'
+        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state })
       }
-      const shown = this.listed(v.page)
-      const items = shown.slice(0, ROWS_PER_LIST_PAGE).map((p) => {
-        const name = paneName(p)
-        return `${MARK[p.attention]} ${name}` + (p.command && p.command !== name ? ` · ${p.command}` : '') + (p.writable ? '' : ' · read-only')
-      })
-      if (shown.length > ROWS_PER_LIST_PAGE) items.push(`→ next ${shown.length - ROWS_PER_LIST_PAGE} more`)
-      if (needs) menu.push({ id: MENU.needsYou, label: 'Needs you: ' + paneName(needs) })
-      return { kind: 'list', head, ...this.hint('▽ choose · ● open · ×× exit'), blocks: [], items, menu }
-    }
-    if (v.kind === 'pane') {
-      const p = v.pane
-      const a = this.attention.get(p.address)
-      let state: string
-      if (this.flash && this.flash.until > Date.now()) state = this.flash.text
-      else if (this.paneError) state = this.paneError
-      else if (a) state = WORDS[a.kind]
-      else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
-      else state = this.raw.length ? 'following' : 'reading…'
-      const head = `${MARK[a?.kind ?? '']} ${paneName(p)} · ${p.command || '?'} · ${state}`
-      const size = this.pageSize
-      const end = this.body.length - this.offset * size
-      const lines = this.body.slice(Math.max(0, end - size), Math.max(0, end))
-      while (lines.length < size) lines.unshift('')
-      const blocks: Block[] = [{ lines, height: size, level: 3 }]
-      if (this.pinned.length) blocks.push({ lines: this.pinned.slice(-PIN_LINES), height: PIN_LINES, level: 4 })
-      if (getSettings().lens) menu.push({ id: MENU.reveal, label: this.reveal ? 'Lens on' : 'Reveal all' })
-      menu.push({ id: MENU.bottom, label: 'Bottom' }, { id: MENU.panes, label: 'Panes' })
-      if (needs && needs.address !== p.address) menu.push({ id: MENU.needsYou, label: 'Needs you: ' + paneName(needs) })
-      const base = `▽ page · ● ${p.writable ? 'answer' : 'refresh'} · ≡ menu · ×× back`
-      return { kind: 'text', head, ...this.hint(base), blocks, items: [], menu }
-    }
-    if (v.kind === 'answers') {
-      menu.push({ id: MENU.panes, label: 'Panes' })
-      const items = (this.offersVoice(v.pane) ? [SAY_IT] : []).concat(ANSWERS.map((a) => a.label))
-      return { kind: 'list', head: 'answer ' + paneName(v.pane), ...this.hint('▽ choose · ● pick · ×× back'), blocks: [], items, menu }
-    }
-    if (v.kind === 'listen') {
-      const s = this.voice ?? { phase: 'error', seconds: 0, text: '', error: 'nothing recorded' }
-      let head: string
-      let body: string[]
-      let hint: string
-      if (s.phase === 'recording') {
-        head = `listening · ${Math.round(s.seconds)} s`
-        body = ['', meter(this.recorder.level), '', `${Math.round(s.seconds)} s · tap when done`]
-        hint = '● stop · ×× cancel'
-      } else if (s.phase === 'working') {
-        head = `transcribing ${s.seconds.toFixed(1)} s of audio…`
-        body = ['', '', '', 'the hub is listening to it']
-        hint = '×× cancel'
-      } else {
-        head = s.error
-        body = ['', '', '', 'tap to say it again']
-        hint = '● say it again · ×× cancel'
-      }
-      while (body.length < BODY_LINES) body.push('')
-      return { kind: 'text', head: `${paneName(v.pane)} · ${head}`, ...this.hint(hint), blocks: [{ lines: body, height: BODY_LINES, level: 4 }], items: [], menu: [{ id: MENU.panes, label: 'Panes' }] }
-    }
-    if (v.kind === 'heard') {
-      const lines = wrapRows([this.voice?.text ?? ''], LINE_PX)
-      while (lines.length < BODY_LINES) lines.push('')
-      const own: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }, { id: MENU.panes, label: 'Panes' }]
-      return { kind: 'text', head: `heard this · ${(this.voice?.seconds ?? 0).toFixed(1)} s`, ...this.hint('● send + Enter · ≡ menu · ×× cancel'), blocks: [{ lines: lines.slice(0, BODY_LINES), height: BODY_LINES, level: 4 }], items: [], menu: own }
-    }
-    menu.push({ id: MENU.panes, label: 'Panes' })
-    return {
-      kind: 'list',
-      head: `send ${short(v.answer)} to ${paneName(v.pane)}?`,
-      ...this.hint('▽ choose · ● pick · ×× back'),
-      blocks: [],
-      items: ['Cancel', 'Confirm'],
-      menu,
+      case 'answers':
+        return V.answersPage(m, v.pane, this.offersVoice(v.pane))
+      case 'confirm':
+        return V.confirmPage(m, v.pane, v.answer)
+      case 'listen':
+        return V.listenPage(m, v.pane, this.voiceView())
+      case 'heard':
+        return V.heardPage(m, v.pane, this.voiceView())
     }
   }
-}
 
-/** A line of blocks as long as the sound is loud, to the width of the screen. */
-function meter(level: number): string {
-  const cells = Math.round(Math.min(1, level * 3) * Math.floor(LINE_PX / textWidth('█')))
-  return '█'.repeat(cells) || '·'
+  private voiceView(): V.VoiceView {
+    const s = this.voice ?? { phase: 'error' as const, seconds: 0, text: '', error: 'nothing recorded' }
+    return { ...s, levels: this.recorder.levels }
+  }
 }
 
 function typeOf(ev?: { eventType?: OsEventTypeList }): OsEventTypeList | null {

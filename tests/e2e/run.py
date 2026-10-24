@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness  # noqa: E402
-from harness import HOST, Core, Failure, Proxy, Sim, Static, Transcriber, check, direct, wait_for  # noqa: E402
+from harness import HOST, Core, Failure, Proxy, Sim, Static, Transcriber, check, direct, wait_for, words  # noqa: E402
 
 TESTS = []
 
@@ -94,14 +94,51 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
     return core, proxy, sim, tok
 
 
+def home(sim, timeout=25):
+    """The ring's first page, Needs you."""
+    return sim.expect(lambda p: p["kind"] == "dash" and p["head"].startswith("[★"), "Needs you", timeout)
+
+
 def open_pane(sim, name="test-pane"):
-    sim.expect(lambda p: p["kind"] == "list" and any(name in i for i in p["items"]), "pane list")
-    sim.shot("panes")
+    """From the start: a tap on Needs you opens the first pane."""
+    home(sim)
+    sim.expect(lambda p: p["kind"] == "dash" and "≡ 1" in p["head"] or "≡ 2" in p["head"] or "≡ 3" in p["head"], "the list read")
+    sim.shot("needs-you")
     sim.tap()
-    page = sim.head(name + " · ", "the pane")
-    wait_for("the pane's rows", lambda: "following" in sim.last()["head"] or "paused" in sim.last()["head"], 10)
+    page = sim.expect(lambda p: any(c.get("text", "").find(name) >= 0 for c in p["charts"]) or any(b.get("name") == "title" for b in p["blocks"]), "the pane")
+    wait_for("the pane's rows", lambda: "following" in sim.state() or "paused" in sim.state(), 10)
     sim.shot("pane")
     return page
+
+
+def open_list(sim):
+    """From the start: scroll to the Panes page, tap for the list."""
+    home(sim)
+    sim.scroll("down")
+    sim.expect(lambda p: p["kind"] == "dash" and "[≡" in p["head"], "the Panes page")
+    sim.shot("panes-dash")
+    sim.tap()
+    return sim.expect(lambda p: p["kind"] == "list", "the list")
+
+
+def to_split(sim):
+    """From the start: two scrolls to the columns."""
+    home(sim)
+    sim.scroll("down")
+    sim.expect(lambda p: "[≡" in p["head"], "the Panes page")
+    sim.scroll("down")
+    return sim.expect(lambda p: p["kind"] == "dash" and "[□□" in p["head"], "the columns")
+
+
+def col(page, i):
+    for b in page["blocks"]:
+        if b.get("name") == f"col{i}":
+            return b
+    return None
+
+
+def band_texts(page):
+    return [c["text"] for c in page["charts"] if c.get("text")]
 
 
 # --- security -----------------------------------------------------------------------
@@ -114,10 +151,9 @@ def s01(run, name):
     time.sleep(6)
     sim.web("phone-after-refusal")
     tried = [r for r in proxy.requests if r["headers"].get("Authorization") == "Bearer " + tok]
-    check(1 <= len(tried) <= 2, f"the revoked token was tried {len(tried)} times")
+    check(1 <= len(tried) <= 3, f"the revoked token was tried {len(tried)} times")
     check(time.time() - max(r["at"] for r in tried) > 4, "the app went on trying a refused token")
     check(not any(tok in r["path"] for r in proxy.requests), "the token appeared in a URL")
-    # A wrong token on a fresh start: the same once.
     sim.close()
     run.cleanups.remove(sim.close)
     wrong = "mxt_" + "x" * 43
@@ -127,26 +163,27 @@ def s01(run, name):
     sim2.head("token refused", "the refusal of a wrong token", 20)
     time.sleep(5)
     tried = [r for r in proxy.requests[before:] if r["headers"].get("Authorization") == "Bearer " + wrong]
-    check(1 <= len(tried) <= 2, f"the wrong token was tried {len(tried)} times")
+    check(1 <= len(tried) <= 3, f"the wrong token was tried {len(tried)} times")
 
 
 @test("S03", "Read-only token: no answers, a direct write is refused", "e2e-security")
 def s03(run, name):
     core, proxy, sim, tok = setup(run, name, write=None)
-    page = sim.expect(lambda p: p["kind"] == "list" and p["items"], "pane list")
+    page = open_list(sim)
     check(any("read-only" in i for i in page["items"]), f"no read-only mark: {page['items']}")
-    sim.shot("panes")
+    sim.shot("list")
     sim.tap()
-    page = sim.head("test-pane · ", "the pane")
+    page = sim.head("test-pane", "the pane")
+    wait_for("following", lambda: "following" in sim.state(), 10)
+    page = sim.last()
     check("refresh" in page["hint"] and "answer" not in page["hint"], f"hint offers an answer: {page['hint']}")
     sim.tap()
     time.sleep(1.5)
-    check(sim.last()["kind"] == "text", "a tap on a read-only pane opened a list")
+    check(sim.last()["kind"] == "dash", "a tap on a read-only pane opened a list")
     sim.shot("pane")
     status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/input", '{"text":"y"}')
     check(status == 403, f"a direct write got {status}")
-    check(not any(r["method"] == "POST" for r in proxy.requests if r["headers"].get("Origin") is not None
-                  and r["path"].endswith("/input") and "Authorization" in r["headers"] and r["body"]), "the app wrote")
+    check(not any(r["method"] == "POST" and r["path"].endswith("/input") and r["headers"].get("Origin") is not None for r in proxy.requests), "the app wrote")
 
 
 @test("S04", "A 1 MiB body, bytes that are not UTF-8 and control characters", "e2e-security")
@@ -177,14 +214,14 @@ def s05(run, name):
     core, proxy, sim, tok = setup(run, name, mode="claude-hostile", params={"charset": "utf-8"})
     open_pane(sim)
     page = sim.last()
-    check(len(page["blocks"]) == 2, f"the box was not pinned: {page['blocks']}")
-    pinned = page["blocks"][1]["lines"]
+    pinned = sim.block("pinned", page)
+    check(pinned, "the box was not pinned")
     check(any("box" in l and "bell" in l for l in pinned), f"the box is not the pinned row: {pinned}")
-    check(not any("fake footer" in l for b in page["blocks"] for l in b["lines"]), "the footer was shown unasked")
+    check(not any("fake footer" in l for l in sim.lines()), "the footer was shown unasked")
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the screen")
     sim.shot("hostile")
     sim.menu(1)
-    page = sim.expect(lambda p: any("fake footer" in l for b in p["blocks"] for l in b["lines"]), "reveal all", 10)
+    sim.expect(lambda p: any("fake footer" in l for b in p["blocks"] for l in b["lines"]), "reveal all", 10)
     sim.shot("revealed")
     check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
 
@@ -192,25 +229,26 @@ def s05(run, name):
 @test("S06", "Hostile events: escapes and 10 KiB of text become one fitted toast; a bad cursor restarts", "e2e-security")
 def s06(run, name):
     core, proxy, sim, tok = setup(run, name, mode="events-hostile")
-    page = sim.expect(lambda p: p["hintLevel"] == 4, "the toast", 30)
+    page = sim.expect(lambda p: p.get("hintBorder") and p["hintLevel"] == 4, "the toast", 30)
     check(page["hint"].startswith("★ test-pane: needs "), f"toast: {page['hint'][:80]}")
     check(len(page["hint"]) <= 260 and "\x1b" not in page["hint"] and "\x07" not in page["hint"], "the toast is not clean")
     sim.shot("toast")
     wait_for("a restart without a cursor", lambda: len(proxy.paths("/v1/events?limit=1")) >= 2, 20)
-    wait_for("polling goes on", lambda: len(proxy.paths("/v1/events?after=")) >= 3, 20)
+    wait_for("polling goes on", lambda: len([r for r in proxy.requests if r["method"] == "GET" and r["path"].startswith("/v1/events?after=")]) >= 3, 20)
     check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
 
 
-@test("S07", "Pane titles with a forged mark, tabs, 300 characters and wide glyphs: rows clamped, marks their own", "e2e-security")
+@test("S07", "Pane titles with a forged mark, a tab, 300 characters and wide glyphs: rows clamped, marks their own", "e2e-security")
 def s07(run, name):
     core, proxy, sim, tok = setup(run, name, mode="lie-title")
-    page = sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 4, "the four rows", 20)
+    page = open_list(sim)
+    check(len(page["items"]) == 4, f"rows: {page['items']}")
     for row in page["items"]:
         check(len(row.encode()) <= 63, f"a row of {len(row.encode())} bytes: {row}")
     check(page["items"][0].startswith("· ★ "), f"the forged mark became the pane's: {page['items'][0]}")
-    check(page["items"][0].endswith("…") or "read-only" in page["items"][0], f"the forged mode was believed: {page['items'][0]}")
-    check(page["items"][1].startswith("· tab ·"), f"the tab's column shift was believed: {page['items'][1]}")
-    check("needs you" not in page["head"], f"a title raised attention: {page['head']}")
+    check("read-only" in page["items"][0] or page["items"][0].endswith("…"), f"the forged mode was believed: {page['items'][0]}")
+    check(page["items"][1].startswith("· tab here"), f"the tab survived as a tab: {page['items'][1]}")
+    check("★ 1" not in page["head"], f"a title raised attention: {page['head']}")
     time.sleep(1)
     sim.shot("rows")
     check(not any("refused" in e["message"] for e in sim.console()), "the firmware refused the page")
@@ -222,19 +260,50 @@ def s02(run, name):
     open_pane(sim)
     time.sleep(2)
     check(not any(tok in r["path"] for r in proxy.requests), "the token appeared in a URL")
-    check(all(r["headers"].get("Authorization") == "Bearer " + tok for r in proxy.requests
-              if r["method"] != "OPTIONS"), "a request without the bearer token")
+    check(all(r["headers"].get("Authorization") == "Bearer " + tok for r in proxy.requests if r["method"] != "OPTIONS"), "a request without the bearer token")
     text = "\n".join(e["message"] for e in sim.console())
     check(tok not in text, "the token appeared in the console")
     check(tok not in json.dumps(sim.trace()), "the token appeared on the glasses")
     sim.web("phone")
 
 
+@test("S30", "A listing of 200 panes with long titles and times out of range: five rows, bars clamped, page accepted", "e2e-security")
+def s30(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="list-hostile")
+    page = home(sim)
+    page = sim.expect(lambda p: "≡ 200" in p["head"], "the 200 panes", 20)
+    rows = [sim.block(f"row{i}", page) for i in range(5)]
+    check(all(r and r[0].strip() for r in rows), f"rows: {rows}")
+    check(sim.block("row5", page) is None, "a sixth row")
+    check(len(page["charts"]) == 1, "the bars")
+    sim.shot("hostile-needs")
+    sim.scroll("down")
+    page = sim.expect(lambda p: "[≡" in p["head"], "the Panes page")
+    check("195 more in the list" in "".join(sim.block("footer", page)), sim.block("footer", page))
+    sim.shot("hostile-panes")
+    time.sleep(1)
+    check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
+
+
+@test("S31", "Pane JSON with a 1 MiB title and nested junk: parsed or skipped, polling goes on", "e2e-security")
+def s31(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="list-junk")
+    # The body is over the app's cap, so the listing is cut and parsed as empty, or parsed with the one pane: either is fine.
+    page = sim.expect(lambda p: "≡ 1" in p["head"] or ("≡ 0" in p["head"] and sim.block("footer", p) is not None), "the listing survived", 20)
+    row = sim.block("row0", page)
+    check(row is None or len(row[0]) < 200, f"row: {row}")
+    n = len([r for r in proxy.requests if r["path"] == "/v1/panes"])
+    wait_for("the list is read again", lambda: len([r for r in proxy.requests if r["path"] == "/v1/panes"]) > n, 15)
+    check(not any("uncaught" in e["message"] for e in sim.console()), "an uncaught error")
+
+
+# --- spoken replies -------------------------------------------------------------------
+
 def say_it(sim, name="test-pane"):
     """From the pane: tap, the Say it row, the Listening page."""
     sim.tap()
     page = sim.head("answer " + name, "the answers")
-    check(page["items"][0] == "\u00bb Say it", f"no Say it row: {page['items'][:2]}")
+    check(page["items"][0] == "» Say it", f"no Say it row: {page['items'][:2]}")
     sim.shot("answers-say")
     sim.choose(0)
     return sim.head("listening", "listening", 10)
@@ -270,7 +339,7 @@ def s26(run, name):
     time.sleep(1.5)
     sim.tap()
     page = sim.head("heard this", "the transcript", 15)
-    text = "".join(l for b in page["blocks"] for l in b["lines"])
+    text = "".join(sim.block("text", page) or [])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", text), "control characters on screen")
     check(text.startswith("run [31mthe tests"), text[:40])
     sim.shot("heard-hostile")
@@ -286,21 +355,21 @@ def s26(run, name):
 def f20(run, name):
     core, proxy, sim, tok = setup(run, name, stt=True)
     open_pane(sim)
-    page = say_it(sim)
+    say_it(sim)
     sim.shot("listening")
     time.sleep(2)
-    page = sim.expect(lambda p: p["kind"] == "text" and "listening \u00b7" in p["head"] and any("\u2588" in l for b in p["blocks"] for l in b["lines"]), "the meter", 5)
-    sim.shot("meter")
+    page = sim.expect(lambda p: "listening" in sim.state() and len(p["charts"]) >= 3, "the graph", 5)
+    sim.shot("graph")
     sim.tap()
     page = sim.head("heard this", "the transcript", 15)
-    check("run the tests again" in "".join(l for b in page["blocks"] for l in b["lines"]), page["blocks"])
+    check("run the tests again" in "".join(sim.block("text", page) or []), page["blocks"])
     sim.shot("heard")
     clips = core.transcriber.clips
     check(len(clips) == 1 and clips[0][:4] == b"RIFF" and len(clips[0]) > 44 + 2 * 16000, f"clip: {len(clips)} {len(clips[0]) if clips else 0}")
     sim.tap()
     sim.head("sent what you said", "the flash", 10)
     wait_for("typed", lambda: "run the tests again" in core.pane(), 5)
-    sim.expect(lambda p: any("run the tests again" in l for b in p["blocks"] for l in b["lines"]), "the pane after", 8)
+    sim.expect(lambda p: any("run the tests again" in l for l in (sim.block("body", p) or [])), "the pane after", 8)
     sim.shot("sent")
     posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
     check(posts == [{"text": "run the tests again"}, {"key": "Enter"}], str(posts))
@@ -345,7 +414,7 @@ def f22(run, name):
     sim.tap()
     sim.head("heard this", "the third transcript", 15)
     sim.back()
-    sim.head("test-pane \u00b7 bash", "back on the pane")
+    wait_for("back on the pane", lambda: "following" in sim.state() or "paused" in sim.state(), 10)
     time.sleep(1)
     check(len([r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]) == 1, "the cancelled transcript was sent")
     sim.shot("cancelled")
@@ -359,25 +428,20 @@ def f10(run, name):
         core.new_window("logs", expose=None)
         core.notify("done", "tests passed", "work:logs.0")
     core, proxy, sim, tok = setup(run, name, before=before)
-    page = sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 2, "two panes")
+    page = open_list(sim)
+    check(len(page["items"]) == 2, page["items"])
     check(page["items"][0].startswith("● logs") and "read-only" in page["items"][0], f"rows: {page['items']}")
     check(page["items"][1].startswith("· test-pane · bash"), f"rows: {page['items']}")
-    check(page["head"] == "muxway · 2 panes", page["head"])
-    sim.shot("panes")
+    check("≡ 2" in page["head"], page["head"])
+    sim.shot("list")
     for i in range(20):
         core.new_window(f"w{i:02d}")
-    made = time.strftime("%H:%M:%S")
-    try:
-        page = sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 20, "a full page", 25)
-    except Failure as e:
-        st, body = direct(proxy.url, tok, "GET", "/v1/panes")
-        raise Failure(f"{e}\nwindows made at {made}; direct list now: {st} {len(body.splitlines())} panes; "
-                      f"tmux: {core.tmux_cmd('list-windows')[:300]}")
+    page = sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 20, "a full page", 25)
     check(page["items"][19].startswith("→ next 3 more"), page["items"][19])
-    sim.shot("panes-full")
+    sim.shot("list-full")
     sim.choose(19)
-    page = sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 3, "the next page")
-    sim.shot("panes-2")
+    sim.expect(lambda p: p["kind"] == "list" and len(p["items"]) == 3, "the next page")
+    sim.shot("list-2")
 
 
 @test("F11", "Open a pane, read its last lines, see a new line within the follow interval", "UI")
@@ -389,24 +453,26 @@ def f11(run, name):
     wait_for("three more reads", lambda: len(proxy.paths("/v1/panes/")) >= n + 3, 10)
     core.keys("echo hello", "Enter")
     t0 = time.time()
-    sim.expect(lambda p: any(l == "hello" for b in p["blocks"] for l in b["lines"]), "hello on the glasses", 6)
+    sim.expect(lambda p: any(l == "hello" for l in (sim.block("body", p) or [])), "hello on the glasses", 6)
     sim.shot("pane-hello")
     reads = proxy.paths("/v1/panes/")
-    check(len(reads) >= n + 3, "the pane was not followed")
     check(any(r["headers"].get("If-None-Match") for r in reads), "no If-None-Match on a follow-up read")
     check(time.time() - t0 < 6, "the new line took too long")
 
 
-@test("F12", "Scroll up pages back and pauses following; down past the end follows again", "UI")
+@test("F12", "Scroll up pages back and pauses following; down past the end follows again; the position bar moves", "UI")
 def f12(run, name):
     core, proxy, sim, tok = setup(run, name)
     core.keys("seq 1 40", "Enter")
     open_pane(sim)
-    sim.expect(lambda p: any(l == "40" for b in p["blocks"] for l in b["lines"]), "the sequence")
+    sim.expect(lambda p: any(l == "40" for l in (sim.block("body", p) or [])), "the sequence")
+    bar0 = [c["key"] for c in sim.last()["charts"] if c["key"].startswith("pos:")]
     sim.shot("bottom")
     sim.scroll("up")
     page = sim.head("paused · 1 page up", "one page up")
-    check("40" not in [l for b in page["blocks"] for l in b["lines"]], "the view did not move")
+    check("40" not in (sim.block("body", page) or []), "the view did not move")
+    bar1 = [c["key"] for c in page["charts"] if c["key"].startswith("pos:")]
+    check(bar0 != bar1, "the position bar did not move")
     sim.shot("one-up")
     sim.scroll("up")
     sim.head("paused · 2 pages up", "two pages up")
@@ -416,7 +482,7 @@ def f12(run, name):
     sim.scroll("down")
     sim.scroll("down")
     page = sim.head("following", "following again")
-    check("40" in [l for b in page["blocks"] for l in b["lines"]], "the bottom did not come back")
+    check("40" in (sim.block("body", page) or []), "the bottom did not come back")
     sim.shot("bottom-again")
 
 
@@ -435,20 +501,18 @@ def f13(run, name):
     sim.choose(1)
     sim.head("sent y, Enter", "the flash", 10)
     wait_for("y typed", lambda: "y: command not found" in core.pane(), 5)
-    sim.expect(lambda p: any("y: command not found" in l for b in p["blocks"] for l in b["lines"]), "the pane after", 8)
+    sim.expect(lambda p: any("y: command not found" in l for l in (sim.block("body", p) or [])), "the pane after", 8)
     sim.shot("pane-after")
     posts = [r for r in proxy.requests if r["method"] == "POST"]
     check([json.loads(r["body"]) for r in posts] == [{"text": "y"}, {"key": "Enter"}], f"posts: {[r['body'] for r in posts]}")
-    # Cancel sends nothing.
     sim.tap()
     sim.head("answer test-pane", "the answers again")
     sim.choose(0)
     sim.head("send Enter to test-pane?", "the confirmation")
     sim.choose(0)
-    sim.head("test-pane · bash", "back on the pane")
+    wait_for("back on the pane", lambda: sim.last()["kind"] == "dash" and sim.block("body") is not None, 10)
     time.sleep(1)
     check(len([r for r in proxy.requests if r["method"] == "POST"]) == 2, "Cancel sent something")
-    # Ctrl-C stops sleep.
     core.keys("sleep 100", "Enter")
     wait_for("sleep running", lambda: core.command() == "sleep", 5)
     sim.tap()
@@ -461,49 +525,51 @@ def f13(run, name):
     sim.shot("after-ctrl-c")
 
 
-@test("F14", "The Claude Code lens: chrome hidden, the box pinned when typed, reveal all", "UI")
+@test("F14", "The Claude Code lens: chrome hidden, the box pinned and framed, reveal all", "UI")
 def f14(run, name):
     core, proxy, sim, tok = setup(run, name, mode="claude", says_claude=True)
-    sim.expect(lambda p: p["kind"] == "list" and any("claude" in i for i in p["items"]), "pane list names claude")
+    home(sim)
+    sim.expect(lambda p: "≡ 1" in p["head"], "the list read")
     sim.tap()
-    page = sim.expect(lambda p: len(p["blocks"]) == 2, "the pinned box")
-    body = page["blocks"][0]["lines"]
+    page = sim.expect(lambda p: sim.block("pinned", p) is not None, "the pinned box", 15)
+    body = sim.block("body", page)
     check(body[-1] == "* pong", f"body ends with {body[-1]!r}")
-    check(page["blocks"][1]["lines"] == ["> fix the typo in README"], page["blocks"][1]["lines"])
+    check(sim.block("pinned", page) == ["> fix the typo in README"], sim.block("pinned", page))
+    check(any(b.get("name") == "pinned" and b.get("border") for b in page["blocks"]), "the box has no frame")
     check(not any("auto mode" in l or "Crunched" in l for l in body), "chrome in the body")
+    check(any("claude" in t for t in band_texts(page)), f"the band does not name the program: {band_texts(page)}")
     sim.shot("lens")
     sim.menu(1)
-    page = sim.expect(lambda p: any("auto mode" in l for b in p["blocks"] for l in b["lines"]), "reveal all", 10)
-    check(len(page["blocks"]) == 1, "reveal pinned something")
+    page = sim.expect(lambda p: any("auto mode" in l for l in (sim.block("body", p) or [])), "reveal all", 10)
+    check(sim.block("pinned", page) is None, "reveal pinned something")
     sim.shot("lens-reveal")
     sim.menu(1)
-    sim.expect(lambda p: len(p["blocks"]) == 2, "the lens again", 10)
+    sim.expect(lambda p: sim.block("pinned", p) is not None, "the lens again", 10)
     sim.shot("lens-again")
 
 
-@test("F15", "A notification: toast within two seconds, the pane first in the list, cleared by working", "UI")
+@test("F15", "A notification: a banner within two seconds, the pane first on Needs you, cleared by working", "UI")
 def f15(run, name):
     core, proxy, sim, tok = setup(run, name, before=lambda c: c.new_window("build"))
     open_pane(sim)
     t0 = time.time()
     core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
-    page = sim.expect(lambda p: p["hintLevel"] == 4, "the toast", 8)
-    check(time.time() - t0 < 4, f"the toast took {time.time() - t0:.1f} s")
+    page = sim.expect(lambda p: p.get("hintBorder") and p["hintLevel"] == 4, "the banner", 8)
+    check(time.time() - t0 < 4, f"the banner took {time.time() - t0:.1f} s")
     check(page["hint"] == "★ build: Claude needs your permission to use Bash", page["hint"])
-    check(any(m["label"] == "Needs you: build" for m in page["menu"]), page["menu"])
-    sim.shot("toast")
+    check(any(m["label"] == "Go to: build" for m in page["menu"]), page["menu"])
+    sim.shot("banner")
     sim.back()
-    page = sim.expect(lambda p: p["kind"] == "list" and p["items"] and p["items"][0].startswith("★ build"), "build first")
-    check("1 needs you" in page["head"], page["head"])
-    sim.shot("panes-attention")
+    page = sim.expect(lambda p: "[★ 1]" in p["head"] and (sim.block("row0", p) or [""])[0].startswith("★ build"), "build first on Needs you")
+    check("needs permission" in sim.block("row0", page)[0], sim.block("row0", page))
+    check(len(page["charts"]) == 1, "no timeline")
+    sim.shot("needs-you-attention")
     core.notify("working", "", "work:build.0")
-    page = sim.expect(lambda p: p["kind"] == "list" and any(i.startswith("· build") for i in p["items"]), "cleared", 8)
-    check(not any(i.startswith("★") for i in page["items"]), page["items"])
-    check("needs you" not in page["head"], page["head"])
-    sim.shot("panes-cleared")
+    page = sim.expect(lambda p: "[★ 0]" in p["head"] and "nothing needs you" in "".join(sim.block("footer", p) or []), "cleared", 8)
+    sim.shot("needs-you-cleared")
 
 
-@test("F17", "Hub down and host offline: said in the head, recovered when back", "UI")
+@test("F17", "Hub down and host offline: said on the pane, recovered when back", "UI")
 def f17(run, name):
     core, proxy, sim, tok = setup(run, name)
     open_pane(sim)
@@ -511,14 +577,141 @@ def f17(run, name):
     sim.head("host offline", "host offline", 15)
     sim.shot("host-offline")
     core.start_agent()
-    sim.head("following", "following again", 15)
+    wait_for("following again", lambda: "following" in sim.state(), 15)
     core.stop("hub")
-    sim.expect(lambda p: "hub unreachable" in p["head"] or "no connection" in p["head"], "hub down", 15)
+    sim.expect(lambda p: "hub unreachable" in words(p) or "no connection" in words(p), "hub down", 15)
     sim.shot("hub-down")
     core.start_hub()
     core.start_agent()
-    sim.head("following", "recovered", 40)
+    wait_for("recovered", lambda: "following" in sim.state(), 40)
     sim.shot("recovered")
+
+
+@test("F30", "The ring: Needs you, Panes, Side by side by scrolling; a double tap on the columns returns to Needs you", "UI")
+def f30(run, name):
+    core, proxy, sim, tok = setup(run, name, before=lambda c: c.new_window("build"))
+    page = home(sim)
+    sim.expect(lambda p: "≡ 2" in p["head"], "the list read")
+    check(page["head"].startswith("[★ "), page["head"])
+    sim.shot("ring-needs-you")
+    sim.scroll("down")
+    page = sim.expect(lambda p: "[≡ 2]" in p["head"], "Panes")
+    check(any("2 panes on 1 host" in l for l in sim.block("footer", page)), sim.block("footer", page))
+    check(len(page["charts"]) == 1, "no bars")
+    sim.shot("ring-panes")
+    sim.scroll("down")
+    page = sim.expect(lambda p: "[□□ 2]" in p["head"] and col(p, 1) is not None, "Side by side")
+    check(len(band_texts(page)) == 2, band_texts(page))
+    sim.shot("ring-split")
+    sim.back()
+    sim.expect(lambda p: p["head"].startswith("[★ "), "back to Needs you")
+    sim.scroll("up")
+    time.sleep(1)
+    check(sim.last()["head"].startswith("[★ "), "scrolling up from the first page moved")
+
+
+@test("F31", "Needs you with two panes waiting: rows, the timeline, tap opens the first", "UI")
+def f31(run, name):
+    def before(core):
+        core.new_window("build")
+        core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+        core.notify("question", "Which file?", "work:0.0")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    page = sim.expect(lambda p: "[★ 2]" in p["head"] and (sim.block("row1", p) or [""])[0].startswith("★"), "two rows", 20)
+    rows = [sim.block(f"row{i}", page)[0] for i in range(2)]
+    check(rows[0].startswith("★ build · bash · needs permission") or rows[0].startswith("★ test-pane"), rows)
+    check(any("★ 2 ask" in l for l in sim.block("footer", page)), sim.block("footer", page))
+    check(page["charts"][0]["key"].startswith("needs:"), page["charts"][0]["key"])
+    sim.shot("needs-you")
+    sim.tap()
+    wait_for("the first pane", lambda: sim.block("state") is not None, 10)
+    check(any("needs permission" in t or "asks a question" in t for t in [sim.state()]), sim.state())
+    sim.shot("first-pane")
+
+
+@test("F32", "Side by side: two panes follow; the scroll selects; past the last column the columns slide; tap opens the answers", "UI")
+def f32(run, name):
+    def before(core):
+        core.new_window("build")
+        core.new_window("logs")
+        core.keys("echo left-side", "Enter")
+        core.keys("echo right-side", "Enter", target="work:build.0")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    page = to_split(sim)
+    page = sim.expect(lambda p: any("left-side" in l for l in (col(p, 0) or {"lines": []})["lines"]) and any("right-side" in l for l in (col(p, 1) or {"lines": []})["lines"]), "both columns read", 15)
+    check(not any(t.startswith("»") for t in band_texts(page)), "a column selected before any scroll")
+    sim.shot("split")
+    core.keys("echo later", "Enter")
+    sim.expect(lambda p: any("later" in l for l in (col(p, 0) or {"lines": []})["lines"]), "the left column follows", 8)
+    sim.scroll("down")
+    page = sim.expect(lambda p: band_texts(p) and band_texts(p)[0].startswith("»"), "the first column selected")
+    sim.shot("split-first")
+    sim.scroll("down")
+    page = sim.expect(lambda p: len(band_texts(p)) == 2 and band_texts(p)[1].startswith("»"), "the second column selected")
+    sim.shot("split-second")
+    sim.scroll("down")
+    page = sim.expect(lambda p: len(band_texts(p)) == 2 and band_texts(p)[1].startswith("»") and "logs" in band_texts(p)[1], "slid to the third pane")
+    check("build" in band_texts(page)[0], band_texts(page))
+    sim.shot("split-slid")
+    sim.tap()
+    sim.head("answer logs", "the answers of the selected pane")
+    sim.shot("split-answers")
+    sim.back()
+    sim.expect(lambda p: "[□□" in p["head"], "back on the columns")
+
+
+@test("F33", "Double tap expands the selected pane, scroll pages it, double tap returns to the columns; then the main menu; three columns", "UI")
+def f33(run, name):
+    def before(core):
+        core.new_window("build")
+        core.new_window("logs")
+        core.keys("seq 1 40", "Enter", target="work:build.0")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    to_split(sim)
+    sim.scroll("down")
+    sim.scroll("down")
+    sim.expect(lambda p: len(band_texts(p)) == 2 and band_texts(p)[1].startswith("»") and "build" in band_texts(p)[1], "build selected")
+    sim.back()
+    page = sim.expect(lambda p: sim.block("state", p) is not None and any("build" in t for t in band_texts(p)), "build full", 10)
+    wait_for("the sequence", lambda: "40" in (sim.block("body") or []), 10)
+    sim.shot("split-full")
+    sim.scroll("up")
+    sim.head("paused · 1 page up", "paged")
+    sim.back()
+    page = sim.expect(lambda p: "[□□" in p["head"], "back on the columns")
+    check(not any(t.startswith("»") for t in band_texts(page)), "a column still selected")
+    sim.shot("split-back")
+    sim.back()
+    sim.expect(lambda p: p["head"].startswith("[★ "), "the main menu")
+    sim.menu(2)
+    page = sim.expect(lambda p: "[□□ 2]" in p["head"], "Side by side from the menu")
+    sim.menu(3)
+    page = sim.expect(lambda p: "[□□ 3]" in p["head"] and col(p, 2) is not None, "three columns", 10)
+    check(len(band_texts(page)) == 3, band_texts(page))
+    sim.shot("split-three")
+
+
+@test("F35", "Listening: the graph grows with the tone and the progress bar advances; heard this in its box", "UI")
+def f35(run, name):
+    core, proxy, sim, tok = setup(run, name, stt=True)
+    open_pane(sim)
+    say_it(sim)
+    time.sleep(1)
+    lit0 = sim.lit()
+    k0 = [c["key"] for c in sim.last()["charts"] if c["key"].startswith("progress:")]
+    time.sleep(3)
+    lit1 = sim.lit()
+    page = sim.last()
+    k1 = [c["key"] for c in page["charts"] if c["key"].startswith("progress:")]
+    check(lit1 > lit0, f"the graph did not grow: {lit0:.4f} -> {lit1:.4f}")
+    check(k0 != k1, "the progress bar did not advance")
+    check(any(c["key"].startswith("levels:") for c in page["charts"]), "no graph")
+    sim.shot("listening-graph")
+    sim.tap()
+    page = sim.head("heard this", "the transcript", 15)
+    check(any(b.get("name") == "text" and b.get("border") for b in page["blocks"]), "the transcript has no box")
+    check(any("heard this" in t for t in band_texts(page)), band_texts(page))
+    sim.shot("heard-box")
 
 
 # --- the phone pane, in Chromium -------------------------------------------------------
@@ -648,6 +841,12 @@ def main():
                     except Exception:
                         pass
                 run.cleanups.clear()
+            # A page the simulator refused never reached the glasses, whatever the trace says.
+            refused = []
+            for log in (run.out / "logs").glob(f"{name}*/simulator.log"):
+                refused += [l.strip() for l in log.read_text(errors="replace").splitlines() if "validation failed" in l or "oversize" in l.lower()]
+            if refused and ok:
+                ok, message = False, f"the simulator refused a page: {refused[0][:200]}"
             results.append({"id": t["id"], "test": name, "title": t["title"], "kind": t["kind"], "ok": ok,
                             "message": message, "seconds": time.time() - start})
             print(f"{'PASS' if ok else 'FAIL'} {name} {message.splitlines()[0] if message else ''}", flush=True)

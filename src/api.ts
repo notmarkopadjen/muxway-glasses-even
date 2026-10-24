@@ -1,4 +1,5 @@
-// The five calls the client makes, in text mode, with the caps a hostile
+// The calls the client makes: listings in JSON, pane content in text
+// mode, with the caps a hostile
 // server runs into: a timeout, at most 256 KiB of a body, and every byte
 // decoded by the charset the answer names, Latin-1 when it cannot be read
 // as it says.
@@ -68,7 +69,7 @@ export function decode(bytes: Uint8Array, contentType: string): string {
   return new TextDecoder('iso-8859-1').decode(bytes)
 }
 
-async function call(method: 'GET' | 'POST', path: string, opts: { body?: string | ArrayBuffer; contentType?: string; etag?: string; timeout?: number } = {}): Promise<Answer> {
+async function call(method: 'GET' | 'POST', path: string, opts: { body?: string | ArrayBuffer; contentType?: string; etag?: string; timeout?: number; json?: boolean } = {}): Promise<Answer> {
   const { hub, token } = getSettings()
   if (!hub || !token) throw new ApiError(-1)
   const ctrl = new AbortController()
@@ -79,7 +80,7 @@ async function call(method: 'GET' | 'POST', path: string, opts: { body?: string 
       method,
       headers: {
         Authorization: 'Bearer ' + token,
-        Accept: 'text/plain',
+        Accept: opts.json ? 'application/json' : 'text/plain',
         ...(opts.body !== undefined ? { 'Content-Type': opts.contentType ?? 'application/json' } : {}),
         ...(opts.etag ? { 'If-None-Match': opts.etag } : {}),
       },
@@ -109,8 +110,10 @@ function q(params: Record<string, string | number>): string {
 }
 
 export const api = {
-  me: () => call('GET', '/v1/me'),
-  panes: () => call('GET', '/v1/panes?' + q({ charset: getSettings().charset })),
+  me: () => call('GET', '/v1/me', { json: true }),
+  /** The listings come as JSON: the bars need activity and the attention's time, which text mode has not. */
+  panes: () => call('GET', '/v1/panes', { json: true }),
+  hosts: () => call('GET', '/v1/hosts', { json: true }),
   /** The last rows, unwrapped (width 400): the glasses wrap by pixels themselves. */
   pane: (address: string, etag: string) =>
     call('GET', `/v1/panes/${address}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
@@ -122,5 +125,5 @@ export const api = {
   transcribe: (wav: ArrayBuffer) => call('POST', '/v1/transcribe', { body: wav, contentType: 'audio/wav', timeout: 95_000 }),
   /** One long poll; without a cursor only the cursor is wanted. */
   events: (after: number | null) =>
-    call('GET', '/v1/events?' + q(after === null ? { limit: 1 } : { after, wait: 25, limit: 50 }), { timeout: LONG_POLL_MS }),
+    call('GET', '/v1/events?' + q(after === null ? { limit: 1 } : { after, wait: 25, limit: 50 }), { timeout: LONG_POLL_MS, json: true }),
 }

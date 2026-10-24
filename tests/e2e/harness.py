@@ -253,13 +253,14 @@ class Proxy:
                     n = sum(1 for r in proxy.requests if r["method"] == "GET" and r["path"].startswith("/v1/events?after="))
                     time.sleep(1)
                     if n == 1:
-                        line = ("7\t1767225600\t" + HOST + "/work/0.0\tpermission\tneeds \x1b[1myou\x07 " + "y" * 10000 + "\n"
-                                + "8\t1767225601\t" + HOST + "/work/0.0\tnonsense\tx\n" + "next\t8\n")
+                        body_json = {"events": [
+                            {"seq": 7, "at": 1767225600, "address": HOST + "/work/0.0", "kind": "permission", "text": "needs \x1b[1myou\x07 " + "y" * 10000},
+                            {"seq": 8, "at": 1767225601, "address": HOST + "/work/0.0", "kind": "nonsense", "text": "x"}], "next": 8}
                     elif n == 2:
-                        line = "next\tabc\n"
+                        body_json = {"next": "abc"}
                     else:
-                        line = "next\t9\n"
-                    return self.reply(200, line.encode(), {"Content-Type": "text/plain; charset=utf-8", **CORS})
+                        body_json = {"next": 9}
+                    return self.reply(200, json.dumps(body_json).encode(), {"Content-Type": "application/json", **CORS})
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection")}
                 try:
                     c = http.client.HTTPConnection(proxy.hub, timeout=40)
@@ -269,16 +270,29 @@ class Proxy:
                 except OSError:
                     return self.reply(502, b'{"error":"hub_unreachable"}\n', {"Content-Type": "application/json", **CORS})
                 if proxy.mode == "lie-writable" and bare == "/v1/panes":
-                    data = data.replace(b"\tread\t", b"\twrite\t")
+                    data = data.replace(b'"mode":"read"', b'"mode":"write"')
                 if proxy.says_claude and bare == "/v1/panes":
-                    data = data.replace(b"\tbash\t", b"\tclaude\t")
+                    data = data.replace(b'"command":"bash"', b'"command":"claude"')  # the program says claude
                 if proxy.mode == "lie-title" and bare == "/v1/panes":
                     # Titles a program could choose: one that looks like a pane that needs you and may be written to,
-                    # one with tabs, one far too long, and one of three-byte glyphs that reach the byte limit first.
-                    data = (f"{HOST}/work/0.0\tread\tbash\t★ {HOST}/work/0.0 claude\twrite\tpermission\n"
-                            f"{HOST}/work/0.0\tread\tbash\ttab\there\tpermission\n"
-                            f"{HOST}/work/0.0\twrite\tbash\t{'x' * 300}\t\n"
-                            f"{HOST}/work/0.0\twrite\tbash\t{'★' * 40}\t\n").encode()
+                    # one with a tab, one far too long, and one of three-byte glyphs that reach the byte limit first.
+                    pane = lambda **kw: {"address": f"{HOST}/work/0.0", "mode": "read", "command": "bash", "activity": int(time.time()), **kw}
+                    data = json.dumps({"panes": [
+                        pane(title=f"\u2605 {HOST}/work/0.0 claude write permission"),
+                        pane(title="tab\there"),
+                        pane(mode="write", title="x" * 300),
+                        pane(mode="write", title="\u2605" * 40),
+                    ]}).encode()
+                if proxy.mode == "list-hostile" and bare == "/v1/panes":
+                    now = int(time.time())
+                    panes = [{"address": f"{HOST}/work/{i}.0", "mode": "write", "command": "bash", "title": "t" * 300,
+                              "activity": now + 31536000 if i % 2 else -5,
+                              "attention": {"kind": "permission", "at": 0, "text": "x" * 500}} for i in range(200)]
+                    data = json.dumps({"panes": panes}).encode()
+                if proxy.mode == "list-junk" and bare == "/v1/panes":
+                    data = json.dumps({"panes": [{"address": f"{HOST}/work/0.0", "mode": "write", "command": "bash", "title": "j" * (1 << 20),
+                                                 "attention": {"kind": {"deep": [1, 2]}, "at": "x"}, "activity": [1]}, None, 7, {"address": 5}],
+                                       "extra": {"a": {"b": {"c": list(range(1000))}}}}).encode()
                 keep = ("etag", "content-type", "access-control-allow-origin", "access-control-allow-methods",
                         "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age")
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})
@@ -408,6 +422,13 @@ def direct(hub_url, token, method, path, body=None, accept="text/plain"):
 
 # --- the simulator ---------------------------------------------------------------------
 
+def words(page):
+    """Every word a page shows: head, hint, blocks, the bands' text."""
+    parts = [page["head"], page["hint"]]
+    parts += [l for b in page["blocks"] for l in b["lines"]]
+    parts += [c["text"] for c in page.get("charts", []) if c.get("text")]
+    return "\n".join(parts)
+
 class Sim:
     """The Even Hub simulator showing the page, driven through its automation API."""
 
@@ -418,6 +439,9 @@ class Sim:
         self.shots = run.screens(test)
         self.step = 0
         self.entries = []
+        # Pages drawn before the last gesture do not count for an expectation: a stale page
+        # that happens to match would let a test run ahead of the glasses.
+        self.mark = 0
         self.out = open(run.logs(test) / "simulator.log", "a")
         self.id = secrets.token_hex(6)
         self.static = run.static
@@ -471,7 +495,7 @@ class Sim:
         found = []
 
         def seen():
-            for p in reversed(self.trace()):
+            for p in reversed(self.trace()[self.mark:]):
                 if pred(p):
                     found.append(p)
                     return True
@@ -484,26 +508,63 @@ class Sim:
         return found[0]
 
     def head(self, text, what=None, timeout=25):
-        return self.expect(lambda p: text in p["head"], what or f"head with {text!r}", timeout)
+        """A page that says the text somewhere: head, hint, a block or a title band."""
+        return self.expect(lambda p: text in words(p), what or f"a page saying {text!r}", timeout)
+
+    def block(self, name, page=None):
+        """The lines of the named block on the page (the last one by default), or None."""
+        page = page or self.last()
+        for b in page["blocks"]:
+            if b.get("name") == name:
+                return b["lines"]
+        return None
+
+    def state(self):
+        s = self.block("state")
+        return s[0] if s else ""
+
+    def lit(self):
+        """How much of the glasses is lit, 0 to 1, from a screenshot."""
+        path = Path(self.run.tmp) / f"lit-{secrets.token_hex(3)}.png"
+        path.write_bytes(self.api("GET", "/api/screenshot/glasses"))
+        out = subprocess.run(["identify", "-format", "%[fx:mean]", str(path)], capture_output=True, text=True)
+        path.unlink(missing_ok=True)
+        return float(out.stdout.strip() or 0)
 
     def lines(self):
         """The lines of pane text on screen now: the body, then the pinned block."""
         p = self.last()
-        return [l for b in p["blocks"] for l in b["lines"]]
+        return [l for b in p["blocks"] if b.get("name") in ("body", "pinned") for l in b["lines"]]
 
     def input(self, action, wait=0.8):
+        self.mark = len(self.trace())
         self.api("POST", "/api/input", {"action": action})
         time.sleep(wait)
 
-    def scroll(self, direction, ticks=2, wait=1.0):
-        """On a text page the simulator reports one scroll per two ticks; in a list every tick moves."""
-        for _ in range(ticks):
+    def scroll(self, direction, wait=1.0):
+        """One scroll on a page without a list. The simulator reports one scroll per two ticks there,
+        but which tick is the second depends on what came before, so a tick that drew nothing within
+        a moment is followed by another."""
+        self.mark = len(self.trace())
+        self.api("POST", "/api/input", {"action": direction})
+        end = time.time() + 1.0
+        while time.time() < end and len(self.trace()) == self.mark:
+            time.sleep(0.1)
+        if len(self.trace()) == self.mark:
             self.api("POST", "/api/input", {"action": direction})
-            time.sleep(0.2)
         time.sleep(wait)
 
     def tap(self, wait=1.0):
-        self.input("click", wait)
+        """A tap, and a second one when the first drew nothing within a moment: the firmware drops
+        an input that arrives while a rebuild is being applied, and so does the simulator."""
+        self.mark = len(self.trace())
+        self.api("POST", "/api/input", {"action": "click"})
+        end = time.time() + 1.5
+        while time.time() < end and len(self.trace()) == self.mark:
+            time.sleep(0.1)
+        if len(self.trace()) == self.mark:
+            self.api("POST", "/api/input", {"action": "click"})
+        time.sleep(wait)
 
     def back(self, wait=1.0):
         self.input("double_click", wait)
@@ -511,19 +572,23 @@ class Sim:
     def choose(self, index, wait=1.0):
         """Moves the list highlight from the top to the index-th row and taps it."""
         for _ in range(index):
-            self.input("down", 0.3)
+            self.api("POST", "/api/input", {"action": "down"})
+            time.sleep(0.3)
         self.tap(wait)
 
     def menu(self, index, wait=1.5):
         """Opens the OS menu and picks its index-th entry."""
-        self.input("context_menu", 1.0)
+        self.api("POST", "/api/input", {"action": "context_menu"})
+        time.sleep(1.0)
         for _ in range(index):
-            self.input("down", 0.3)
+            self.api("POST", "/api/input", {"action": "down"})
+            time.sleep(0.3)
         self.tap(wait)
 
     def shot(self, name):
         self.step += 1
         path = self.shots / f"{self.step:02d}-{name}.png"
+        time.sleep(0.6)  # the trace runs ahead of the glasses by a rebuild and its pictures
         try:
             path.write_bytes(self.api("GET", "/api/screenshot/glasses"))
             self.run.add_shot(self.test, path)

@@ -117,8 +117,11 @@ limits; and that no secret appears in any response or log.
 
 The muxway client for Even Realities G2 glasses. Other glasses get their own
 `muxway-glasses-<maker>` repositories. It speaks only the published muxway
-protocol, using its text mode (see the `muxway` repository's
-`docs/protocol/`), and pins the protocol version it supports.
+protocol (see the `muxway` repository's `docs/protocol/`), and pins the
+protocol version it supports: listings and events as JSON, pane content
+in text mode, where the hub's wrapping and charset folding are what the
+glasses want. The hub serves both contracts on the same endpoints, so
+retro clients keep text mode and nothing is renamed for them.
 
 - The display is small and monochrome: a list of panes, the last lines of
   one pane, notifications. Every screen is designed for a glance.

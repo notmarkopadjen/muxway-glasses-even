@@ -104,7 +104,14 @@ export function mountPhone(hooks: PhoneHooks) {
     const t0 = Date.now()
     try {
       const a = await api.me()
-      const name = /^name\t(.*)$/m.exec(a.body)?.[1] ?? a.body.split('\n')[0]
+      let name = 'token'
+      try {
+        const me = JSON.parse(a.body) as { name?: unknown; write?: unknown }
+        if (typeof me.name === 'string') name = `token "${me.name.slice(0, 40)}"`
+        if (Array.isArray(me.write) && me.write.length === 0) name += ', read-only'
+      } catch {
+        /* not JSON: an older hub */
+      }
       let voiceNote = ''
       try {
         await api.transcribeProbe()

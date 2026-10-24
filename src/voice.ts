@@ -12,6 +12,8 @@ export const MIN_SECONDS = 0.5
 /** Seconds without a frame after which the mic is given up on. */
 export const GRACE_SECONDS = 4
 const MAX_BYTES = SAMPLE_RATE * BYTES_PER_SAMPLE * MAX_SECONDS
+/** Frames kept for the graph: fourteen seconds. */
+const LEVEL_HISTORY = 140
 
 /** Loudness of one frame, 0 to 1. */
 export function rms(buf: Uint8Array): number {
@@ -33,6 +35,8 @@ export class Recorder {
   private open = false
   /** Loudness of the last frame, 0 to 1. */
   level = 0
+  /** Loudness of the last frames, oldest first: the graph on the listening page. */
+  levels: number[] = []
 
   constructor(bridge: EvenAppBridge) {
     this.bridge = bridge
@@ -76,6 +80,8 @@ export class Recorder {
     this.chunks.push(take)
     this.bytes += take.length
     this.level = rms(take)
+    this.levels.push(this.level)
+    if (this.levels.length > LEVEL_HISTORY) this.levels.splice(0, this.levels.length - LEVEL_HISTORY)
   }
 
   async stop() {
@@ -103,6 +109,7 @@ export class Recorder {
     this.bytes = 0
     this.startedAt = 0
     this.level = 0
+    this.levels = []
   }
 }
 

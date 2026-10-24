@@ -1,16 +1,20 @@
 // The glasses: 576 x 288, one proportional font, four greys. Two page
-// kinds. A text page (the pane) carries no list, so the firmware hands
-// its scrolls to the app, which pages the text itself. A list page (the
-// panes, the answers, the confirmation) hands the highlight to the OS and
-// gets taps back. Every page has a head line, a body and a hint line.
+// kinds. A dash page is free-positioned text blocks, some with a border,
+// and up to four image containers, and no list, so the firmware hands its
+// scrolls to the app. A list page hands the highlight to the OS and gets
+// taps back. Every page has a head line, a body and a hint line.
 //
 // A text change is an in-place upgrade; a layout change is a rebuild,
-// during which input is dropped, so a page kind keeps one geometry. An
-// oversize row rejects a whole page silently, so every row is clamped by
-// pixels and by bytes before it leaves.
+// during which input is dropped and pictures are wiped, so each page kind
+// keeps its geometry and pictures are pushed again after a rebuild, in
+// order, skipping those already there, and stopping for a page the wearer
+// has left.
 
 import {
   CreateStartUpPageContainer,
+  ImageContainerProperty,
+  ImageRawDataUpdate,
+  ImageRawDataUpdateResult,
   ListContainerProperty,
   ListItemContainerProperty,
   MenuContainerProperty,
@@ -20,36 +24,44 @@ import {
   TextContainerUpgrade,
   type EvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
+import { MAX_IMG_H, MAX_IMG_W } from './bitmap.ts'
+import type { Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, clampBytes, fitWidth } from './text.ts'
 
 export const HEAD_H = 30
 export const TOP = 34
 export const HINT_Y = 258
-/** Whole list rows only: a row is 40 px, and a sixth would be cut by the hint. */
-export const LIST_H = 200
 export const HINT_H = 30
 export const LINE_H = 28
-/** Lines of pane text on a page without a pinned block. */
-export const BODY_LINES = 8
-/** Lines of text and of the pinned block when there is one. */
-export const SPLIT_LINES = 6
-export const PIN_LINES = 2
+/** Whole list rows only: a row is 40 px, and a sixth would be cut by the hint. */
+export const LIST_H = 200
 export const MAX_LIST_ITEMS = 20
 export const LIST_ROW_PX = 490
 export const LIST_ROW_BYTES = 63
 export const MENU_LABEL_BYTES = 32
+export const MAX_BLOCKS = 8
+export const MAX_CHARTS = 4
+/** Inner padding of a bordered block; a plain block has none, so whole lines fit. */
+export const BORDER_PAD = 6
 
 const ID_HEAD = 1
 const ID_HINT = 2
 const ID_LIST = 3
 const ID_BLOCK0 = 10
+const ID_CHART0 = 20
+const HEAD_CHARS = 200
+const BLOCK_CHARS = 1900
 
 export interface Block {
-  /** Lines of text, joined with newlines. */
+  /** A name for tests and for the trace; not sent. */
+  name?: string
+  x: number
+  y: number
+  w: number
+  h: number
   lines: string[]
-  /** How many lines the block has room for. */
-  height: number
   level: number
+  border?: boolean
 }
 
 export interface MenuSpec {
@@ -58,33 +70,35 @@ export interface MenuSpec {
 }
 
 export interface Page {
-  kind: 'list' | 'text'
+  kind: 'list' | 'dash'
   head: string
   hint: string
   hintLevel: number
+  /** The hint drawn as a banner, bordered and bright: a toast. */
+  hintBorder?: boolean
   blocks: Block[]
+  charts: Chart[]
   items: string[]
   menu: MenuSpec[]
 }
 
-export function emptyPage(kind: 'list' | 'text' = 'text'): Page {
-  return { kind, head: '', hint: '', hintLevel: 1, blocks: [], items: [], menu: [] }
+export function emptyPage(kind: 'list' | 'dash' = 'dash'): Page {
+  return { kind, head: '', hint: '', hintLevel: 1, blocks: [], charts: [], items: [], menu: [] }
 }
 
 function level(n: number): number {
   return Math.max(0, Math.min(4, Math.round(n)))
 }
 
-// Caps on top of the pixel fit, for the firmware's own limits on a container's text.
-const HEAD_CHARS = 200
-const BLOCK_CHARS = 1900
-
-function blockText(b: Block): string {
-  return (b.lines.slice(0, b.height).map((l) => fitWidth(l, LINE_PX)).join('\n') || ' ').slice(0, BLOCK_CHARS)
-}
-
 function headText(s: string): string {
   return (fitWidth(s, LINE_PX) || ' ').slice(0, HEAD_CHARS)
+}
+
+/** The block's text: its lines fitted to its width, as many as it has room for. */
+export function blockText(b: Block): string {
+  const inner = b.border ? b.w - 2 * BORDER_PAD - 4 : b.w - 4
+  const rows = Math.max(1, Math.floor((b.border ? b.h - 2 * BORDER_PAD : b.h) / LINE_H))
+  return (b.lines.slice(0, rows).map((l) => fitWidth(l, inner)).join('\n') || ' ').slice(0, BLOCK_CHARS)
 }
 
 export function listRow(s: string): string {
@@ -93,22 +107,31 @@ export function listRow(s: string): string {
 
 /** Everything that forces a rebuild rather than an in-place upgrade. */
 function geometry(p: Page): string {
-  return JSON.stringify([p.kind, p.items, p.blocks.map((b) => b.height), p.menu])
+  return JSON.stringify([
+    p.kind,
+    p.items,
+    !!p.hintBorder,
+    p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border]),
+    p.charts.map((c) => [c.x, c.y, c.w, c.h]),
+    p.menu,
+  ])
 }
 
 export class Glasses {
+  private bridge: EvenAppBridge
+  private log: (m: string) => void
+  private trace: ((p: Page) => void) | null
   private created = false
   private dirty = false
   private retry: ReturnType<typeof setTimeout> | null = null
+  private retryMs = 500
   private last: Page = emptyPage()
   private pending: Page | null = null
   private draining = false
   private done: Promise<void> = Promise.resolve()
   private lock: Promise<void> = Promise.resolve()
-
-  private bridge: EvenAppBridge
-  private log: (m: string) => void
-  private trace: ((p: Page) => void) | null
+  private pushed = new Map<number, string>()
+  private gen = 0
 
   constructor(bridge: EvenAppBridge, log: (m: string) => void, trace: ((p: Page) => void) | null) {
     this.bridge = bridge
@@ -116,17 +139,17 @@ export class Glasses {
     this.trace = trace
   }
 
-  private text(id: number, name: string, y: number, h: number, content: string, lvl: number, capture: number, z: number) {
+  private text(id: number, name: string, x: number, y: number, w: number, h: number, content: string, lvl: number, capture: number, z: number, border = false) {
     return new TextContainerProperty({
       zOrderIndex: z,
-      xPosition: 0,
+      xPosition: x,
       yPosition: y,
-      width: CANVAS_W,
+      width: w,
       height: h,
-      borderWidth: 0,
-      borderColor: 0,
+      borderWidth: border ? 1 : 0,
+      borderColor: border ? 4 : 0,
       borderRadius: 0,
-      paddingLength: 0,
+      paddingLength: border ? BORDER_PAD : 0,
       containerID: id,
       containerName: name,
       isEventCapture: capture,
@@ -136,13 +159,12 @@ export class Glasses {
   }
 
   private payload(p: Page) {
-    const textObject = [this.text(ID_HEAD, 'head', 0, HEAD_H, headText(p.head), 4, p.kind === 'list' ? 0 : 1, 1)]
-    textObject.push(this.text(ID_HINT, 'hint', HINT_Y, HINT_H, headText(p.hint), p.hintLevel, 0, 2))
-    let y = TOP
-    p.blocks.forEach((b, i) => {
-      textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, y, b.height * LINE_H, blockText(b), b.level, 0, 3 + i))
-      y += b.height * LINE_H + 6
-    })
+    const textObject = [this.text(ID_HEAD, 'head', 0, 0, CANVAS_W, HEAD_H, headText(p.head), 4, p.kind === 'list' ? 0 : 1, 1)]
+    textObject.push(this.text(ID_HINT, 'hint', 0, HINT_Y, CANVAS_W, HINT_H, headText(p.hint), p.hintLevel, 0, 2, !!p.hintBorder))
+    p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border)))
+    const imageObject = this.fitting(p.charts).map(
+      (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
+    )
     const items = (p.items.length ? p.items : ['(empty)']).slice(0, MAX_LIST_ITEMS).map(listRow)
     const listObject =
       p.kind === 'list'
@@ -158,28 +180,34 @@ export class Glasses {
               paddingLength: 2,
               containerID: ID_LIST,
               containerName: 'list',
-              zOrderIndex: 9,
+              zOrderIndex: 11,
               isEventCapture: 1,
-              itemContainer: new ListItemContainerProperty({
-                itemCount: items.length,
-                itemWidth: CANVAS_W - 10,
-                isItemSelectBorderEn: 1,
-                itemName: items,
-              }),
+              itemContainer: new ListItemContainerProperty({ itemCount: items.length, itemWidth: CANVAS_W - 10, isItemSelectBorderEn: 1, itemName: items }),
             }),
           ]
         : undefined
     const menu = p.menu.length
-      ? new MenuContainerProperty({
-          menuItems: p.menu.slice(0, 10).map((m) => new MenuItemProperty({ itemID: m.id, itemName: clampBytes(m.label, MENU_LABEL_BYTES) })),
-        })
+      ? new MenuContainerProperty({ menuItems: p.menu.slice(0, 10).map((m) => new MenuItemProperty({ itemID: m.id, itemName: clampBytes(m.label, MENU_LABEL_BYTES) })) })
       : undefined
     return {
-      containerTotalNum: textObject.length + (listObject ? 1 : 0),
+      containerTotalNum: textObject.length + imageObject.length + (listObject ? 1 : 0),
       ...(listObject ? { listObject } : {}),
       textObject,
+      ...(imageObject.length ? { imageObject } : {}),
       ...(menu ? { menuObject: menu } : {}),
     }
+  }
+
+  /** The pictures a page may carry: at most four, none larger than a container; a larger one is
+   * dropped and logged rather than letting the firmware refuse the whole page without a word. */
+  private fitting(charts: Chart[]): Chart[] {
+    const ok = charts.filter((c) => {
+      if (c.w <= MAX_IMG_W && c.h <= MAX_IMG_H) return true
+      this.log(`picture ${c.key} is ${c.w}x${c.h}, over ${MAX_IMG_W}x${MAX_IMG_H}: dropped`)
+      return false
+    })
+    if (ok.length > MAX_CHARTS) this.log(`${ok.length} pictures on one page: only ${MAX_CHARTS} shown`)
+    return ok.slice(0, MAX_CHARTS)
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -191,7 +219,7 @@ export class Glasses {
     return run
   }
 
-  /** Shows the page: the first call creates it, later ones rebuild or upgrade it in place. */
+  /** Shows the page: the first call creates it, later ones rebuild or upgrade it in place. The newest page replaces one still waiting. */
   show(p: Page): Promise<void> {
     this.pending = p
     if (!this.draining) {
@@ -206,8 +234,9 @@ export class Glasses {
       while (this.pending) {
         const p = this.pending
         this.pending = null
+        const gen = ++this.gen
         try {
-          await this.apply(p)
+          await this.apply(p, gen)
         } catch (e) {
           this.log('draw failed: ' + ((e as Error)?.message || e))
         }
@@ -217,9 +246,9 @@ export class Glasses {
     }
   }
 
-  private async apply(p: Page): Promise<void> {
-    this.trace?.({ ...p, items: p.items.map(listRow) })
-    if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) return this.draw(p)
+  private async apply(p: Page, gen: number): Promise<void> {
+    this.trace?.({ ...p, items: p.items.map(listRow), charts: p.charts.map((c) => ({ ...c, bitmap: null })) })
+    if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) return this.draw(p, gen)
     const prev = this.last
     this.last = clone(p)
     if (p.head !== prev.head) await this.upgrade(ID_HEAD, 'head', headText(p.head))
@@ -231,9 +260,10 @@ export class Glasses {
       if (b && text === blockText(b) && a.level === b.level) continue
       await this.upgrade(ID_BLOCK0 + i, 'b' + i, text, a.level)
     }
+    await this.pushCharts(p, false, gen)
   }
 
-  private async draw(p: Page): Promise<void> {
+  private async draw(p: Page, gen: number): Promise<void> {
     const payload = this.payload(p)
     this.last = clone(p)
     this.dirty = false
@@ -242,19 +272,46 @@ export class Glasses {
       this.created = true
       this.dirty = r !== 0
       if (r !== 0) this.log('createStartUpPageContainer: ' + r)
+      else await this.pushCharts(p, true, gen)
       return
     }
     const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(payload))
     // The OS refuses a rebuild while its own menu is on top, which is what
     // happens when a menu entry changes the page: try again when it is gone.
     this.dirty = !ok
-    if (ok) return
+    if (ok) {
+      this.retryMs = 500
+      await this.pushCharts(p, true, gen)
+      return
+    }
+    // Also refused for a page the firmware will never take, so the retries slow down.
     this.log('rebuildPageContainer refused')
     if (this.retry) clearTimeout(this.retry)
     this.retry = setTimeout(() => {
       this.retry = null
       if (this.dirty && !this.pending) void this.show(this.last)
-    }, 500)
+    }, this.retryMs)
+    this.retryMs = Math.min(5000, this.retryMs * 2)
+  }
+
+  /** Pictures after a rebuild (force) or those whose key changed; a page that moved on ends the loop. */
+  private async pushCharts(p: Page, force: boolean, gen: number) {
+    if (force) this.pushed.clear()
+    const t0 = Date.now()
+    let n = 0
+    let bytes = 0
+    const charts = this.fitting(p.charts)
+    for (let i = 0; i < charts.length; i++) {
+      if (gen !== this.gen) break
+      const c = charts[i]
+      if (!c.bitmap || this.pushed.get(ID_CHART0 + i) === c.key) continue
+      const r = await this.bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: ID_CHART0 + i, containerName: 'c' + i, imageData: c.bitmap.data() }))
+      n++
+      bytes += c.bitmap.bytes
+      if (ImageRawDataUpdateResult.isSuccess(r)) this.pushed.set(ID_CHART0 + i, c.key)
+      else this.log(`picture ${i}: ${r}`)
+    }
+    if (n) this.log(`${n} ${n === 1 ? 'picture' : 'pictures'}, ${Math.round(bytes / 1024)} KB, ${Date.now() - t0} ms${gen !== this.gen ? ' (page moved on)' : ''}`)
   }
 
   private async upgrade(id: number, name: string, content: string, textColor?: number) {
@@ -265,5 +322,5 @@ export class Glasses {
 }
 
 function clone(p: Page): Page {
-  return { ...p, blocks: p.blocks.map((b) => ({ ...b, lines: b.lines.slice() })), items: p.items.slice(), menu: p.menu.map((m) => ({ ...m })) }
+  return { ...p, blocks: p.blocks.map((b) => ({ ...b, lines: b.lines.slice() })), charts: p.charts.slice(), items: p.items.slice(), menu: p.menu.map((m) => ({ ...m })) }
 }

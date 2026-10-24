@@ -27,22 +27,25 @@ On a writable pane, when the hub has a transcriber, the Answers list
 opens with **» Say it**. It leads through three pages:
 
 ```
-test-pane · listening · 4 s          heard this · 4.2 s
-                                     run the tests again
-  ████████████████
-                                     
-  4 s · tap when done
-● stop · ×× cancel                   ● send + Enter · ≡ menu · ×× cancel
+[★ 0]  ≡ 1  □□ 2  ● alice-laptop  16:51
+● listening · 4 s · test-pane
+   ╱╲    ╱╲╱╲      ╱╲
+  ╱  ╲╱╲╱    ╲╱╲╱╲╱  ╲╱╲
+ ▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+4 of 60 s · tap when done
+● stop · ×× cancel
 ```
 
-- **Listening**: the microphone opens, frames are kept in memory, the
-  meter shows how loud you are and the head counts the seconds. **Tap**
-  when done. Four seconds without a frame gives `no audio from the mic ·
+- **Listening**: the microphone opens, frames are kept in memory, a
+  **graph** of your loudness over the last fourteen seconds runs across
+  the page, a **progress bar** shows the sixty-second cap filling, and
+  the line above counts the seconds. **Tap** when done. Four seconds without a frame gives `no audio from the mic ·
   let the Even app use it`; sixty seconds is the longest clip, after
   which the app stops by itself; under half a second is `too short`.
 - **Transcribing**: the clip goes to the hub as a WAV; the head says how
   long it was. The hub forwards it to the transcriber its owner set.
-- **Heard this**: the text, wrapped. Reading it is the confirmation:
+- **Heard this**: the text in a framed box under a bold band with the
+  clip's length. Reading it is the confirmation:
   **tap** sends it and then `Enter`, like the phone's send, and the pane
   is read at once. The menu has **Type without Enter** and **Say it
   again**; a **double tap** cancels and nothing is sent.

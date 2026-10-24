@@ -7,7 +7,8 @@ import { OsEventTypeList, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
 import { App } from '../../src/app.ts'
 import { saveSettings } from '../../src/settings.ts'
 
-const LIST = 'alice-laptop/work/0.0\twrite\tbash\ttest-pane\t\n'
+const LIST = JSON.stringify({ panes: [{ address: 'alice-laptop/work/0.0', mode: 'write', command: 'bash', title: 'test-pane', activity: 1 }] })
+const HOSTS = JSON.stringify({ hosts: [{ name: 'alice-laptop', online: true }] })
 
 function fakeBridge() {
   const b = {
@@ -19,6 +20,7 @@ function fakeBridge() {
     },
     createStartUpPageContainer: async (p: unknown) => (b.pages.push(p), 0),
     rebuildPageContainer: async (p: unknown) => (b.pages.push(p), true),
+    updateImageRawData: async () => 0,
     textContainerUpgrade: async () => true,
     shutDownPageContainer: async () => true,
     setLocalStorage: async () => true,
@@ -43,13 +45,14 @@ function fakeHub(stt = false) {
     }
     if (u.includes('/v1/events')) {
       if (u.includes('wait=')) await new Promise((r) => setTimeout(r, 300))
-      return new Response('next\t1\n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+      return new Response('{"events":[],"next":1}', { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
+    if (u.includes('/v1/hosts')) return new Response(HOSTS, { status: 200, headers: { 'Content-Type': 'application/json' } })
     if (u.includes('/v1/panes/')) {
       if ((init?.headers as Record<string, string>)?.['If-None-Match'] === '"v1"') return new Response(null, { status: 304 })
       return new Response('$ make\nok\n$ \n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', ETag: '"v1"' } })
     }
-    if (u.includes('/v1/panes')) return new Response(LIST, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+    if (u.includes('/v1/panes')) return new Response(LIST, { status: 200, headers: { 'Content-Type': 'application/json' } })
     return new Response(null, { status: 204 })
   }
   return { calls, bodies, fetch }
@@ -66,11 +69,11 @@ test('foreground exit stops the requests, enter and gestures resume them', async
   const app = new App(bridge as never, () => {}, null)
   await app.start()
   await sleep(150)
-  assert.ok(hub.calls.some((c) => c.includes('/v1/panes?')), 'the list was read')
+  assert.ok(hub.calls.some((c) => c.endsWith('/v1/panes')), 'the list was read')
   assert.ok(hub.calls.some((c) => c.includes('/v1/events?limit=1')), 'the cursor was taken')
   assert.ok(!hub.calls.some((c) => c.includes('token')), 'no token in a URL')
 
-  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never })
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // Needs you: opens the first pane
   await sleep(150)
   const reads = () => hub.calls.filter((c) => c.includes('/v1/panes/alice-laptop')).length
   assert.ok(reads() >= 1, 'the pane was read on opening')
@@ -107,7 +110,7 @@ test('a spoken reply: Say it, frames, stop, read back, send with Enter', async (
   app.toneMic = true
   await app.start()
   await sleep(200)
-  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never }) // the pane
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the first pane
   await sleep(200)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // answers
   await sleep(100)
@@ -137,7 +140,7 @@ test('without a transcriber the answers offer no Say it', async () => {
   const app = new App(bridge as never, () => {}, null)
   await app.start()
   await sleep(200)
-  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never })
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
   await sleep(200)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
   await sleep(100)

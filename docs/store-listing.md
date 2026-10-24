@@ -21,7 +21,7 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 |---|---|---|
 | `package_id` | yours, via `pack.sh` | reverse-domain, lowercase, three segments |
 | `name` | `muxway` | 6 of 20 characters, no "Even" |
-| `version` | `0.2.0` | three-part semver |
+| `version` | `0.3.0` | three-part semver |
 | `edition` | `202601` | exact |
 | `min_sdk_version` | `0.0.15` | the SDK the page is built against |
 | `min_app_version` | `2.2.10` | stamped by `evenhub pack` |
@@ -38,29 +38,31 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 Your tmux panes, and a word back, on the G2
 ```
 
-**Description** (1470 / 2000 characters)
+**Description** (1843 / 2000 characters)
 
 ```
 muxway puts your tmux panes on the Even G2: see what is running on your machines, read the last lines of a pane, and answer it, without reaching for a laptop.
 
 It is a client for muxway, an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and to nothing else.
 
-On the glasses:
+On the glasses, a ring of pages walked by the scroll, under a status line that is also the tab bar:
 
-- Panes: every pane your token may see, with a mark when one needs you: a question, a permission, done, idle. Panes that need you come first.
-- Pane: the last lines of a pane, following as they change. Scroll pages back and forth. A lens for Claude Code shows the conversation and hides the chrome, so eight lines carry what matters.
-- Answers: a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak, read the transcript back, send it.
-- Notifications: when Claude Code in a pane asks a question or waits for your permission, a line appears at the foot of whatever you are looking at, and the menu takes you there.
+- Needs you: the panes where Claude Code asks a question or waits for a permission, each with a timeline of how long it has waited. A tap opens the first.
+- Panes: every pane your token may see, mark, name and program, each with a bar of how recently it was active. A tap opens the list.
+- Side by side: two or three panes in columns, each under its bold title, all following. The scroll selects a column, a tap opens its answers, a double tap expands it.
+- A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome; a position bar shows where you are in its history.
+- Answers: a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
+- Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the menu takes you there.
 
 Scroll moves, tap opens, tap-then-hold is the menu, double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
 
 No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it.
 ```
 
-**Changelog** (0.2.0)
+**Changelog** (0.3.0)
 
 ```
-Spoken replies: say it on the glasses, read the transcript back, send it. The hub forwards the clip to the transcriber its owner configured; the glasses never talk to a speech service themselves. The answers list opens with Say it when the hub has one.
+The dashboard look: a status line that is the tab bar, a ring of pages walked by the scroll, bars beside the rows, bold title bands, framed boxes, a position bar on the pane, a graph of your voice while you speak. Two or three panes side by side, the scroll selecting one, a tap for its answers, a double tap to expand it. Listings are read as JSON now; pane content stays text.
 ```
 
 **Category**: Productivity (developer tools if offered)
@@ -114,18 +116,18 @@ From the simulator against the test hub, 576 x 288, synthetic panes
 
 | File | Shows |
 |---|---|
-| `store/shots/01-panes.png` | the pane list: marks, names, programs, read-only |
-| `store/shots/02-panes-attention.png` | a pane that needs you, first in the list |
-| `store/shots/03-pane.png` | a pane, following |
-| `store/shots/04-lens.png` | Claude Code through the lens: the conversation, the typed box pinned |
-| `store/shots/05-answers.png` | the answers |
-| `store/shots/06-confirm.png` | the confirmation |
-| `store/shots/07-listening.png` | listening, with the meter |
-| `store/shots/08-heard.png` | the transcript read back |
-| `store/shots/09-toast.png` | a notification at the foot of a pane |
+| `store/shots/01-needs-you.png` | Needs you: panes waiting, with the timeline of how long |
+| `store/shots/02-panes.png` | Panes: marks, names, programs, the bar of recency |
+| `store/shots/03-split.png` | two panes side by side, one selected |
+| `store/shots/04-pane.png` | a pane, following, with its title band and position bar |
+| `store/shots/05-lens.png` | Claude Code through the lens: the conversation, the typed box framed |
+| `store/shots/06-answers.png` | the answers |
+| `store/shots/07-listening.png` | listening, with the graph of your voice |
+| `store/shots/08-heard.png` | the transcript read back in its box |
+| `store/shots/09-banner.png` | a notification banner at the foot of a pane |
 | `store/shots/10-phone.png` | the phone screen after save & test |
 
-Pick `01`, `04`, `05`, `07`, `08`, `09` and `10` for the listing.
+Pick `01`, `03`, `04`, `05`, `07`, `08` and `10` for the listing.
 
 ## 8. Icon
 

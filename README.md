@@ -33,6 +33,7 @@ scripts/pack.sh https://hub.example.com  # muxway.ehpk for the Even Hub portal, 
 
 The hub must answer CORS preflights for bearer-token clients, which it
 does since protocol v1 gained them (see the core's `docs/protocol/v1.md`).
+Listings are read as JSON, pane content in text mode.
 
 Contributors and AI agents: read [AGENTS.md](AGENTS.md) first.
 Security issues: see [SECURITY.md](SECURITY.md).
