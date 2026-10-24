@@ -6,3 +6,7 @@
 *.key
 /test-runs/
 /tmp/
+/node_modules/
+/dist/
+/*.ehpk
+/tests/e2e/__pycache__/

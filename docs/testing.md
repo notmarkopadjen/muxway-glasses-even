@@ -8,33 +8,55 @@ mechanics.
 
 Tests never touch a real machine. Each run starts its own tmux server on a
 private socket, a test hub and a test host agent on loopback with throwaway
-certificates and tokens, and synthetic panes. Nothing from a developer's own
+keys and tokens, and synthetic panes. Nothing from a developer's own
 environment is read.
+
+The glasses are the **Even Hub simulator** (`@evenrealities/evenhub-simulator`,
+a native binary on WebKitGTK) on a headless X display, started with
+`--automation-port`: the harness sends gestures (`up`, `down`, `click`,
+`double_click`, `context_menu`), takes glasses screenshots (576 x 288 PNG)
+and reads the console for errors. The app, started with `?trace=<id>`
+from loopback, posts every page it draws to the harness that serves it
+(`/trace/<id>`); the assertions read those pages. The simulator's own
+console drops lines under load, so it is not the trace. The simulator reports one scroll per two input ticks on
+a text page, one per tick in a list. The phone pane runs in Chromium under
+Playwright, with a screenshot per step and a trace.
+
+Between the app and the hub sits a recording **proxy** (`tests/e2e/harness.py`,
+`Proxy`) that keeps every request and can misbehave on purpose: a 1 MiB
+body, bytes that are not UTF-8, hostile Claude Code screens, forged pane
+titles, hostile events.
 
 ## A run
 
 ```mermaid
 flowchart LR
-    S[start run] --> E[throwaway tmux, hub, agent]
-    E --> T[tests: security first, then features, then UI]
+    S[start run] --> E[throwaway tmux, hub, agent, proxy, the page from dist/]
+    E --> T[tests: security first, then features, the phone pane in Chromium]
     T --> D[run directory: summary, logs, screenshots, traces]
     D --> R[record the run]
+```
+
+```sh
+MUXWAY_CORE=../muxway scripts/e2e.sh        # everything
+scripts/e2e.sh S05 F14                      # chosen tests
 ```
 
 Every run writes `test-runs/<timestamp>-<commit>/` (ignored by git):
 
 | File | Content |
 |---|---|
-| `summary.md` | date, commit, environment, totals, result per test |
+| `summary.md` | date, commit, totals, result per test |
 | `results.xml` | JUnit XML, for tools |
-| `logs/<component>.log` | full log of hub, agent, tmux and test runner |
-| `screens/<test>/<step>.png` | UI tests: a screenshot per step and on failure |
-| `traces/<test>.zip` | UI tests: Playwright trace, opened with `npx playwright show-trace` |
+| `environment.txt` | core commit, tmux, Node, simulator versions |
+| `logs/<test>/` | hub, agent, proxy, simulator and console logs of that test, and `trace.log` with every page drawn |
+| `logs/unit.log` | the unit tests' output |
+| `screens/<test>/<step>.png` | a glasses screenshot per step and on failure; `-phone` ones are the WebView |
+| `traces/<test>.zip` | Playwright trace of the phone tests, opened with `npx playwright show-trace` |
 | `report/index.html` | HTML report of the run |
 
-UI tests drive the clients with Playwright. Where a test needs a page of its
-own, it is a plain `.html` file under `tests/e2e/pages/` that can be opened
-and replayed by hand.
+Needs tmux, Xvfb, Go, Python 3, Node 22, `libwebkit2gtk-4.1-0` and
+Playwright's Chromium.
 
 ## Recording runs
 
@@ -68,13 +90,6 @@ sequenceDiagram
     CI->>GH: check run from results.xml
     CI->>GH: issue "Run <id>: result @ commit" (closed if passed)
 ```
-
-### The suite's contract
-
-Each repository provides `scripts/e2e.sh`. It builds the throwaway test
-environment, runs the suite, writes one run directory under `test-runs/`
-with at least `summary.md` and `results.xml` (JUnit), and exits non-zero if
-any test failed. Until a repository has one, CI skips the test steps.
 
 Considered and not used: an Allure report on GitHub Pages (needs a paid plan
 while private; may be added for trends once public), and committing runs to

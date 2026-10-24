@@ -1,0 +1,24 @@
+ ▐▛███▛█   Claude Code v1.0
+▝▜██████▀  Fable 5.1 with high effort
+ ▝▝   ▝▝   /home/alice/demo
+
+❯ list the files here
+
+● Bash(ls)
+  └ README.md
+    build.sh
+    main.go
+
+● Three files: a readme, the build script and the program.
+
+❯ say pong
+
+● pong
+
+✻ Crunched for 1s · done 8:41 PM
+
+                                   ↓ Update installed · Restart to apply
+───────────────────────────────────────────────────────────────────────── demo ─
+❯ fix the typo in README
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 5 agents

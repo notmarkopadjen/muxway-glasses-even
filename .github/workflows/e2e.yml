@@ -22,16 +22,34 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: ../muxway/go.mod
+          cache: false
+
       - name: Run end-to-end tests
         id: run
+        env:
+          CORE_TOKEN: ${{ secrets.MUXWAY_CORE_TOKEN }}
         run: |
-          if [ ! -x scripts/e2e.sh ]; then
-            echo "no end-to-end suite yet"
+          # The suite builds the hub from the core repository. While that is
+          # private, CI needs a read token for it; without one the suite runs
+          # on developers' machines only and CI says so.
+          if [ -z "$CORE_TOKEN" ]; then
+            echo "::notice::end-to-end tests skipped: no access to the core repository (secret MUXWAY_CORE_TOKEN)"
             echo "suite=none" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          git clone -q --depth 1 "https://x-access-token:${CORE_TOKEN}@github.com/notmarkopadjen/muxway.git" ../muxway
+          sudo apt-get update -q && sudo apt-get install -y -q tmux xvfb libwebkit2gtk-4.1-0
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
           echo "suite=yes" >> "$GITHUB_OUTPUT"
-          scripts/e2e.sh
+          MUXWAY_CORE=../muxway scripts/e2e.sh
 
       - name: Keep logs, screenshots and traces
         if: always() && steps.run.outputs.suite == 'yes'

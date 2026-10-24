@@ -1,0 +1,120 @@
+# Architecture
+
+A muxway client for Even Realities G2 glasses. It speaks the hub's
+[protocol v1](https://github.com/notmarkopadjen/muxway/blob/main/docs/protocol/v1.md)
+in text mode, nothing else.
+
+## Where it sits
+
+```mermaid
+flowchart LR
+    G[G2 glasses] -- BLE --> E[Even app on the phone: WebView with this page]
+    E -- "HTTPS, bearer token, text mode" --> H[(muxway hub)]
+    H --> A[agent + tmux]
+```
+
+An Even Hub app is a web page. The Even app loads it in a WebView, gives
+it a bridge to the glasses (the Even Hub SDK), and shows the page itself
+on the phone. The phone does the network: the page calls the hub directly
+over HTTPS with `Authorization: Bearer`, and the hub answers the CORS
+preflight such a page needs. The glasses see only what the page draws.
+
+## Source layout
+
+| Path | What |
+|---|---|
+| `src/main.ts` | boot: the bridge, settings, the phone pane, the app |
+| `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
+| `src/glasses.ts` | the two page kinds, head and hint, the OS menu, in-place upgrades, clamping |
+| `src/api.ts` | the five calls, text mode, caps, timeouts, ETag, errors in words |
+| `src/protocol.ts` | text-mode lines, pane names, URL and token rules |
+| `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
+| `src/answers.ts` | the fixed answers ([screens](features/screens.md)) |
+| `src/text.ts` | the measured font, wrapping and fitting by pixels, clamping by bytes, filters |
+| `src/settings.ts`, `src/phone.ts`, `index.html` | the phone pane ([phone pane](features/phone-pane.md)) |
+| `app.json`, `scripts/pack.sh` | the Even Hub manifest and the package ([install](features/install.md)) |
+| `tests/unit/` | `node --test` on the pure modules |
+| `tests/e2e/` | the harness, the suite and the Playwright phone tests ([testing](testing.md)) |
+
+## The display
+
+576 x 288, four greys, one proportional font with one size: a line is
+28 px and holds about sixty average glyphs. The firmware's rules shape
+the whole design:
+
+- a page with a list container spends scrolls on its own highlight and
+  reports taps; a page without one hands scrolls to the app. So the pane
+  is a text page the app pages itself, and the lists are the OS's;
+- a text container shorter than its text hides the overflow, so every
+  line is wrapped by the app with the font's measured advance widths and
+  the blocks are whole lines;
+- an oversize row or block rejects the whole page without a word, so
+  every row is clamped by pixels and by bytes before it is sent (a list
+  row is at most 63 bytes);
+- a text change is a flicker-free in-place upgrade; a layout change is a
+  rebuild during which input is dropped, so each page kind keeps one
+  geometry (the pane has two: with and without the pinned block);
+- the font drops glyphs it lacks silently, so pane text is asked from the
+  hub in Latin-1 by default and the app's own glyphs are ones known to
+  render.
+
+Every page is a **head** line (brightest), a **body** and a **hint** line
+(dimmest) naming the gestures that work there.
+
+## Screens
+
+```mermaid
+stateDiagram-v2
+    [*] --> Panes
+    Panes --> Pane: tap a row
+    Pane --> Panes: double tap
+    Pane --> Answers: tap (writable pane)
+    Answers --> Confirm: tap an answer
+    Confirm --> Pane: Confirm sends, Cancel does not
+    Answers --> Pane: double tap
+    Confirm --> Answers: double tap
+    Pane --> Pane: menu: Refresh, Reveal all, Bottom, Needs you
+    Panes --> [*]: double tap
+```
+
+See [screens](features/screens.md) for each page.
+
+## Requests
+
+```mermaid
+sequenceDiagram
+    participant W as Wearer
+    participant A as App
+    participant H as Hub
+    A->>H: GET /v1/events?after=12&wait=25 (held up to 25 s)
+    loop every 3 s while following
+        A->>H: GET /v1/panes/alice-laptop/work/0.0?lines=200&width=400&charset=latin1, If-None-Match
+        H-->>A: 304, or 200 with the rows
+    end
+    H-->>A: event: permission on work/1.0
+    A->>A: toast, mark, list read
+    W->>A: tap, pick "y ⏎", Confirm
+    A->>H: POST input {"text":"y"}
+    A->>H: POST input {"key":"Enter"}
+    A->>H: GET the pane at once
+```
+
+- `fetch` with a 20 s abort, 45 s for the long poll; at most 256 KiB of
+  a body is read; control characters are dropped from everything shown.
+- One read of the pane and one of the list in flight at a time. The pane
+  is read every *follow* seconds (1 to 30, default 3) while the view is at
+  the bottom and the app is in the foreground; paused, it is not read
+  until the view is at the bottom again. The list is read every 10 s and
+  on every event.
+- `401` forgets the token at once and stops polling: a refused token is
+  tried exactly once. `429` pauses for ten seconds. A network error
+  doubles the events loop's wait up to a minute.
+- Foreground exit stops every timer; foreground enter and any gesture
+  start them again.
+
+## Build
+
+TypeScript and Vite, the Even Hub SDK at run time and nothing else.
+`scripts/build.sh` type-checks and builds `dist/`; `scripts/pack.sh` puts
+the hub's origin into the manifest's network whitelist and packs the
+`.ehpk`. Versions are pinned exactly and the lock file is committed.
