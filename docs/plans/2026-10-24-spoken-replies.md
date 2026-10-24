@@ -227,4 +227,12 @@ Deviations:
 
 ## Test run
 
-Pending the recorded run.
+54 tests, all passing at `c962e68`: 20 end-to-end in the simulator (9
+security, 11 features, the phone pane in Chromium), 33 unit, and the
+search of every log for the run's tokens and keys. Recorded as
+[test run #3](https://github.com/notmarkopadjen/muxway-glasses-even/issues/3).
+The run before it at `ef8c4a0` was red
+([#2](https://github.com/notmarkopadjen/muxway-glasses-even/issues/2)):
+the transcriber probe made a refused token's one round into three
+requests. The core's endpoint is `51e965c` on the core's `main`, with
+tests 20 to 24 there.

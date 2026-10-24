@@ -111,4 +111,9 @@ Deviations:
 
 ## Test run
 
-Pending the recorded run.
+The listing's ten screenshots come from the green run at `c962e68`
+([test run #3](https://github.com/notmarkopadjen/muxway-glasses-even/issues/3))
+through `scripts/store-shots.sh`; `scripts/check-listing.py` passes: name
+6 of 20, tagline 43 of 50, description 1470 of 2000, the icons in their
+sizes, every screenshot present. The screenshots of the run before
+showed the dropped `⏎`, which is how the glyph fix was found.
