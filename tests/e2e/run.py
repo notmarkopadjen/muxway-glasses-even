@@ -366,7 +366,7 @@ def f20(run, name):
     say_it(sim)
     sim.shot("listening")
     time.sleep(2)
-    page = sim.expect(lambda p: "listening" in sim.state() and len(p["charts"]) >= 3, "the graph", 5)
+    page = sim.expect(lambda p: "listening" in sim.state() and any(c["key"].startswith("levels:") for c in p["charts"]), "the graph", 5)
     sim.shot("graph")
     sim.tap()
     page = sim.head("heard this", "the transcript", 15)
