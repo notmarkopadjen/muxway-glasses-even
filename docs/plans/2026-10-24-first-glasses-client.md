@@ -401,4 +401,10 @@ Deviations:
 
 ## Test run
 
-Pending the recorded run.
+44 tests, all passing at `b5ee75e`: 16 end-to-end in the simulator (7
+security, 8 features, the phone pane in Chromium), 28 unit, and the
+search of every log for the run's tokens and keys. Recorded as
+[test run #1](https://github.com/notmarkopadjen/muxway-glasses-even/issues/1);
+the run directory `test-runs/20261024-122126-b5ee75e` holds the logs,
+30 glasses and phone screenshots and the Playwright trace. The core's
+CORS change is `e96cdfd` on the core's `main`, with its own test.
