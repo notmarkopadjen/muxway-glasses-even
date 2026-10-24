@@ -22,5 +22,5 @@ for p in m["permissions"]:
         p["whitelist"] = [f"{u.scheme}://{u.netloc}"]
 json.dump(m, open(out, "w"), indent=2)
 PY
-npx evenhub pack "$tmp/app.json" dist -o "$out" --sdk-ver "$(node -p "require('@evenrealities/even_hub_sdk/package.json').version")"
+npx evenhub pack "$tmp/app.json" dist -o "$out" --sdk-ver "$(node -p "require('./node_modules/@evenrealities/even_hub_sdk/package.json').version")"
 echo "packed $out for $hub"
