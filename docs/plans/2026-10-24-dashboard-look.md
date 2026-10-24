@@ -246,14 +246,14 @@ Deviations:
 
 ## Test run
 
-69 tests, all passing at `a6bc053`: 27 end-to-end in the simulator (11
+69 tests, all passing at `4873524`: 27 end-to-end in the simulator (11
 security, 15 features, the phone pane in Chromium), 41 unit, and the
 search of every log for the run's tokens and keys. Recorded as
 [test run #4](https://github.com/notmarkopadjen/muxway-glasses-even/issues/4).
 The run before it, at `13f66c1` with the first build of this feature,
 had nine failures, all from the two pictures the firmware refused; the
-simulator's log, not the trace, gave them away. The run at `25fd99e`
+simulator's log, not the trace, gave them away. The run at `75cb1d2`
 ([#5](https://github.com/notmarkopadjen/muxway-glasses-even/issues/5))
 lost two tests to a scroll sent before the first listing was in; the
-harness now waits for it, and the run at `b708af0` is green again
+harness now waits for it, and the run at `4d37bd2` is green again
 ([test run #6](https://github.com/notmarkopadjen/muxway-glasses-even/issues/6)), 69 tests.
