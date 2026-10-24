@@ -204,6 +204,7 @@ class Proxy:
     def __init__(self, hub_url, logs, mode="normal"):
         self.hub = hub_url.replace("http://", "")
         self.mode = mode
+        self.slowed = False
         # The list names the program claude, so the lens is forced by it.
         self.says_claude = False
         self.log = open(logs / "proxy.log", "a")
@@ -227,6 +228,10 @@ class Proxy:
                 proxy.log.flush()
                 bare = path.split("?")[0]
                 is_read = self.command == "GET" and bare.startswith("/v1/panes/")
+                if proxy.mode == "slow-list" and bare == "/v1/panes" and self.command == "GET" and not proxy.slowed:
+                    # The first listing takes a while: the app has to say so meanwhile.
+                    proxy.slowed = True
+                    time.sleep(4)
                 if proxy.mode == "big" and is_read:
                     return self.reply(200, b"x" * (1 << 20) + b"\n", {"Content-Type": "text/plain; charset=utf-8", **CORS})
                 if proxy.mode == "garbage" and is_read:
@@ -282,6 +287,7 @@ class Proxy:
                         pane(title="tab\there"),
                         pane(mode="write", title="x" * 300),
                         pane(mode="write", title="\u2605" * 40),
+                        pane(mode="write", title="\u00bb held"),
                     ]}).encode()
                 if proxy.mode == "list-hostile" and bare == "/v1/panes":
                     now = int(time.time())
@@ -576,6 +582,37 @@ class Sim:
             self.api("POST", "/api/input", {"action": "down"})
             time.sleep(0.3)
         self.tap(wait)
+
+    def cursor(self, page=None):
+        """The pane list's cursor: the index of its brightest row."""
+        page = page or self.last()
+        for b in page["blocks"]:
+            if b.get("name", "").startswith("row") and b["level"] == 4:
+                return int(b["name"][3:])
+        return 0
+
+    def move(self, index):
+        """Scrolls the pane list's cursor to the index-th row, one drawn page per tick."""
+        for _ in range(40):
+            at = self.cursor()
+            if at == index:
+                return
+            self.scroll("down" if index > at else "up", 0.3)
+        check(self.cursor() == index, f"the cursor is on row {self.cursor()}, not {index}")
+
+    def pick(self, index, wait=1.0):
+        """Moves the pane list's cursor to the index-th row and taps it."""
+        self.move(index)
+        self.tap(wait)
+
+    def hold(self, index, wait=1.0):
+        """Moves the pane list's cursor to the index-th row and holds it: a long press and its release."""
+        self.move(index)
+        self.mark = len(self.trace())
+        self.api("POST", "/api/input", {"action": "long_press"})
+        time.sleep(0.4)
+        self.api("POST", "/api/input", {"action": "long_press_release"})
+        time.sleep(wait)
 
     def menu(self, index, wait=1.5):
         """Opens the OS menu and picks its index-th entry."""

@@ -9,15 +9,15 @@ cd "$(git rev-parse --show-toplevel)"
 if [ -n "${1:-}" ]; then
     run=${1%/}
 else
-    scripts/e2e.sh F30 F31 F32 F11 F13 F14 F15 F35 F16 >/dev/null || true
+    scripts/e2e.sh F31 F32 F33 F11 F13 F14 F15 F35 F16 >/dev/null || true
     run=$(ls -td test-runs/*/ | head -1)
 fi
 shots="$run/screens"
 mkdir -p store/shots
 pick() { local from; from=$(ls "$shots"/$1/*-$2.png 2>/dev/null | head -1); [ -n "$from" ] && cp "$from" "store/shots/$3" && echo "store/shots/$3"; }
-pick F31_f31 needs-you 01-needs-you.png
-pick F30_f30 ring-panes 02-panes.png
-pick F32_f32 split-first 03-split.png
+pick F31_f31 list-attention 01-list.png
+pick F32_f32 list-selected 02-selected.png
+pick F33_f33 split-marked 03-split.png
 pick F11_f11 pane-hello 04-pane.png
 pick F14_f14 lens 05-lens.png
 pick F13_f13 answers 06-answers.png

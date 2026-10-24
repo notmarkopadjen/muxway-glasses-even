@@ -1,95 +1,135 @@
 # Screens and gestures
 
-Four gestures and the menu reach everything:
+Four gestures reach everything:
 
 | Gesture | Does |
 |---|---|
-| scroll | walks the ring; selects a column; moves the highlight in a list; pages the pane |
-| tap | opens what is highlighted or selected; on a pane, its answers (or reads it again when it is read-only) |
-| tap, then hold | the OS menu: Refresh, Needs you, Panes, Side by side, Two/Three columns, Go to: the pane that needs you, and on a pane Reveal all and Bottom |
-| double tap | back one page; expands a selected column; from the columns with nothing selected, the main menu; out of the app from the ring |
+| scroll | moves the cursor on the pane list; opens the next or previous pane from the columns; moves the highlight in a list; pages the pane |
+| tap | opens the row under the cursor; on a pane, its answers (or reads it again when it is read-only) |
+| hold | on the pane list, selects the row under the cursor, or unselects it; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that needs you |
+| double tap | back one page; from the pane list, out of the app, which the OS confirms first |
 
-Every page has the same frame. The **status line** at the top is the
-ring's tab bar, with the page you are on in brackets, then how many
-panes need you, how many panes there are, how many columns, the host
-and the clock:
+Every page has the same frame. The **status line** at the top says how
+many panes need you, how many panes there are, the host and the clock:
 
 ```
-[★ 1]  ≡ 3  □□ 2  ● alice-laptop  16:51
+★ 1  ≡ 3  ● alice-laptop  16:51
 ```
 
 At the foot a **hint** names the gestures that work on the page. A
 notification arrives as a bordered **banner** in its place for ten
 seconds; the result of an answer flashes on the pane for four.
 
-## The ring: the main menu
-
 ```mermaid
-flowchart LR
-    N[★ Needs you] -- scroll --> P[≡ Panes] -- scroll --> S[□□ Side by side]
-    S -- double tap, none selected --> N
-    N -- tap --> pane[the first pane that needs you]
-    P -- tap --> list[the pane list]
-    S -- scroll --> sel[a column selected]
-    sel -- tap --> answers
-    sel -- double tap --> full[the pane, full]
-    full -- double tap --> S
+stateDiagram-v2
+    [*] --> Loading
+    Loading --> List: the first listing
+    List --> Pane: tap a pane row
+    List --> List: hold a row (select / unselect)
+    List --> Split: tap "open N side by side"
+    List --> List: tap "clear selection"
+    Pane --> List: double tap
+    Split --> PaneS: scroll (the next or previous column)
+    PaneS --> Split: double tap
+    Split --> List: double tap
+    Split --> Answers: tap, with a column marked
+    Pane --> Answers: tap (writable)
+    PaneS --> Answers: tap (writable)
+    Answers --> Confirm: tap an answer
+    Confirm --> Pane: Confirm sends, Cancel does not
+    List --> [*]: double tap, the OS asks
 ```
 
-### Needs you
+## Loading
 
 ```
-[★ 1]  ≡ 3  □□ 2  ● alice-laptop  16:51
-★ build · claude · needs permission        ▮───────────
-● tests · bash · done                        ▮─────
-                                           ┊    ┊    ┊  │
-★ 1 asks · ● 1 done · 0 idle
-bar = time waited, up to 12m
-▽ Panes · ● open · ≡ menu · ×× exit
+reading the hub ··
+reading the hub…
+
+
+
+reading the hub…
 ```
 
-One row per pane with attention, brightest when it needs you, and
-beside each a **timeline**: a marker where its attention arrived, a
-line from there to the right edge, which is now, so the longer the
-line the longer the wait. The footer counts and gives the scale. With
-nothing pending the footer says so. Tap opens the first pane that needs
-you.
+Until the first listing has arrived the list has one row and the status
+line's dots move every half second. A failed first read puts the error
+in the hint; the row stays. Nothing on the page says what the panes are
+doing before the hub has said so.
 
-### Panes
-
-One row per pane (five; more go to the list), mark, name, program,
-`read-only`, and beside each a **bar of recency**: how recently the pane
-had activity, full for a minute ago, empty for a day, dimmer for a pane
-you cannot write to. The footer counts panes and hosts. Tap opens the
-**list**, the same rows as an OS list, nineteen a page.
-
-### Side by side
+## The pane list: the main screen
 
 ```
-[□□ 2]  ★ 1  ≡ 3  ● alice-laptop  16:51
-█ » build · claude █    · tests · bash
+★ 1  ≡ 4  ● alice-laptop  16:51
+» ★ build · claude · needs permission          ▏
+» ● tests · bash · done                        ▏
+  · logs · tail · active                       █
+  · api · claude · quiet 4m                    █
+  → open 2 side by side                        ▏
+  → clear selection                            ▏
+▽ move · ● open · hold to select · 3 at most · ×× exit
+```
+
+One row per pane, those that need you first, then by address: the mark
+(`★` asks a question or needs permission, `●` done, `○` idle, `·`
+nothing reported), the name, the program, a **state word**, and
+`read-only` where the token cannot write. The state word says only what
+is known:
+
+| The hub said | The row says |
+|---|---|
+| a question or a permission | `asks a question`, `needs permission` |
+| done, idle | `done`, `idle` |
+| nothing, and the pane wrote something in the last minute | `active` |
+| nothing, and the pane has been silent for a minute or more | `quiet 4m` |
+
+`active` and `quiet` come from the pane's last activity in the listing.
+A Claude Code at work redraws its spinner, so it is `active`; one
+waiting at its prompt is `quiet` and the age grows. Neither word claims
+that a pane is working: the hub knows a pane's state only when a hook
+reported it ([notifications](notifications.md)).
+
+The list is drawn by the app, six rows at a time, with a **cursor** on
+the brightest row; the scroll moves it and the rows slide under it, and
+a thin **position bar** at the right edge shows where the window sits.
+A **tap** opens the pane under the cursor. A **hold** selects it, drawn
+with `» ` in front, or unselects it; three at most, and a fourth hold
+says so in the hint. With a selection two action rows follow the panes:
+**open N side by side** (from two selected) and **clear selection**.
+The selection survives leaving the columns, so a double tap back and a
+tap reopens the same view; it is pruned to the listing and forgotten
+when the app restarts.
+
+A **double tap** on the list asks the OS to leave the app, which the OS
+confirms. Nowhere else leaves the app.
+
+## Side by side
+
+```
+★ 1  ≡ 4  ● alice-laptop  16:51
+█ » ★ build · claude █    ● tests · bash
 ● Bash(make test)        $ make test
   ok                     ok
 > y                      $
-▽ select · ● answer · ×× open the pane · ≡ menu
+▽ next pane · ● answer · ×× the list
 ```
 
-Two or three columns (the menu switches, remembered), each a pane: a
-bold **title band** with its mark, name and program, and the last lines
-through the lens wrapped to the column. All of them follow. The panes
-are the list's, in its order: those that need you first. The **scroll
-selects**: the first scroll selects the first column, drawn with its
-band inverted and its text brightest; further scrolls move the
-selection, and past the last column the columns slide along so the
-selected pane is always in view. **Tap** opens the selected pane's
-answers. **Double tap** expands the selected pane to the full pane
-page; a double tap there comes back to the columns with nothing
-selected, and a double tap with nothing selected goes to the main menu.
+The selected panes in the list's order, two or three columns, each a
+pane: a bold **title band** with its mark, name and program, and the
+last lines through the lens wrapped to the column. All of them follow,
+each with its own ETag. The **scroll opens a pane**: forward opens the
+column after the marked one, or the first when none is marked; back
+opens the column before it, or the last. At either end the scroll does
+nothing. A **double tap** on a pane opened this way comes back to the
+columns with that column **marked**, its band inverted and its text
+brightest, and the next scroll goes on from there. A **tap** with a
+column marked opens its answers; with none it reads the columns again.
+A **double tap** on the columns goes back to the list, the selection
+kept.
 
 ## The pane
 
 ```
-[★ 1]  ≡ 3  □□ 2  ● alice-laptop  16:51
+★ 1  ≡ 3  ● alice-laptop  16:51
 █ ★ build · claude █              needs permission   ▏
   ● Bash(make test)                                   ▏
     ok                                                █
@@ -119,10 +159,10 @@ foot while following.
   forward, and past the last page following resumes.
 - **Tap** opens the answers on a writable pane; on a read-only pane it
   reads the pane again (the hint says `refresh`).
-- **Menu**: Refresh, Reveal all / Lens on, Bottom, Panes, Side by side,
-  and Go to: *name* when another pane needs you.
-- **Double tap** goes back where the pane was opened from: the columns,
-  the list or Needs you.
+- **Menu** (hold): Refresh, Reveal all / Lens on, Bottom, and Go to:
+  *name* when another pane needs you.
+- **Double tap** goes back where the pane was opened from: the columns
+  or the list.
 
 ## Answers and confirmation
 
@@ -168,10 +208,13 @@ tap on either page goes back without sending.
 - Whether a pane may be written to comes from the hub's `mode`; a title
   cannot forge it, and a hub or proxy that lies about the mode gains a
   refused request (`403 read only`).
-- Rows are clamped by pixels and by bytes before they reach the firmware,
-  so a hostile title cannot reject the page; the mark comes from the
-  attention field, never from the title; a listing of hundreds of panes
-  is five rows and a list.
+- Rows are clamped by pixels before they reach the firmware, so a
+  hostile title cannot reject the page; the mark and the selection's
+  `» ` come from the listing's fields and the wearer's hold, never from
+  the title; a listing of hundreds of panes is six rows and a cursor.
+- The selection is a list of addresses the hub returned, held in memory
+  only and pruned to every listing; a hostile listing cannot select
+  anything.
 - Pictures are drawn by the app from numbers it computed and names it
   cleaned; nothing from the network is read as an image. At most four
   pictures a page.

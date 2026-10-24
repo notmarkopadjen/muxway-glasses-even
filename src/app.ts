@@ -1,20 +1,20 @@
-// The app on the glasses: a ring of pages, the pane list, one pane or
-// two or three side by side, the answers, spoken replies; the polling of
-// what is on screen and the long poll for events.
+// The app on the glasses: the pane list, panes held on it side by side,
+// one pane, the answers, spoken replies; the polling of what is on screen
+// and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
 import { ANSWERS, short, type Answer } from './answers.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
 import { paneName, parseEvents, parseHosts, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
-import { forgetToken, getSettings, isConfigured, saveSettings } from './settings.ts'
+import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
 import { GRACE_SECONDS, MIN_SECONDS, Recorder, toneFrame } from './voice.ts'
 
 type View =
-  | { kind: 'ring'; page: V.RingPage }
-  | { kind: 'list'; page: number }
+  | { kind: 'list' }
+  | { kind: 'split' }
   | { kind: 'pane'; pane: Pane; fromSplit: boolean }
   | { kind: 'answers'; pane: Pane }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
@@ -38,12 +38,14 @@ const LIST_EVERY_MS = 10_000
 const TOAST_MS = 10_000
 const FLASH_MS = 4_000
 const MENU_CLOSE_MS = 1500
+const DOTS_MS = 500
+const NOTE_MS = 3_000
 
 export class App {
   private bridge: EvenAppBridge
   private log: (m: string, cls?: '' | 'ok' | 'bad') => void
   private view: Glasses
-  private stack: View[] = [{ kind: 'ring', page: 0 }]
+  private stack: View[] = [{ kind: 'list' }]
   private panes: Pane[] = []
   private hosts: Host[] = []
   private attention = new Map<string, Attn>()
@@ -56,9 +58,17 @@ export class App {
   private readTimer: ReturnType<typeof setTimeout> | null = null
   private offset = 0
   private reveal = false
-  /** The selected column's pane, an index into the sorted panes; -1 when none is selected. */
-  private selected = -1
+  /** The panes held on the list, by address, at most three. */
+  private selected: string[] = []
+  /** The column the last scroll opened, -1 for none. */
+  private marked = -1
+  /** The list's cursor and its window's first row. */
+  private row = 0
   private winStart = 0
+  /** Whether a listing has arrived since the start, or since the settings changed. */
+  private loaded = false
+  private dots = 1
+  private dotsTimer: ReturnType<typeof setInterval> | null = null
   private flash: { text: string; until: number } | null = null
   private toast: { text: string; until: number } | null = null
   private clearTimer: ReturnType<typeof setTimeout> | null = null
@@ -106,6 +116,10 @@ export class App {
   async onSettingsChanged() {
     this.listError = null
     this.readers.clear()
+    this.loaded = false
+    this.selected = []
+    this.marked = -1
+    this.stack = [{ kind: 'list' }]
     this.canSpeak = false
     this.probed = false
     this.sleep()
@@ -117,6 +131,12 @@ export class App {
     this.foreground = true
     if (!this.clockTimer) this.clockTimer = setInterval(() => void this.redraw(), 30_000)
     if (!isConfigured()) return
+    if (!this.loaded && !this.dotsTimer) {
+      this.dotsTimer = setInterval(() => {
+        this.dots = (this.dots % 3) + 1
+        void this.redraw()
+      }, DOTS_MS)
+    }
     this.scheduleList(0)
     this.scheduleRead(0)
     this.runEvents()
@@ -129,9 +149,15 @@ export class App {
     if (this.clockTimer) clearInterval(this.clockTimer)
     this.listTimer = this.readTimer = null
     this.clockTimer = null
+    this.stopDots()
     this.eventsGen++
     this.eventsRunning = false
     if (this.voice?.phase === 'recording') void this.endVoice()
+  }
+
+  private stopDots() {
+    if (this.dotsTimer) clearInterval(this.dotsTimer)
+    this.dotsTimer = null
   }
 
   private async probeVoice() {
@@ -176,6 +202,10 @@ export class App {
         }
       }
       this.listError = null
+      this.loaded = true
+      this.stopDots()
+      // A pane that left the listing leaves the selection too.
+      this.selected = this.selected.filter((addr) => this.panes.some((p) => p.address === addr))
       this.log(`GET panes ${a.status} ${this.panes.length} panes ${Date.now() - t0} ms`)
       if (!this.probed) {
         this.probed = true
@@ -194,8 +224,20 @@ export class App {
   private watched(): Pane[] {
     const v = this.top
     if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'confirm' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
-    if (v.kind === 'ring' && v.page === 2) return V.window(this.sorted, getSettings().columns, this.selected, this.winStart).shown
+    if (v.kind === 'split') return this.columns()
     return []
+  }
+
+  /** The held panes in the list's order. */
+  private columns(): Pane[] {
+    return V.selectedPanes(this.model())
+  }
+
+  /** The pane a reply goes to: the open one, or the marked column. */
+  private focus(): Pane | undefined {
+    const v = this.top
+    if (v.kind === 'split') return this.marked >= 0 ? this.columns()[this.marked] : undefined
+    return this.watched()[0]
   }
 
   private scheduleRead(ms: number) {
@@ -242,8 +284,10 @@ export class App {
     if (err.status === 401) {
       await forgetToken()
       this.sleep()
-      this.stack = [{ kind: 'ring', page: 0 }]
+      this.stack = [{ kind: 'list' }]
       this.panes = []
+      this.selected = []
+      this.marked = -1
       this.readers.clear()
       this.onPane?.(null)
       return 'token refused · set it on the phone'
@@ -328,8 +372,14 @@ export class App {
     const sys = typeOf(e.sysEvent)
     const text = typeOf(e.textEvent)
     const list = typeOf(e.listEvent)
-    if (e.listEvent || e.textEvent || (sys !== null && sys <= OsEventTypeList.DOUBLE_CLICK_EVENT)) this.awake()
-    if (sys === OsEventTypeList.DOUBLE_CLICK_EVENT || text === OsEventTypeList.DOUBLE_CLICK_EVENT || list === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+    const kinds = [sys, text, list]
+    if (e.listEvent || e.textEvent || (sys !== null && (sys <= OsEventTypeList.DOUBLE_CLICK_EVENT || sys === OsEventTypeList.LONG_PRESS_EVENT))) this.awake()
+    if (kinds.includes(OsEventTypeList.LONG_PRESS_RELEASE_EVENT)) return
+    if (kinds.includes(OsEventTypeList.LONG_PRESS_EVENT)) {
+      await this.onHold()
+      return
+    }
+    if (kinds.includes(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
       await this.back()
       return
     }
@@ -346,7 +396,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind !== 'list' && this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
+          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -377,32 +427,22 @@ export class App {
     this.scheduleRead(0)
   }
 
-  /** The double tap: back one page; from the columns to the first page; out of the app from the ring. */
+  /** The double tap: back one page, and out of the app from the list, where the OS asks first. */
   private async back() {
     const v = this.top
-    if (v.kind === 'ring') {
-      if (v.page === 2) {
-        // With a column selected the double tap expands it; with none it goes to the main menu.
-        if (this.selected >= 0) await this.expandSelected()
-        else {
-          this.stack = [{ kind: 'ring', page: 0 }]
-          await this.redraw()
-        }
-        return
-      }
-      this.stop()
-      await this.bridge.shutDownPageContainer()
+    if (v.kind === 'list') {
+      // Nothing stops here: the OS says whether the wearer confirmed, with an exit event.
+      await this.bridge.shutDownPageContainer(1)
       return
     }
     this.stack.pop()
     this.flash = null
     if (v.kind === 'listen' || v.kind === 'heard') await this.endVoice()
+    if (v.kind === 'split') this.marked = -1
     if (v.kind === 'pane') {
       this.offset = 0
       this.reveal = false
       this.onPane?.(null)
-      // Back on the columns nothing is selected, so the next double tap leads to the main menu.
-      if (v.fromSplit) this.selected = -1
     }
     await this.redraw()
     this.scheduleRead(0)
@@ -410,24 +450,23 @@ export class App {
 
   private async onScroll(dir: 1 | -1) {
     const v = this.top
-    if (v.kind === 'ring') {
-      if (v.page === 2) {
-        const n = this.sorted.length
-        const was = this.selected
-        // The first scroll selects the first column; after that it walks the panes.
-        this.selected = was < 0 ? 0 : Math.max(0, Math.min(n - 1, was + dir))
-        this.winStart = V.window(this.sorted, getSettings().columns, this.selected, this.winStart).start
-        if (this.selected !== was) {
-          await this.redraw()
-          this.scheduleRead(0)
-        }
-        return
-      }
-      const next = Math.max(0, Math.min(2, v.page + dir)) as V.RingPage
-      if (next === v.page) return
-      this.stack = [{ kind: 'ring', page: next }]
+    if (v.kind === 'list') {
+      const n = V.listLayout(this.model(), Math.floor(Date.now() / 1000)).items.length
+      const next = Math.max(0, Math.min(n - 1, this.row + dir))
+      if (next === this.row) return
+      this.row = next
+      this.winStart = V.listWindow(n, next, this.winStart)
       await this.redraw()
-      if (next === 2) this.scheduleRead(0)
+      return
+    }
+    if (v.kind === 'split') {
+      // The scroll opens a pane: the column after the marked one, or before it; the first or the last when none is marked.
+      const cols = this.columns()
+      if (!cols.length) return
+      const next = this.marked < 0 ? (dir > 0 ? 0 : cols.length - 1) : this.marked + dir
+      if (next < 0 || next >= cols.length) return
+      this.marked = next
+      await this.openPane(cols[next], true)
       return
     }
     if (v.kind !== 'pane') return
@@ -452,22 +491,27 @@ export class App {
       await this.sendVoice(v.pane, true)
       return
     }
-    if (v.kind === 'ring') {
-      if (v.page === 0) {
-        const first = this.sorted.find(V.needs) ?? this.sorted[0]
-        if (first) await this.openPane(first, false)
-        return
+    if (v.kind === 'list') {
+      const row = this.listRow()
+      if (!row) return
+      switch (row.kind) {
+        case 'pane':
+          await this.openPane(row.pane, false)
+          break
+        case 'open':
+          this.marked = -1
+          await this.push({ kind: 'split' })
+          break
+        case 'clear':
+          this.selected = []
+          await this.redraw()
+          break
       }
-      if (v.page === 1) {
-        await this.push({ kind: 'list', page: 0 })
-        return
-      }
-      const sel = this.selected >= 0 ? this.sorted[Math.min(this.sorted.length - 1, this.selected)] : undefined
-      if (!sel) {
-        await this.readPanes(true)
-        return
-      }
-      if (sel.writable) await this.push({ kind: 'answers', pane: sel })
+      return
+    }
+    if (v.kind === 'split') {
+      const sel = this.focus()
+      if (sel?.writable) await this.push({ kind: 'answers', pane: sel })
       else await this.readPanes(true)
       return
     }
@@ -478,16 +522,7 @@ export class App {
 
   private async onSelect(idx: number) {
     const v = this.top
-    if (v.kind === 'list') {
-      const shown = this.sorted.slice(v.page * V.ROWS_PER_LIST_PAGE)
-      if (idx === V.ROWS_PER_LIST_PAGE && shown.length > V.ROWS_PER_LIST_PAGE) {
-        v.page++
-        await this.redraw()
-        return
-      }
-      const pane = shown[idx]
-      if (pane) await this.openPane(pane, false)
-    } else if (v.kind === 'answers') {
+    if (v.kind === 'answers') {
       const offset = this.offersVoice(v.pane) ? 1 : 0
       if (offset && idx === 0) {
         await this.beginVoice(v.pane, false)
@@ -504,10 +539,26 @@ export class App {
     }
   }
 
-  /** The columns' double tap: the selected pane, full; a double tap there comes back here. */
-  private async expandSelected() {
-    const sel = this.selected >= 0 ? this.sorted[Math.min(this.sorted.length - 1, this.selected)] : undefined
-    if (sel) await this.openPane(sel, true)
+  /** The list's row under the cursor. */
+  private listRow(): V.ListItem | undefined {
+    const what = V.listLayout(this.model(), Math.floor(Date.now() / 1000)).what
+    this.row = Math.max(0, Math.min(what.length - 1, this.row))
+    return what[this.row]
+  }
+
+  /** A hold on the list: the pane under the cursor joins the selection or leaves it, three at most. */
+  private async onHold() {
+    if (this.top.kind !== 'list') return
+    const row = this.listRow()
+    if (!row || row.kind !== 'pane') return
+    const addr = row.pane.address
+    if (this.selected.includes(addr)) this.selected = this.selected.filter((a) => a !== addr)
+    else if (this.selected.length >= V.MAX_SELECTED) {
+      this.toast = { text: `${V.MAX_SELECTED} panes at most · hold one to unselect it`, until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+    } else this.selected = this.selected.concat(addr)
+    this.log(`held ${paneName(row.pane)}: ${this.selected.length} selected`)
+    await this.redraw()
   }
 
   private async openPane(pane: Pane, fromSplit: boolean) {
@@ -535,27 +586,10 @@ export class App {
         await this.redraw()
         this.scheduleRead(0)
         break
-      case V.MENU.list:
-        await this.goHome(1)
-        await this.push({ kind: 'list', page: 0 })
-        break
-      case V.MENU.home:
-        await this.goHome(0)
-        break
-      case V.MENU.split:
-        await this.goHome(2)
-        break
-      case V.MENU.columns: {
-        const columns = getSettings().columns === 2 ? 3 : 2
-        await saveSettings({ columns })
-        await this.redraw()
-        this.scheduleRead(0)
-        break
-      }
       case V.MENU.needsYou: {
         const pane = this.needsYou()
         if (!pane) break
-        await this.goHome(0)
+        await this.goHome()
         await this.openPane(pane, false)
         break
       }
@@ -568,8 +602,8 @@ export class App {
     }
   }
 
-  /** Back to the ring at a page, closing whatever is open. */
-  private async goHome(page: V.RingPage) {
+  /** Back to the list, closing whatever is open. */
+  private async goHome() {
     while (this.stack.length > 1) {
       const left = this.stack.pop()!
       if (left.kind === 'listen' || left.kind === 'heard') await this.endVoice()
@@ -577,7 +611,8 @@ export class App {
     }
     this.offset = 0
     this.reveal = false
-    this.stack = [{ kind: 'ring', page }]
+    this.marked = -1
+    this.stack = [{ kind: 'list' }]
     await this.redraw()
     this.scheduleRead(0)
   }
@@ -602,7 +637,7 @@ export class App {
 
   /** From the phone pane: typed text to the open or selected pane. */
   async sendText(text: string, enter: boolean): Promise<string> {
-    const pane = this.watched()[0]
+    const pane = this.focus()
     if (!pane) return 'open a pane on the glasses first'
     if (!pane.writable) return 'that pane is read-only'
     try {
@@ -759,9 +794,12 @@ export class App {
       clock: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
       lens: s.lens,
       canSpeak: this.canSpeak,
-      columns: s.columns,
+      loaded: this.loaded,
+      dots: this.dots,
       selected: this.selected,
+      cursor: this.row,
       windowStart: this.winStart,
+      marked: this.marked,
       reading: (address) => this.readers.get(address),
     }
   }
@@ -775,12 +813,10 @@ export class App {
     const v = this.top
     const now = Math.floor(Date.now() / 1000)
     switch (v.kind) {
-      case 'ring':
-        if (v.page === 0) return V.needsYouPage(m, now)
-        if (v.page === 1) return V.panesPage(m, now)
-        return V.splitPage(m)
       case 'list':
-        return V.listPage(m, v.page)
+        return V.listPage(m, now)
+      case 'split':
+        return V.splitPage(m)
       case 'pane': {
         const r = this.readers.get(v.pane.address)
         const a = this.attention.get(v.pane.address)

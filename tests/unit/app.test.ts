@@ -73,7 +73,7 @@ test('foreground exit stops the requests, enter and gestures resume them', async
   assert.ok(hub.calls.some((c) => c.includes('/v1/events?limit=1')), 'the cursor was taken')
   assert.ok(!hub.calls.some((c) => c.includes('token')), 'no token in a URL')
 
-  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // Needs you: opens the first pane
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the list's cursor is on the first row: the pane
   await sleep(150)
   const reads = () => hub.calls.filter((c) => c.includes('/v1/panes/alice-laptop')).length
   assert.ok(reads() >= 1, 'the pane was read on opening')

@@ -25,8 +25,8 @@ sequenceDiagram
   **toast** in the hint line for ten seconds, brightest (`★ build: Claude
   needs your permission to use Bash`), reads the list again, and reads the
   pane again when it is the open one. `working` clears the mark.
-- The menu's **Needs you: *name*** entry opens the pane with the newest
-  attention, from anywhere.
+- The pane's menu entry **Go to: *name*** opens the pane with the newest
+  attention; on the list that pane is the first row.
 - Attention also comes with every pane list, so the marks are right after
   a restart, before any event.
 

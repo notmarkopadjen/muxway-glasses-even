@@ -19,13 +19,11 @@ export interface Settings {
   lens: boolean
   /** spoken replies, when the hub has a transcriber */
   voice: boolean
-  /** panes side by side */
-  columns: 2 | 3
 }
 
 const KEY = 'muxway.settings.v1'
 
-const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true, columns: 2 }
+const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true }
 
 let current: Settings = { ...DEFAULTS }
 let bridge: EvenAppBridge | null = null
@@ -46,7 +44,6 @@ function normalize(s: Partial<Settings> | null | undefined): Settings {
     charset: s?.charset === 'utf-8' ? 'utf-8' : 'latin1',
     lens: s?.lens !== false,
     voice: s?.voice !== false,
-    columns: s?.columns === 3 ? 3 : 2,
   }
 }
 
@@ -85,7 +82,6 @@ export function fromQuery(loc: { hostname: string; search: string }): Partial<Se
     const v = q.get(k)
     if (v !== null) out[k] = Number(v)
   }
-  if (q.get('columns') === '3') out.columns = 3
   for (const k of ['lens', 'voice'] as const) {
     const v = q.get(k)
     if (v !== null) out[k] = v !== '0' && v !== 'false'

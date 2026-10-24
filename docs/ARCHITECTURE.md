@@ -25,7 +25,7 @@ preflight such a page needs. The glasses see only what the page draws.
 |---|---|
 | `src/main.ts` | boot: the bridge, settings, the phone pane, the app |
 | `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
-| `src/views.ts` | what every page says and draws: the status line, the ring's dashboards, the columns, the pane, the lists, the voice pages |
+| `src/views.ts` | what every page says and draws: the status line, the pane list, the columns, the pane, the answers, the voice pages |
 | `src/glasses.ts` | the two page kinds, head and hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
 | `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline, sparkline, progress and position charts, the bold title band drawn in the canvas |
 | `src/api.ts` | the calls: listings in JSON, pane content in text mode, caps, timeouts, ETag, errors in words |
@@ -46,8 +46,13 @@ preflight such a page needs. The glasses see only what the page draws.
 the whole design:
 
 - a page with a list container spends scrolls on its own highlight and
-  reports taps; a page without one hands scrolls to the app. So the pane
-  is a text page the app pages itself, and the lists are the OS's;
+  reports taps, but not where the highlight is, so a long press on it
+  names no row; a page without one hands scrolls and the long press to
+  the app. So the pane list is drawn by the app with a cursor of its own,
+  the pane is a text page the app pages itself, and the answers are the
+  OS's lists;
+- a page holds at most eight text containers, the head and the hint
+  among them: six blocks, so the pane list shows six rows at a time;
 - a text container shorter than its text hides the overflow, so every
   line is wrapped by the app with the font's measured advance widths and
   the blocks are whole lines;
@@ -74,16 +79,23 @@ pushes. A 240 x 140 bar chart is 34 KB of pixels, a title band 9 KB.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Panes
+    [*] --> Loading
+    Loading --> Panes: the first listing
     Panes --> Pane: tap a row
+    Panes --> Panes: hold a row: select
+    Panes --> Columns: tap "open N side by side"
+    Columns --> Pane: scroll
+    Pane --> Columns: double tap (opened from the columns)
+    Columns --> Panes: double tap
     Pane --> Panes: double tap
     Pane --> Answers: tap (writable pane)
+    Columns --> Answers: tap (a column marked)
     Answers --> Confirm: tap an answer
     Confirm --> Pane: Confirm sends, Cancel does not
     Answers --> Pane: double tap
     Confirm --> Answers: double tap
-    Pane --> Pane: menu: Refresh, Reveal all, Bottom, Needs you
-    Panes --> [*]: double tap
+    Pane --> Pane: menu: Refresh, Reveal all, Bottom, Go to
+    Panes --> [*]: double tap, the OS asks
 ```
 
 See [screens](features/screens.md) for each page.

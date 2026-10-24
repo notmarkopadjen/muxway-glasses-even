@@ -39,7 +39,8 @@ export const MAX_LIST_ITEMS = 20
 export const LIST_ROW_PX = 490
 export const LIST_ROW_BYTES = 63
 export const MENU_LABEL_BYTES = 32
-export const MAX_BLOCKS = 8
+/** Text containers a page may hold are eight, the head and the hint among them. */
+export const MAX_BLOCKS = 6
 export const MAX_CHARTS = 4
 /** Inner padding of a bordered block; a plain block has none, so whole lines fit. */
 export const BORDER_PAD = 6

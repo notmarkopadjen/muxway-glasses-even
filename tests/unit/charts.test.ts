@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { Bitmap, G1, G3 } from '../../src/bitmap.ts'
 import { barChart, positionBar, progressBar, sparkline, timelineChart } from '../../src/charts.ts'
 import { tiles } from '../../src/raster.ts'
-import { window } from '../../src/views.ts'
 import type { Pane } from '../../src/protocol.ts'
 
 test('bitmap: rect, frame, hatch and lines stay inside', () => {
@@ -64,14 +63,3 @@ test('tiles: a wide picture is cut into containers the glasses accept', () => {
   assert.equal(tiles(new Bitmap(284, 30), 0, 0, 'k').length, 1)
 })
 
-test('window: the columns slide only when the selection leaves them', () => {
-  const panes = Array.from({ length: 5 }, (_, i) => ({ address: `h/work/${i}.0` })) as Pane[]
-  assert.deepEqual(window(panes, 2, -1, 0).start, 0)
-  assert.deepEqual(window(panes, 2, 1, 0).start, 0)
-  assert.deepEqual(window(panes, 2, 2, 0).start, 1)
-  assert.deepEqual(window(panes, 2, 4, 1).start, 3)
-  assert.deepEqual(window(panes, 2, 0, 3).start, 0)
-  assert.deepEqual(window(panes, 3, 1, 0).shown.length, 3)
-  assert.deepEqual(window([], 2, 0, 0).shown, [])
-  assert.deepEqual(window(panes.slice(0, 1), 3, 0, 0).shown.length, 1)
-})

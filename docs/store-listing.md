@@ -45,24 +45,23 @@ muxway puts your tmux panes on the Even G2: see what is running on your machines
 
 It is a client for muxway, an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and to nothing else.
 
-On the glasses, a ring of pages walked by the scroll, under a status line that is also the tab bar:
+On the glasses, under a status line that counts the panes that need you:
 
-- Needs you: the panes where Claude Code asks a question or waits for a permission, each with a timeline of how long it has waited. A tap opens the first.
-- Panes: every pane your token may see, mark, name and program, each with a bar of how recently it was active. A tap opens the list.
-- Side by side: two or three panes in columns, each under its bold title, all following. The scroll selects a column, a tap opens its answers, a double tap expands it.
+- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word that says only what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold selects it.
+- Side by side: hold two or three panes and open them in columns, each under its bold title, all following. The scroll opens one; a double tap comes back to the columns, and once more to the list.
 - A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome; a position bar shows where you are in its history.
 - Answers: a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
-- Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the menu takes you there.
+- Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the pane's menu takes you there.
 
-Scroll moves, tap opens, tap-then-hold is the menu, double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
+Scroll moves, tap opens, hold selects (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
 
 No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it.
 ```
 
-**Changelog** (0.3.0)
+**Changelog** (0.4.0)
 
 ```
-The dashboard look: a status line that is the tab bar, a ring of pages walked by the scroll, bars beside the rows, bold title bands, framed boxes, a position bar on the pane, a graph of your voice while you speak. Two or three panes side by side, the scroll selecting one, a tap for its answers, a double tap to expand it. Listings are read as JSON now; pane content stays text.
+The pane list is the main screen: tap opens the pane under the cursor, hold selects it, and two or three selected panes open side by side; from the columns the scroll opens a pane and a double tap comes back. Every row says only what the hub knows: asks a question, needs permission, done, idle, active, or quiet and for how long. A reading row with moving dots until the first listing is in. Leaving the app is confirmed by the OS.
 ```
 
 **Category**: Productivity (developer tools if offered)
@@ -101,8 +100,8 @@ Setup: open the app on the phone, enter
   hub URL:  https://<review host>
   token:    <review token>
 then tap "save & test" and open the app on the glasses.
-Gestures: scroll = move or page, tap = open or answer, tap then hold = menu,
-double tap = back (and out of the app from the pane list).
+Gestures: scroll = move or page, tap = open or answer, hold = select (on a pane,
+the menu), double tap = back (and out of the app from the pane list, confirmed).
 The hub above serves synthetic panes only; no real machine is reachable through it.
 ```
 
@@ -116,9 +115,9 @@ From the simulator against the test hub, 576 x 288, synthetic panes
 
 | File | Shows |
 |---|---|
-| `store/shots/01-needs-you.png` | Needs you: panes waiting, with the timeline of how long |
-| `store/shots/02-panes.png` | Panes: marks, names, programs, the bar of recency |
-| `store/shots/03-split.png` | two panes side by side, one selected |
+| `store/shots/01-list.png` | the pane list: panes waiting first, with their words |
+| `store/shots/02-selected.png` | two rows held, the open and clear rows under them |
+| `store/shots/03-split.png` | two panes side by side, one marked |
 | `store/shots/04-pane.png` | a pane, following, with its title band and position bar |
 | `store/shots/05-lens.png` | Claude Code through the lens: the conversation, the typed box framed |
 | `store/shots/06-answers.png` | the answers |
