@@ -282,3 +282,9 @@ Deviations:
 security, 19 features, the phone pane in Chromium), 45 unit, and the
 search of every log for the run's tokens and keys. Recorded as
 [test run #7](https://github.com/notmarkopadjen/muxway-glasses-even/issues/7).
+
+After selection mode, 73 tests, all passing at `8d29632`, recorded as
+[test run #8](https://github.com/notmarkopadjen/muxway-glasses-even/issues/8).
+The first run at `616eaa3` failed only F20: the listening page had lost
+its progress bar with the thin pictures and the test still counted three
+pictures; it looks for the level graph by its key now.
