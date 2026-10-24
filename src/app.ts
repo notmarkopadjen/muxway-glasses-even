@@ -60,6 +60,8 @@ export class App {
   private reveal = false
   /** The panes held on the list, by address, at most three. */
   private selected: string[] = []
+  /** Selection mode on the list: a tap selects the row under the cursor instead of opening it. */
+  private selecting = false
   /** The column the last scroll opened, -1 for none. */
   private marked = -1
   /** The list's cursor and its window's first row. */
@@ -118,6 +120,7 @@ export class App {
     this.readers.clear()
     this.loaded = false
     this.selected = []
+    this.selecting = false
     this.marked = -1
     this.stack = [{ kind: 'list' }]
     this.canSpeak = false
@@ -373,6 +376,8 @@ export class App {
     const text = typeOf(e.textEvent)
     const list = typeOf(e.listEvent)
     const kinds = [sys, text, list]
+    // Every gesture in the phone's log: what the glasses send is only known from there.
+    this.log(`gesture${sys !== null ? ' sys ' + sys : ''}${text !== null ? ' text ' + text : ''}${list !== null ? ' list ' + list : ''}${e.listEvent?.currentSelectItemIndex !== undefined ? ' row ' + e.listEvent.currentSelectItemIndex : ''}`)
     if (e.listEvent || e.textEvent || (sys !== null && (sys <= OsEventTypeList.DOUBLE_CLICK_EVENT || sys === OsEventTypeList.LONG_PRESS_EVENT))) this.awake()
     if (kinds.includes(OsEventTypeList.LONG_PRESS_RELEASE_EVENT)) return
     if (kinds.includes(OsEventTypeList.LONG_PRESS_EVENT)) {
@@ -431,6 +436,12 @@ export class App {
   private async back() {
     const v = this.top
     if (v.kind === 'list') {
+      if (this.selecting) {
+        this.selecting = false
+        this.selected = []
+        await this.redraw()
+        return
+      }
       // Nothing stops here: the OS says whether the wearer confirmed, with an exit event.
       await this.bridge.shutDownPageContainer(1)
       return
@@ -496,7 +507,8 @@ export class App {
       if (!row) return
       switch (row.kind) {
         case 'pane':
-          await this.openPane(row.pane, false)
+          if (this.selecting) await this.toggle(row.pane)
+          else await this.openPane(row.pane, false)
           break
         case 'open':
           this.marked = -1
@@ -504,6 +516,7 @@ export class App {
           break
         case 'clear':
           this.selected = []
+          this.selecting = false
           await this.redraw()
           break
       }
@@ -546,18 +559,24 @@ export class App {
     return what[this.row]
   }
 
-  /** A hold on the list: the pane under the cursor joins the selection or leaves it, three at most. */
+  /** A hold on the list starts selection mode with the pane under the cursor selected; in it, a hold selects too. */
   private async onHold() {
     if (this.top.kind !== 'list') return
     const row = this.listRow()
     if (!row || row.kind !== 'pane') return
-    const addr = row.pane.address
+    this.selecting = true
+    await this.toggle(row.pane)
+  }
+
+  /** The pane joins the selection or leaves it, three at most. */
+  private async toggle(pane: Pane) {
+    const addr = pane.address
     if (this.selected.includes(addr)) this.selected = this.selected.filter((a) => a !== addr)
     else if (this.selected.length >= V.MAX_SELECTED) {
-      this.toast = { text: `${V.MAX_SELECTED} panes at most · hold one to unselect it`, until: Date.now() + NOTE_MS }
+      this.toast = { text: `${V.MAX_SELECTED} panes at most · tap one to unselect it`, until: Date.now() + NOTE_MS }
       this.later(NOTE_MS)
     } else this.selected = this.selected.concat(addr)
-    this.log(`held ${paneName(row.pane)}: ${this.selected.length} selected`)
+    this.log(`${paneName(pane)}: ${this.selected.length} selected`)
     await this.redraw()
   }
 
@@ -797,6 +816,7 @@ export class App {
       loaded: this.loaded,
       dots: this.dots,
       selected: this.selected,
+      selecting: this.selecting,
       cursor: this.row,
       windowStart: this.winStart,
       marked: this.marked,

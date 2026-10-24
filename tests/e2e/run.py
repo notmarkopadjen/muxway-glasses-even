@@ -95,8 +95,8 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
 
 
 def rows(p):
-    """The pane list's rows on screen, in order, without the blank ones."""
-    return [b["lines"][0] for b in p["blocks"] if b.get("name", "").startswith("row") and b["lines"][0].strip()]
+    """The pane list's rows on screen, in order, without the cursor mark and the blank ones."""
+    return [b["lines"][0][2:] for b in p["blocks"] if b.get("name", "").startswith("row") and b["lines"][0].strip()]
 
 
 def listed(p):
@@ -130,9 +130,11 @@ def to_split(sim, held=(0, 1)):
     """From the start: hold the rows, then tap the open row under the panes."""
     page = home(sim)
     n = len(rows(page))
-    for i in held:
-        sim.hold(i)
-        sim.expect(lambda p: listed(p) and rows(p)[i].startswith("» "), f"row {i} selected")
+    sim.hold(held[0])
+    sim.expect(lambda p: listed(p) and rows(p)[held[0]].startswith("[x] "), f"row {held[0]} selected")
+    for i in held[1:]:
+        sim.pick(i)
+        sim.expect(lambda p: listed(p) and rows(p)[i].startswith("[x] "), f"row {i} selected")
     sim.pick(n)
     return sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None, "the columns")
 
@@ -252,7 +254,7 @@ def s07(run, name):
     items = rows(page)
     check(len(items) == 5, f"rows: {items}")
     for row in items:
-        check(not row.startswith("» "), f"a title selected itself: {row}")
+        check(not row.startswith("[x] "), f"a title selected itself: {row}")
     check(items[0].startswith("· ★ "), f"the forged mark became the pane's: {items[0]}")
     check("read-only" in items[0] or items[0].endswith("…"), f"the forged mode was believed: {items[0]}")
     check(items[1].startswith("· tab here"), f"the tab survived as a tab: {items[1]}")
@@ -610,6 +612,7 @@ def f30(run, name):
     page = sim.expect(lambda p: listed(p) and "≡ 2" in p["head"], "the list", 20)
     check(page["head"].startswith("★ 0  ≡ 2  ● "), page["head"])
     check(page["hint"] == "▽ move · ● open · hold to select · ×× exit", page["hint"])
+    check(page["blocks"][0]["lines"][0].startswith("> "), "no cursor mark on the first row")
     check(page["menu"] == [], "the list has a menu, so a hold would open it")
     sim.shot("list")
     sim.back()
@@ -640,7 +643,7 @@ def f31(run, name):
     sim.shot("first-pane")
 
 
-@test("F32", "Hold selects two rows, the open row appears, both columns follow; three at most; clear selection", "UI")
+@test("F32", "Hold starts selection mode with the row selected, taps select more, the open row appears, both columns follow; three at most; clear", "UI")
 def f32(run, name):
     def before(core):
         core.new_window("build")
@@ -652,11 +655,11 @@ def f32(run, name):
     page = home(sim)
     check(rows(page) == ["· test-pane · bash · active", "· build · bash · active", "· logs · bash · active", "· more · bash · active"], rows(page))
     sim.hold(0)
-    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("» · test-pane"), "test-pane selected")
-    check(rows(page)[-1] == "→ clear selection" and len(rows(page)) == 5, rows(page))
-    check("hold to select · 3 at most" in page["hint"], page["hint"])
-    sim.hold(1)
-    page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("» · build"), "build selected")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] · test-pane"), "selection mode, test-pane selected")
+    check(rows(page)[1:] == ["[ ] · build · bash · active", "[ ] · logs · bash · active", "[ ] · more · bash · active", "→ clear selection"], rows(page))
+    check(page["hint"].startswith("▽ move · ● select · 3 at most"), page["hint"])
+    sim.pick(1)
+    page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("[x] · build"), "build selected by a tap")
     check(rows(page)[4:] == ["→ open 2 side by side", "→ clear selection"], rows(page))
     sim.shot("list-selected")
     sim.pick(4)
@@ -668,13 +671,13 @@ def f32(run, name):
     core.keys("echo later", "Enter")
     sim.expect(lambda p: any("later" in l for l in (col(p, 0) or {"lines": []})["lines"]), "the left column follows", 8)
     sim.back()
-    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("» ") and rows(p)[1].startswith("» "), "the list with the selection kept")
-    sim.hold(2)
-    page = sim.expect(lambda p: listed(p) and rows(p)[2].startswith("» · logs"), "logs selected")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ") and rows(p)[1].startswith("[x] "), "the list, still selecting, selection kept")
+    sim.pick(2)
+    page = sim.expect(lambda p: listed(p) and rows(p)[2].startswith("[x] · logs"), "logs selected")
     check(rows(page)[4] == "→ open 3 side by side", rows(page))
-    sim.hold(3)
+    sim.pick(3)
     page = sim.expect(lambda p: p.get("hintBorder") and p["hint"].startswith("3 panes at most"), "the limit said", 5)
-    check(not rows(page)[3].startswith("» "), rows(page)[3])
+    check(rows(page)[3].startswith("[ ] "), rows(page)[3])
     sim.shot("list-three")
     sim.pick(4)
     page = sim.expect(lambda p: p["kind"] == "dash" and col(p, 2) is not None, "three columns", 10)
@@ -683,8 +686,13 @@ def f32(run, name):
     sim.back()
     home(sim)
     sim.pick(5)
-    page = sim.expect(lambda p: listed(p) and not any(i.startswith("» ") or i.startswith("→") for i in rows(p)), "cleared")
+    page = sim.expect(lambda p: listed(p) and not any(i.startswith("[") or i.startswith("→") for i in rows(p)), "cleared and out of selection mode")
+    check(page["hint"].startswith("▽ move · ● open"), page["hint"])
     sim.shot("list-cleared")
+    sim.hold(1)
+    sim.expect(lambda p: listed(p) and rows(p)[1].startswith("[x] "), "selecting again")
+    sim.back()
+    page = sim.expect(lambda p: listed(p) and not any(i.startswith("[") for i in rows(p)), "a double tap leaves selection mode")
 
 
 @test("F33", "In the columns a scroll opens a pane; back returns with it marked; the next scroll opens the next; tap answers the marked; back reaches the list", "UI")
@@ -719,7 +727,7 @@ def f33(run, name):
     sim.back()
     sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None, "back on the columns")
     sim.back()
-    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("» ") and rows(p)[1].startswith("» "), "the list, selection kept")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ") and rows(p)[1].startswith("[x] "), "the list, selection kept")
     sim.shot("list-after")
 
 

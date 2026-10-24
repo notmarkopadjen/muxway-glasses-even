@@ -34,6 +34,8 @@ export interface Model {
   dots: number
   /** The panes held on the list, by address, at most three. */
   selected: string[]
+  /** Selection mode: a tap on a row selects it instead of opening it. */
+  selecting: boolean
   /** The list's cursor: the row a tap or a hold acts on. */
   cursor: number
   /** The list's first row on screen. */
@@ -107,10 +109,11 @@ export function stateWord(p: Pane, now: number): string {
   return now - p.activity < 60 ? 'active' : `quiet ${ago(p.activity, now)}`
 }
 
-export function rowLabel(p: Pane, now: number, selected = false): string {
+/** A pane's row; in selection mode it starts with its box, [x] or [ ]. */
+export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none'): string {
   const name = paneName(p)
   const word = stateWord(p, now)
-  return (selected ? '» ' : '') + `${MARK[p.attention]} ${name}` + (p.command && p.command !== name ? ` · ${p.command}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  return (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + (p.command && p.command !== name ? ` · ${p.command}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
 }
 
 /** Rows on the list at once: the page's eight text containers less the head and the hint; the window slides under the cursor. */
@@ -120,7 +123,7 @@ const ROW_W = CANVAS_W - 4
 
 export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
-/** Every row of the list and what each one is: the panes, then the selection's actions. */
+/** Every row of the list and what each one is: the panes, then in selection mode its actions. */
 export function listLayout(m: Model, now: number): { items: string[]; what: ListItem[] } {
   if (!m.configured) return { items: ['set the hub and token on the phone'], what: [{ kind: 'none' }] }
   if (!m.loaded) return { items: ['reading the hub…'], what: [{ kind: 'none' }] }
@@ -128,16 +131,16 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
   const items: string[] = []
   const what: ListItem[] = []
   for (const p of m.panes) {
-    items.push(rowLabel(p, now, m.selected.includes(p.address)))
+    items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none'))
     what.push({ kind: 'pane', pane: p })
   }
   const n = selectedPanes(m).length
-  if (n >= 2) {
-    items.push(`→ open ${n} side by side`)
-    what.push({ kind: 'open' })
-  }
-  if (n >= 1) {
-    items.push('→ clear selection')
+  if (m.selecting) {
+    if (n >= 2) {
+      items.push(`→ open ${n} side by side`)
+      what.push({ kind: 'open' })
+    }
+    items.push(n ? '→ clear selection' : '→ leave selection')
     what.push({ kind: 'clear' })
   }
   return { items, what }
@@ -168,13 +171,13 @@ export function listPage(m: Model, now: number): Page {
   const blocks: Block[] = []
   for (let i = 0; i < LIST_ROWS; i++) {
     const at = start + i
-    const text = items[at] ?? ' '
+    // The cursor is a mark, not only a brightness: on the glasses the brightest row alone was missed.
+    const text = items[at] === undefined ? ' ' : (at === cursor && m.loaded ? '> ' : '  ') + items[at]
     blocks.push({ name: 'row' + at, x: 2, y: TOP + i * LINE_H, w: ROW_W, h: LINE_H, lines: [text], level: at === cursor && m.loaded ? 4 : 3 })
   }
-  const n = selectedPanes(m).length
   // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
   const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
-  const base = !m.loaded ? 'reading the hub…' : where + (n ? `▽ move · ● open · hold to select · ${MAX_SELECTED} at most · ×× exit` : '▽ move · ● open · hold to select · ×× exit')
+  const base = !m.loaded ? 'reading the hub…' : where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
   return { kind: 'dash', head: statusHead(m), ...hint(m, base), blocks, charts: [], items: [], menu: [] }
 }
 

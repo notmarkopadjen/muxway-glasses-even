@@ -6,8 +6,8 @@ Four gestures reach everything:
 |---|---|
 | scroll | moves the cursor on the pane list; opens the next or previous pane from the columns; moves the highlight in a list; pages the pane |
 | tap | opens the row under the cursor; on a pane, its answers (or reads it again when it is read-only) |
-| hold | on the pane list, selects the row under the cursor, or unselects it; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that needs you |
-| double tap | back one page; from the pane list, out of the app, which the OS confirms first |
+| hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that needs you |
+| double tap | back one page; leaves selection mode; from the pane list, out of the app, which the OS confirms first |
 
 Every page has the same frame. The **status line** at the top says how
 many panes need you, how many panes there are, the host and the clock:
@@ -25,9 +25,10 @@ stateDiagram-v2
     [*] --> Loading
     Loading --> List: the first listing
     List --> Pane: tap a pane row
-    List --> List: hold a row (select / unselect)
-    List --> Split: tap "open N side by side"
-    List --> List: tap "clear selection"
+    List --> Selecting: hold a row
+    Selecting --> Selecting: tap a row (select / unselect)
+    Selecting --> Split: tap "open N side by side"
+    Selecting --> List: tap "clear selection", double tap
     Pane --> List: double tap
     Split --> PaneS: scroll (the next or previous column)
     PaneS --> Split: double tap
@@ -60,13 +61,13 @@ doing before the hub has said so.
 
 ```
 ★ 1  ≡ 4  ● alice-laptop  16:51
-» ★ build · claude · needs permission
-» ● tests · bash · done
-  · logs · tail · active
-  · api · claude · quiet 4m
+  [x] ★ build · claude · needs permission
+  [x] ● tests · bash · done
+> [ ] · logs · tail · active
+  [ ] · api · claude · quiet 4m
   → open 2 side by side
   → clear selection
-▽ move · ● open · hold to select · 3 at most · ×× exit
+▽ move · ● select · 3 at most · ×× done
 ```
 
 One row per pane, those that need you first, then by address: the mark
@@ -88,17 +89,19 @@ waiting at its prompt is `quiet` and the age grows. Neither word claims
 that a pane is working: the hub knows a pane's state only when a hook
 reported it ([notifications](notifications.md)).
 
-The list is drawn by the app, six rows at a time, with a **cursor** on
-the brightest row; the scroll moves it and the rows slide under it, and
-with more panes than rows the hint starts with where the window sits,
-`5–10 of 200`.
-A **tap** opens the pane under the cursor. A **hold** selects it, drawn
-with `» ` in front, or unselects it; three at most, and a fourth hold
-says so in the hint. With a selection two action rows follow the panes:
-**open N side by side** (from two selected) and **clear selection**.
-The selection survives leaving the columns, so a double tap back and a
-tap reopens the same view; it is pruned to the listing and forgotten
-when the app restarts.
+The list is drawn by the app, six rows at a time, with a **cursor**,
+`>`, on the brightest row; the scroll moves it and the rows slide under
+it, and with more panes than rows the hint starts with where the window
+sits, `5–10 of 200`. A **tap** opens the pane under the cursor.
+
+A **hold** starts **selection mode** with that pane selected: every pane
+row gets a box, `[x]` or `[ ]`, a tap on a row selects or unselects it,
+three at most, and a fourth says so in the hint. Two action rows follow
+the panes: **open N side by side** (from two selected) and **clear
+selection**, which also leaves the mode, as does a double tap. The
+selection survives the columns, so a double tap back and a tap reopens
+the same view; it is pruned to the listing and forgotten when the app
+restarts.
 
 A **double tap** on the list asks the OS to leave the app, which the OS
 confirms. Nowhere else leaves the app.
@@ -210,8 +213,9 @@ tap on either page goes back without sending.
   refused request (`403 read only`).
 - Rows are clamped by pixels before they reach the firmware, so a
   hostile title cannot reject the page; the mark and the selection's
-  `» ` come from the listing's fields and the wearer's hold, never from
-  the title; a listing of hundreds of panes is six rows and a cursor.
+  box come from the listing's fields and the wearer's gestures, never
+  from the title; a listing of hundreds of panes is six rows and a
+  cursor.
 - The selection is a list of addresses the hub returned, held in memory
   only and pruned to every listing; a hostile listing cannot select
   anything.

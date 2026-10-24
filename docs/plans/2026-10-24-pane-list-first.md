@@ -269,6 +269,12 @@ Deviations:
   when opened. The list says where its window sits in the hint, the
   pane in its state, the listening page counts the seconds, and no
   picture thinner than 16 px is sent.
+- **Selection mode, and a cursor one can see.** On the glasses the
+  brightest row alone was not noticed as a cursor, so the row carries
+  `>`; and the owner expects a hold to open a mode in which taps select,
+  as on a phone, not to toggle one row. In selection mode every pane row
+  has a box, `[x]` or `[ ]`, and the action rows; a double tap leaves it.
+  Every gesture is written to the phone's log with its raw type.
 
 ## Test run
 

@@ -26,6 +26,7 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
     loaded: true,
     dots: 1,
     selected: [],
+    selecting: false,
     cursor: 0,
     windowStart: 0,
     marked: -1,
@@ -48,22 +49,28 @@ test('the state word says only what is known', () => {
 
 test('a row: mark, name, program, state, read-only, and the selection prefix', () => {
   assert.equal(rowLabel(pane('work/0.0', { title: 'build', attention: 'question' }), NOW), '★ build · claude · asks a question')
-  assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, true), '» · build · claude · quiet 4m')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, 'on'), '[x] · build · claude · quiet 4m')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build' }), NOW, 'off'), '[ ] · build · claude · active')
   assert.equal(rowLabel(pane('work/0.0', { command: 'bash', writable: false }), NOW), '· work/0.0 · bash · active · read-only')
 })
 
-test('the layout: panes, then the selection actions, then the next page', () => {
+test('the layout: panes, then in selection mode the actions', () => {
   const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' }), pane('w/3.0', { title: 'three' })]
   let l = listLayout(model(panes), NOW)
   assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane'])
   l = listLayout(model(panes, { selected: ['alice-laptop/w/2.0'] }), NOW)
+  assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane'], 'actions outside selection mode')
+  l = listLayout(model(panes, { selected: ['alice-laptop/w/2.0'], selecting: true }), NOW)
   assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane', 'clear'])
-  assert.equal(l.items[1], '» · two · claude · active')
-  l = listLayout(model(panes, { selected: ['alice-laptop/w/3.0', 'alice-laptop/w/1.0'] }), NOW)
+  assert.equal(l.items[1], '[x] · two · claude · active')
+  assert.equal(l.items[0], '[ ] · one · claude · active')
+  l = listLayout(model(panes, { selecting: true }), NOW)
+  assert.deepEqual(l.items.slice(3), ['→ leave selection'])
+  l = listLayout(model(panes, { selected: ['alice-laptop/w/3.0', 'alice-laptop/w/1.0'], selecting: true }), NOW)
   assert.deepEqual(l.items.slice(3), ['→ open 2 side by side', '→ clear selection'])
   assert.deepEqual(selectedPanes(model(panes, { selected: ['alice-laptop/w/3.0', 'alice-laptop/w/1.0'] })).map((p) => p.path), ['w/1.0', 'w/3.0'])
   // A selected pane that left the listing counts for nothing.
-  l = listLayout(model(panes, { selected: ['alice-laptop/w/9.0', 'alice-laptop/w/1.0'] }), NOW)
+  l = listLayout(model(panes, { selected: ['alice-laptop/w/9.0', 'alice-laptop/w/1.0'], selecting: true }), NOW)
   assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane', 'clear'])
 })
 
@@ -77,7 +84,7 @@ test('the window slides only when the cursor leaves it', () => {
   assert.equal(listWindow(20, 4, 5), 4)
   assert.equal(listWindow(5, 4, 9), 0)
   const panes = Array.from({ length: 40 }, (_, i) => pane(`w/${String(i).padStart(2, '0')}.0`))
-  const l = listLayout(model(panes, { selected: ['alice-laptop/w/00.0', 'alice-laptop/w/39.0'] }), NOW)
+  const l = listLayout(model(panes, { selected: ['alice-laptop/w/00.0', 'alice-laptop/w/39.0'], selecting: true }), NOW)
   assert.equal(l.items.length, 42)
   assert.deepEqual(l.what.slice(40).map((w) => w.kind), ['open', 'clear'])
 })

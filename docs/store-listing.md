@@ -47,13 +47,13 @@ It is a client for muxway, an open, self-hosted service: a small agent next to e
 
 On the glasses, under a status line that counts the panes that need you:
 
-- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word that says only what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold selects it.
+- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word that says only what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold starts selecting, and taps pick the rest.
 - Side by side: hold two or three panes and open them in columns, each under its bold title, all following. The scroll opens one; a double tap comes back to the columns, and once more to the list.
 - A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome.
 - Answers: a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
 - Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the pane's menu takes you there.
 
-Scroll moves, tap opens, hold selects (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
+Scroll moves, tap opens, hold starts a selection (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
 
 No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it.
 ```
@@ -100,8 +100,8 @@ Setup: open the app on the phone, enter
   hub URL:  https://<review host>
   token:    <review token>
 then tap "save & test" and open the app on the glasses.
-Gestures: scroll = move or page, tap = open or answer, hold = select (on a pane,
-the menu), double tap = back (and out of the app from the pane list, confirmed).
+Gestures: scroll = move or page, tap = open or answer, hold = start selecting
+(on a pane, the menu), double tap = back (and out of the app from the pane list, confirmed).
 The hub above serves synthetic panes only; no real machine is reachable through it.
 ```
 
