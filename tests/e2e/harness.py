@@ -546,12 +546,13 @@ class Sim:
         but which tick is the second depends on what came before, so a tick that drew nothing within
         a moment is followed by another."""
         self.mark = len(self.trace())
-        self.api("POST", "/api/input", {"action": direction})
-        end = time.time() + 1.0
-        while time.time() < end and len(self.trace()) == self.mark:
-            time.sleep(0.1)
-        if len(self.trace()) == self.mark:
+        for _ in range(3):
             self.api("POST", "/api/input", {"action": direction})
+            end = time.time() + 1.0
+            while time.time() < end and len(self.trace()) == self.mark:
+                time.sleep(0.1)
+            if len(self.trace()) > self.mark:
+                break
         time.sleep(wait)
 
     def tap(self, wait=1.0):

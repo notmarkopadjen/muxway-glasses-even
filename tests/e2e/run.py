@@ -95,14 +95,15 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
 
 
 def home(sim, timeout=25):
-    """The ring's first page, Needs you."""
-    return sim.expect(lambda p: p["kind"] == "dash" and p["head"].startswith("[★"), "Needs you", timeout)
+    """The ring's first page, Needs you, once the first listing is in: a gesture before that lands
+    while the page is still being built and is dropped."""
+    sim.expect(lambda p: p["kind"] == "dash" and p["head"].startswith("[★"), "Needs you", timeout)
+    return sim.expect(lambda p: p["kind"] == "dash" and p["head"].startswith("[★") and "≡ 0 " not in p["head"] and sim.block("footer", p) is not None, "the first listing", timeout)
 
 
 def open_pane(sim, name="test-pane"):
     """From the start: a tap on Needs you opens the first pane."""
     home(sim)
-    sim.expect(lambda p: p["kind"] == "dash" and "≡ 1" in p["head"] or "≡ 2" in p["head"] or "≡ 3" in p["head"], "the list read")
     sim.shot("needs-you")
     sim.tap()
     page = sim.expect(lambda p: any(c.get("text", "").find(name) >= 0 for c in p["charts"]) or any(b.get("name") == "title" for b in p["blocks"]), "the pane")
@@ -118,7 +119,7 @@ def open_list(sim):
     sim.expect(lambda p: p["kind"] == "dash" and "[≡" in p["head"], "the Panes page")
     sim.shot("panes-dash")
     sim.tap()
-    return sim.expect(lambda p: p["kind"] == "list", "the list")
+    return sim.expect(lambda p: p["kind"] == "list" and p["items"], "the list")
 
 
 def to_split(sim):
