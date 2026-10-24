@@ -252,4 +252,8 @@ search of every log for the run's tokens and keys. Recorded as
 [test run #4](https://github.com/notmarkopadjen/muxway-glasses-even/issues/4).
 The run before it, at `13f66c1` with the first build of this feature,
 had nine failures, all from the two pictures the firmware refused; the
-simulator's log, not the trace, gave them away.
+simulator's log, not the trace, gave them away. The run at `25fd99e`
+([#5](https://github.com/notmarkopadjen/muxway-glasses-even/issues/5))
+lost two tests to a scroll sent before the first listing was in; the
+harness now waits for it, and the run at `b708af0` is green again
+([test run #6](https://github.com/notmarkopadjen/muxway-glasses-even/issues/6)), 69 tests.
