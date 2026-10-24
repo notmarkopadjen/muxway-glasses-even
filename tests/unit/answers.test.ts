@@ -16,5 +16,5 @@ test('answers: only protocol keys and printable text, labels fit a row', () => {
   }
   assert.equal(ANSWERS.length <= 19, true)
   assert.equal(short(ANSWERS[3]), '1')
-  assert.equal(short(ANSWERS[1]), 'y ⏎')
+  assert.equal(short(ANSWERS[1]), 'y, Enter')
 })

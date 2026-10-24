@@ -51,7 +51,7 @@ The head: the mark, the name, the program, and the state: the attention
 in words (`asks a question`, `needs permission`, `idle`, `done`), else
 `following`, `paused · 2 pages up`, `reading…`, or the error (`host
 offline`, `no connection`, `not found`). After an answer the head flashes
-what happened for a few seconds: `sent y ⏎`, `read only`.
+what happened for a few seconds: `sent y, Enter`, `read only`.
 
 The body is the last lines of the pane, `GET /v1/panes/{address}` in text
 mode with `lines` (setting, default 200) and `width=400`, so the rows come
@@ -74,10 +74,10 @@ block, six and two.
 ## Answers and confirmation
 
 ```
-answer build                          send y ⏎ to build?
-  ⏎ Enter                               Cancel
-  y ⏎                                   Confirm
-  n ⏎
+answer build                          send y, Enter to build?
+  Enter                                 Cancel
+  y, Enter                              Confirm
+  n, Enter
   1 · Claude Code's first choice
   2 · second choice
   3 · third choice
@@ -85,15 +85,15 @@ answer build                          send y ⏎ to build?
   Ctrl-C
   Tab
   Shift-Tab
-  ↑ Up
-  ↓ Down
+  Up
+  Down
 ▽ choose · ● pick · ×× back
 ```
 
 When the hub has a transcriber the list opens with **» Say it**, which
 leads to the [spoken reply](spoken-replies.md) pages.
 
-A fixed set, in that order. `y ⏎` and `n ⏎` send the letter and then
+A fixed set, in that order. `y, Enter` and `n, Enter` send the letter and then
 `Enter`; `1`, `2` and `3` send the digit alone, which is how Claude Code
 takes a choice on a question or a permission prompt; the rest are the
 protocol's keys (`Enter`, `Escape`, `C-c`, `Tab`, `BTab`, `Up`, `Down`).

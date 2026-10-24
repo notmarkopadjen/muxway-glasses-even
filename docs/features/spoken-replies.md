@@ -32,7 +32,7 @@ test-pane · listening · 4 s          heard this · 4.2 s
   ████████████████
                                      
   4 s · tap when done
-● stop · ×× cancel                   ● send ⏎ · ≡ menu · ×× cancel
+● stop · ×× cancel                   ● send + Enter · ≡ menu · ×× cancel
 ```
 
 - **Listening**: the microphone opens, frames are kept in memory, the

@@ -57,7 +57,8 @@ the whole design:
   geometry (the pane has two: with and without the pinned block);
 - the font drops glyphs it lacks silently, so pane text is asked from the
   hub in Latin-1 by default and the app's own glyphs are ones known to
-  render.
+  render (`⏎` and `↑` are not among them, so the answers spell out Enter,
+  Up and Down).
 
 Every page is a **head** line (brightest), a **body** and a **hint** line
 (dimmest) naming the gestures that work there.
@@ -94,7 +95,7 @@ sequenceDiagram
     end
     H-->>A: event: permission on work/1.0
     A->>A: toast, mark, list read
-    W->>A: tap, pick "y ⏎", Confirm
+    W->>A: tap, pick "y, Enter", Confirm
     A->>H: POST input {"text":"y"}
     A->>H: POST input {"key":"Enter"}
     A->>H: GET the pane at once

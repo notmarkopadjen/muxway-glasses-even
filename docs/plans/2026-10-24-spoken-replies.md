@@ -59,7 +59,7 @@ the Answers list opens with a first row **» Say it**. It leads to:
 - **Transcribing**: head `transcribing 4 s of audio…`, the WAV posted to
   the hub. Clips under half a second are refused as too short.
 - **Heard this** (text page): the transcript wrapped as the body, hint
-  `● send ⏎ · ≡ menu · ×× cancel`. Tap sends the text and then `Enter`,
+  `● send + Enter · ≡ menu · ×× cancel`. Tap sends the text and then `Enter`,
   as the phone's send does, and the pane is read at once. Menu: **Type
   without Enter**, **Say it again**. Double tap cancels; nothing was
   sent. Reading the transcript is the confirmation; there is no second
@@ -216,6 +216,9 @@ Deviations:
   endpoint refused the 10 KiB and S26 saw `refused by the hub`.
 - **S27 and S28 are one check**: the run's secret search covers the
   logs, and F20 reads the hub log for the test sentence.
+- **The firmware font has no `⏎` and no `↑ ↓`**, seen on the listing's
+  screenshots: the answers now spell out Enter, Up and Down, and a list
+  shows five whole rows instead of a sixth one cut by the hint.
 - The tone mic flag is read before the settings loader strips the page
   URL, which it does when settings arrive in the query.
 - The hostile proxy modes forward `OPTIONS`, since the browser's

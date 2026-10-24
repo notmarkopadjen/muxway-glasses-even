@@ -25,6 +25,8 @@ import { CANVAS_W, LINE_PX, clampBytes, fitWidth } from './text.ts'
 export const HEAD_H = 30
 export const TOP = 34
 export const HINT_Y = 258
+/** Whole list rows only: a row is 40 px, and a sixth would be cut by the hint. */
+export const LIST_H = 200
 export const HINT_H = 30
 export const LINE_H = 28
 /** Lines of pane text on a page without a pinned block. */
@@ -149,7 +151,7 @@ export class Glasses {
               xPosition: 0,
               yPosition: TOP,
               width: CANVAS_W,
-              height: HINT_Y - TOP,
+              height: LIST_H,
               borderWidth: 0,
               borderColor: 0,
               borderRadius: 0,

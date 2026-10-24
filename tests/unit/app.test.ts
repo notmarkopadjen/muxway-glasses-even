@@ -142,7 +142,7 @@ test('without a transcriber the answers offer no Say it', async () => {
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
   await sleep(100)
   const answers = bridge.pages[bridge.pages.length - 1] as { listObject?: { itemContainer: { itemName: string[] } }[] }
-  assert.equal(answers.listObject?.[0].itemContainer.itemName[0], '⏎ Enter')
+  assert.equal(answers.listObject?.[0].itemContainer.itemName[0], 'Enter')
   app.stop()
   await sleep(300)
 })

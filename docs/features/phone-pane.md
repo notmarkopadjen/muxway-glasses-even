@@ -36,7 +36,7 @@ A text box for the pane that is open on the glasses; the line above it
 names that pane, or says to open one first. **send ⏎** posts the text and
 then `Enter`; **type only** posts the text alone. Control characters are
 removed and the text is cut to 4096 bytes before it goes, since the hub
-refuses both. The glasses flash `sent from the phone ⏎` in the head and
+refuses both. The glasses flash `sent from the phone, Enter` in the head and
 read the pane at once.
 
 ## Log

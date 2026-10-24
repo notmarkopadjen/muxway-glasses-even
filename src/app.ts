@@ -610,7 +610,7 @@ export class App {
     if (!text) return
     this.voice = null
     this.stack.pop()
-    let words = enter ? 'sent what you said ⏎' : 'typed what you said'
+    let words = enter ? 'sent what you said, Enter' : 'typed what you said'
     try {
       await api.text(pane.address, text)
       if (enter) await api.key(pane.address, 'Enter')
@@ -655,7 +655,7 @@ export class App {
     } catch (e) {
       return await this.failed(e, 'POST input')
     }
-    this.flash = { text: enter ? 'sent from the phone ⏎' : 'typed from the phone', until: Date.now() + FLASH_MS }
+    this.flash = { text: enter ? 'sent from the phone, Enter' : 'typed from the phone', until: Date.now() + FLASH_MS }
     this.later(FLASH_MS)
     this.offset = 0
     await this.redraw()
@@ -771,7 +771,7 @@ export class App {
       const lines = wrapRows([this.voice?.text ?? ''], LINE_PX)
       while (lines.length < BODY_LINES) lines.push('')
       const own: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }, { id: MENU.panes, label: 'Panes' }]
-      return { kind: 'text', head: `heard this · ${(this.voice?.seconds ?? 0).toFixed(1)} s`, ...this.hint('● send ⏎ · ≡ menu · ×× cancel'), blocks: [{ lines: lines.slice(0, BODY_LINES), height: BODY_LINES, level: 4 }], items: [], menu: own }
+      return { kind: 'text', head: `heard this · ${(this.voice?.seconds ?? 0).toFixed(1)} s`, ...this.hint('● send + Enter · ≡ menu · ×× cancel'), blocks: [{ lines: lines.slice(0, BODY_LINES), height: BODY_LINES, level: 4 }], items: [], menu: own }
     }
     menu.push({ id: MENU.panes, label: 'Panes' })
     return {
