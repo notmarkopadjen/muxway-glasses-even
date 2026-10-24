@@ -263,4 +263,7 @@ Deviations:
 
 ## Test run
 
-(filled in below)
+73 tests, all passing at `5d2ce43`: 31 end-to-end in the simulator (11
+security, 19 features, the phone pane in Chromium), 45 unit, and the
+search of every log for the run's tokens and keys. Recorded as
+[test run #7](https://github.com/notmarkopadjen/muxway-glasses-even/issues/7).
