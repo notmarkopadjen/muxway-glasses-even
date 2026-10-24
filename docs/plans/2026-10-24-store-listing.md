@@ -1,6 +1,6 @@
 # Feature: the store listing pack
 
-> Status: approved 2026-10-24, in progress.
+> Status: implemented 2026-10-24.
 
 ## 1. Goal
 
@@ -93,11 +93,22 @@ links the listing's submission steps.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+Done against the plan, the security rules and the privacy rules.
+
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations:
+
+- **The listing checker runs from `scripts/store-shots.sh`**, not from
+  the end-to-end script: the screenshots it checks come out of a run,
+  so a run cannot require them. `store-shots.sh` also takes an existing
+  run directory instead of making a new run.
+- The icon is 24 x 24 scaled to 512 with hard edges (21 px a cell, a
+  margin of 4 px), rather than redrawn at 512.
 
 ## Test run
 
-Pending.
+Pending the recorded run.

@@ -74,8 +74,9 @@ export class App {
   private foreground = true
   private menuAt = 0
   private unsubscribe: (() => void) | null = null
-  /** The hub has a transcriber: the answers offer Say it. */
+  /** The hub has a transcriber: the answers offer Say it. Asked once the token has proven itself. */
   private canSpeak = false
+  private probed = false
   private recorder: Recorder
   private voice: Voice | null = null
   private voiceTimer: ReturnType<typeof setInterval> | null = null
@@ -115,6 +116,7 @@ export class App {
     this.paneError = null
     this.etag = ''
     this.canSpeak = false
+    this.probed = false
     this.sleep()
     await this.redraw()
     this.wake()
@@ -126,7 +128,6 @@ export class App {
     this.scheduleList(0)
     if (this.top.kind === 'pane') this.schedulePane(0)
     this.runEvents()
-    void this.probeVoice()
   }
 
   private sleep() {
@@ -139,7 +140,7 @@ export class App {
     if (this.voice?.phase === 'recording') void this.endVoice()
   }
 
-  /** Whether the hub has a transcriber; asked once per wake. */
+  /** Whether the hub has a transcriber; asked once, after the first list the token was allowed. */
   private async probeVoice() {
     if (!getSettings().voice) {
       this.canSpeak = false
@@ -178,6 +179,10 @@ export class App {
       }
       this.listError = null
       this.log(`GET panes ${a.status} ${this.panes.length} panes ${Date.now() - t0} ms`)
+      if (!this.probed) {
+        this.probed = true
+        void this.probeVoice()
+      }
     } catch (e) {
       this.listError = await this.failed(e, 'GET panes')
     } finally {

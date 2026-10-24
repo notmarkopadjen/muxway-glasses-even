@@ -1,6 +1,6 @@
 # Feature: spoken replies
 
-> Status: approved 2026-10-24, in progress.
+> Status: implemented 2026-10-24.
 
 ## 1. Goal
 
@@ -195,11 +195,33 @@ tried on the device.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+Done against the plan, the security rules and the privacy rules.
+
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations:
+
+- **The hub's clip slot is taken only for a real clip.** A refused body
+  (not a WAV, too short, too large) costs nothing, so a client that
+  sends something broken is not then locked out for five seconds.
+- **The hub cuts its transcriber's answer at 64 KiB**; a transcriber
+  that answers a megabyte gets `502`, not a cut text (S22 was adjusted:
+  ten kilobytes are cut to 4096 bytes, a megabyte is refused).
+- **The app caps the transcript itself** (`typed`: no control
+  characters, 4096 bytes), because a hub that lies about having a
+  transcriber may also lie about the text; without it the input
+  endpoint refused the 10 KiB and S26 saw `refused by the hub`.
+- **S27 and S28 are one check**: the run's secret search covers the
+  logs, and F20 reads the hub log for the test sentence.
+- The tone mic flag is read before the settings loader strips the page
+  URL, which it does when settings arrive in the query.
+- The hostile proxy modes forward `OPTIONS`, since the browser's
+  preflight on the transcribe path has to be answered for the probe to
+  succeed at all.
 
 ## Test run
 
-Pending.
+Pending the recorded run.
