@@ -16,9 +16,10 @@ test('wavFile: a 44-byte header around mono 16-bit PCM at 16 kHz', () => {
 
 test('rms: silence is 0, a tone is loud, a frame is 100 ms', () => {
   assert.equal(rms(new Uint8Array(3200)), 0)
-  const f = toneFrame(0)
+  const f = toneFrame(9)
   assert.equal(f.length, 3200)
   assert.ok(rms(f) > 0.3 && rms(f) <= 1)
+  assert.ok(rms(toneFrame(0)) < rms(f), 'the tone does not swell')
 })
 
 test('recorder: frames only while open, capped at the longest clip, dropped on reset', async () => {

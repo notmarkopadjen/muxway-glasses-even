@@ -1,6 +1,6 @@
 # Feature: the dashboard look, and two panes side by side
 
-> Status: approved 2026-10-24, in progress.
+> Status: implemented 2026-10-24.
 
 ## 1. Goal
 
@@ -209,11 +209,47 @@ screenshots.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+Done against the plan, the security rules and the privacy rules.
+
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations:
+
+- **The selected column is marked by its band inverted and its text
+  brightest, not by a frame.** A border is part of a block's geometry,
+  so a frame that moves would be a rebuild per scroll, during which the
+  firmware drops the next input; the band is a picture and the text a
+  brightness, both upgraded in place.
+- **The toast is the hint line itself, bordered and bright**, not a
+  banner over it; the hint has the foot of the page anyway.
+- **The main menu by double tap.** The owner's description had both
+  "expand the selected pane" and "back to the main menu" on the double
+  tap in the columns. Returning from an expanded pane clears the
+  selection, so the sequence reads as described: select, double tap
+  expands, double tap returns, double tap leaves for the main menu.
+- **A picture over 288 x 144 made the firmware refuse the whole page**,
+  seen in the simulator's log, not in the trace: the position bar
+  (8 x 168) and the progress bar (560 x 8) are tiled now, the renderer
+  drops a picture it cannot send and says so, and the harness fails a
+  test whose simulator log shows a refused page. The trace runs ahead
+  of the glasses by a rebuild and its pictures, so a screenshot waits a
+  moment, an expectation only counts pages drawn after the last gesture,
+  and a tap or scroll tick the simulator swallowed is sent again.
+- **S31**: a 1 MiB title puts the listing over the app's 256 KiB cap, so
+  the listing is cut and parsed as empty rather than parsed with the
+  one pane; the test takes either, and that the app keeps polling.
+- The listings' "activity" bar is on a log scale (full a minute ago,
+  empty a day ago), since a linear day shows every live pane as full.
 
 ## Test run
 
-Pending.
+69 tests, all passing at `a6bc053`: 27 end-to-end in the simulator (11
+security, 15 features, the phone pane in Chromium), 41 unit, and the
+search of every log for the run's tokens and keys. Recorded as
+[test run #4](https://github.com/notmarkopadjen/muxway-glasses-even/issues/4).
+The run before it, at `13f66c1` with the first build of this feature,
+had nine failures, all from the two pictures the firmware refused; the
+simulator's log, not the trace, gave them away.

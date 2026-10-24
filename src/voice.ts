@@ -137,13 +137,14 @@ export function wavFile(pcm: Uint8Array, sampleRate: number): ArrayBuffer {
   return out
 }
 
-/** One 100 ms frame of a 440 Hz tone, what the test harness feeds in place of a microphone. */
+/** One 100 ms frame of a 440 Hz tone that swells and fades like speech, what the test harness feeds in place of a microphone. */
 export function toneFrame(index: number): Uint8Array {
   const samples = SAMPLE_RATE / 10
   const out = new Uint8Array(samples * BYTES_PER_SAMPLE)
+  const loud = 0.25 + 0.75 * Math.abs(Math.sin(index / 6))
   for (let i = 0; i < samples; i++) {
     const t = (index * samples + i) / SAMPLE_RATE
-    const v = Math.round(6000 * Math.sin(2 * Math.PI * 440 * t))
+    const v = Math.round(6000 * loud * Math.sin(2 * Math.PI * 440 * t))
     out[i * 2] = v & 0xff
     out[i * 2 + 1] = (v >> 8) & 0xff
   }
