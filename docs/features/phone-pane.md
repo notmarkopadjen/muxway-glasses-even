@@ -14,10 +14,11 @@ Green on black, monospace, box frames: a terminal, as every muxway UI.
 | lines | rows asked from the hub per read, 50 to 500, default 200 |
 | text | Latin-1 (default: every glyph the font has) or Unicode |
 | Claude Code lens | on by default; see [lenses](lenses.md) |
+| Spoken replies | on by default; offered on the glasses when the hub has a transcriber; see [spoken replies](spoken-replies.md) |
 
 **save & test** checks the URL and the token, stores them and calls
-`GET /v1/me`; the status line says how long the hub took and the token's
-name, never the token. **test** repeats the call. **forget token**
+`GET /v1/me`; the status line says how long the hub took, the token's
+name and whether the hub has a transcriber, never the token. **test** repeats the call. **forget token**
 deletes the token from the phone.
 
 Settings are one JSON record under one key in the WebView's

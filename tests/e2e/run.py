@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness  # noqa: E402
-from harness import HOST, Core, Failure, Proxy, Sim, Static, check, direct, wait_for  # noqa: E402
+from harness import HOST, Core, Failure, Proxy, Sim, Static, Transcriber, check, direct, wait_for  # noqa: E402
 
 TESTS = []
 
@@ -66,9 +66,16 @@ class Run:
 
 
 def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"{HOST}/*", params=None,
-          revoke=False, before=None, says_claude=False, token=None):
+          revoke=False, before=None, says_claude=False, token=None, stt=False):
     logs = run.logs(name)
-    core = Core(run, run.binary, logs).start(expose=expose)
+    hub_args = []
+    transcriber = None
+    if stt:
+        transcriber = Transcriber(logs)
+        run.cleanups.append(transcriber.close)
+        hub_args = ["--stt-url", transcriber.url, "--stt-model", "whisper-base.en", "--stt-prompt", f"{HOST}, muxway"]
+    core = Core(run, run.binary, logs, hub_args).start(expose=expose)
+    core.transcriber = transcriber
     run.cleanups.append(core.close)
     tok = core.token(read=read, write=write)
     if revoke:
@@ -79,6 +86,8 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
     if before:
         before(core)
     all_params = {"hub": proxy.url, "token": token or tok, "every": 1}
+    if stt or mode.startswith("stt-"):
+        all_params["mic"] = "tone"
     all_params.update(params or {})
     sim = Sim(run, name, run.static.url, all_params)
     run.cleanups.append(sim.close)
@@ -219,6 +228,127 @@ def s02(run, name):
     check(tok not in text, "the token appeared in the console")
     check(tok not in json.dumps(sim.trace()), "the token appeared on the glasses")
     sim.web("phone")
+
+
+def say_it(sim, name="test-pane"):
+    """From the pane: tap, the Say it row, the Listening page."""
+    sim.tap()
+    page = sim.head("answer " + name, "the answers")
+    check(page["items"][0] == "\u00bb Say it", f"no Say it row: {page['items'][:2]}")
+    sim.shot("answers-say")
+    sim.choose(0)
+    return sim.head("listening", "listening", 10)
+
+
+@test("S25", "No transcriber: no Say it row; a hub that offers one and then fails: an error line, nothing sent", "e2e-security")
+def s25(run, name):
+    core, proxy, sim, tok = setup(run, name)
+    open_pane(sim)
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(page["items"][0] == "\u23ce Enter", f"a Say it row without a transcriber: {page['items'][0]}")
+    sim.shot("answers-plain")
+    for fn in reversed(run.cleanups):
+        fn()
+    run.cleanups.clear()
+    core, proxy, sim, tok = setup(run, name + "-lies", mode="stt-lies")
+    open_pane(sim)
+    say_it(sim)
+    time.sleep(1.5)
+    sim.tap()
+    page = sim.head("hub unreachable", "the error", 10)
+    check("say it again" in page["hint"], page["hint"])
+    sim.shot("stt-failed")
+    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was sent")
+
+
+@test("S26", "A transcript with escapes and 10 KiB: shown cleaned and cut, only printable text sent", "e2e-security")
+def s26(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="stt-hostile")
+    open_pane(sim)
+    say_it(sim)
+    time.sleep(1.5)
+    sim.tap()
+    page = sim.head("heard this", "the transcript", 15)
+    text = "".join(l for b in page["blocks"] for l in b["lines"])
+    check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", text), "control characters on screen")
+    check(text.startswith("run [31mthe tests"), text[:40])
+    sim.shot("heard-hostile")
+    sim.tap()
+    sim.head("sent what you said", "the flash", 10)
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(len(posts) == 2 and "text" in posts[0] and posts[1] == {"key": "Enter"}, str(posts)[:200])
+    sent = posts[0]["text"]
+    check(not re.search(r"[\x00-\x1f\x7f]", sent) and len(sent.encode()) <= 4096, f"sent {len(sent)} chars")
+
+
+@test("F20", "Say it: the tone is recorded, stopped, transcribed by the hub, read back and sent", "UI")
+def f20(run, name):
+    core, proxy, sim, tok = setup(run, name, stt=True)
+    open_pane(sim)
+    page = say_it(sim)
+    sim.shot("listening")
+    time.sleep(2)
+    page = sim.expect(lambda p: p["kind"] == "text" and "listening \u00b7" in p["head"] and any("\u2588" in l for b in p["blocks"] for l in b["lines"]), "the meter", 5)
+    sim.shot("meter")
+    sim.tap()
+    page = sim.head("heard this", "the transcript", 15)
+    check("run the tests again" in "".join(l for b in page["blocks"] for l in b["lines"]), page["blocks"])
+    sim.shot("heard")
+    clips = core.transcriber.clips
+    check(len(clips) == 1 and clips[0][:4] == b"RIFF" and len(clips[0]) > 44 + 2 * 16000, f"clip: {len(clips)} {len(clips[0]) if clips else 0}")
+    sim.tap()
+    sim.head("sent what you said", "the flash", 10)
+    wait_for("typed", lambda: "run the tests again" in core.pane(), 5)
+    sim.expect(lambda p: any("run the tests again" in l for b in p["blocks"] for l in b["lines"]), "the pane after", 8)
+    sim.shot("sent")
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(posts == [{"text": "run the tests again"}, {"key": "Enter"}], str(posts))
+    hub = (run.logs(name) / "hub.log").read_text()
+    check("audit transcribe" in hub and "run the tests again" not in hub, "the hub log")
+
+
+@test("F21", "No frames for four seconds: the error page, the mic closed", "UI")
+def f21(run, name):
+    core, proxy, sim, tok = setup(run, name, stt=True, params={"mic": ""})
+    open_pane(sim)
+    say_it(sim)
+    page = sim.head("no audio from the mic", "the error", 10)
+    check("say it again" in page["hint"], page["hint"])
+    sim.shot("no-audio")
+    check(not core.transcriber.clips, "a clip was sent")
+
+
+@test("F22", "Say it again, Type without Enter, cancel by double tap", "UI")
+def f22(run, name):
+    core, proxy, sim, tok = setup(run, name, stt=True)
+    open_pane(sim)
+    say_it(sim)
+    time.sleep(1.5)
+    sim.tap()
+    sim.head("heard this", "the first transcript", 15)
+    sim.menu(1)
+    sim.head("listening", "listening again", 10)
+    time.sleep(1.5)
+    sim.tap()
+    sim.head("heard this", "the second transcript", 15)
+    check(len(core.transcriber.clips) == 2, f"{len(core.transcriber.clips)} clips")
+    sim.shot("heard-again")
+    sim.menu(0)
+    sim.head("typed what you said", "typed without Enter", 10)
+    wait_for("typed", lambda: "run the tests again" in core.pane(), 5)
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(posts == [{"text": "run the tests again"}], str(posts))
+    core.keys("C-u")
+    say_it(sim)
+    time.sleep(1.5)
+    sim.tap()
+    sim.head("heard this", "the third transcript", 15)
+    sim.back()
+    sim.head("test-pane \u00b7 bash", "back on the pane")
+    time.sleep(1)
+    check(len([r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]) == 1, "the cancelled transcript was sent")
+    sim.shot("cancelled")
 
 
 # --- features -------------------------------------------------------------------------

@@ -49,7 +49,9 @@ phone pane, once.
 ## Security considerations
 
 - The manifest's whitelist is the Even app's own guard: the packed app
-  cannot reach any host but your hub.
+  cannot reach any host but your hub. Its `g2-microphone` permission is
+  for [spoken replies](spoken-replies.md); the mic opens on that action
+  only.
 - A development page is served over HTTPS as well; the hub URL rules
   refuse plain `http` beyond loopback.
 - The package holds no token and no hub of the author's: both are set on

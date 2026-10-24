@@ -44,8 +44,9 @@ export function mountPhone(hooks: PhoneHooks) {
   const lines = $('lines') as HTMLInputElement | null
   const charset = $('charset') as HTMLSelectElement | null
   const lens = $('lens') as HTMLInputElement | null
+  const voice = $('voice') as HTMLInputElement | null
   const reply = $('reply') as HTMLTextAreaElement | null
-  if (!hub || !token || !every || !lines || !charset || !lens || !reply) return
+  if (!hub || !token || !every || !lines || !charset || !lens || !voice || !reply) return
 
   const fill = () => {
     const s = getSettings()
@@ -56,6 +57,7 @@ export function mountPhone(hooks: PhoneHooks) {
     lines.value = String(s.lines)
     charset.value = s.charset
     lens.checked = s.lens
+    voice.checked = s.voice
     say('conn', s.token ? 'token stored · not tested yet' : 'no token yet', s.token ? '' : 'bad')
   }
   fill()
@@ -64,7 +66,7 @@ export function mountPhone(hooks: PhoneHooks) {
   $('save')?.addEventListener('click', async () => {
     const u = checkHubUrl(hub.value)
     if ('error' in u) return say('conn', u.error, 'bad')
-    const next: Partial<Settings> = { hub: u.url, every: Number(every.value), lines: Number(lines.value), charset: charset.value === 'utf-8' ? 'utf-8' : 'latin1', lens: lens.checked }
+    const next: Partial<Settings> = { hub: u.url, every: Number(every.value), lines: Number(lines.value), charset: charset.value === 'utf-8' ? 'utf-8' : 'latin1', lens: lens.checked, voice: voice.checked }
     if (token.value.trim()) {
       const t = checkToken(token.value)
       if ('error' in t) return say('conn', t.error, 'bad')
@@ -103,7 +105,14 @@ export function mountPhone(hooks: PhoneHooks) {
     try {
       const a = await api.me()
       const name = /^name\t(.*)$/m.exec(a.body)?.[1] ?? a.body.split('\n')[0]
-      say('conn', `hub answered in ${Date.now() - t0} ms · ${name}`.slice(0, 120), 'ok')
+      let voiceNote = ''
+      try {
+        await api.transcribeProbe()
+        voiceNote = ' · spoken replies available'
+      } catch {
+        voiceNote = ' · no transcriber on the hub'
+      }
+      say('conn', `hub answered in ${Date.now() - t0} ms · ${name}${voiceNote}`.slice(0, 160), 'ok')
       plog(`GET me ${a.status} ${Date.now() - t0} ms`, 'ok')
     } catch (e) {
       const msg = (e as Error)?.message || String(e)

@@ -68,7 +68,7 @@ export function decode(bytes: Uint8Array, contentType: string): string {
   return new TextDecoder('iso-8859-1').decode(bytes)
 }
 
-async function call(method: 'GET' | 'POST', path: string, opts: { body?: string; etag?: string; timeout?: number } = {}): Promise<Answer> {
+async function call(method: 'GET' | 'POST', path: string, opts: { body?: string | ArrayBuffer; contentType?: string; etag?: string; timeout?: number } = {}): Promise<Answer> {
   const { hub, token } = getSettings()
   if (!hub || !token) throw new ApiError(-1)
   const ctrl = new AbortController()
@@ -80,7 +80,7 @@ async function call(method: 'GET' | 'POST', path: string, opts: { body?: string;
       headers: {
         Authorization: 'Bearer ' + token,
         Accept: 'text/plain',
-        ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(opts.body !== undefined ? { 'Content-Type': opts.contentType ?? 'application/json' } : {}),
         ...(opts.etag ? { 'If-None-Match': opts.etag } : {}),
       },
       body: opts.body,
@@ -116,6 +116,10 @@ export const api = {
     call('GET', `/v1/panes/${address}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
   text: (address: string, text: string) => call('POST', `/v1/panes/${address}/input`, { body: JSON.stringify({ text }) }),
   key: (address: string, key: string) => call('POST', `/v1/panes/${address}/input`, { body: JSON.stringify({ key }) }),
+  /** Whether the hub has a transcriber: 204, or 404 which the caller reads as no. */
+  transcribeProbe: () => call('GET', '/v1/transcribe'),
+  /** A 16 kHz mono WAV to text; the transcriber may take a while. */
+  transcribe: (wav: ArrayBuffer) => call('POST', '/v1/transcribe', { body: wav, contentType: 'audio/wav', timeout: 95_000 }),
   /** One long poll; without a cursor only the cursor is wanted. */
   events: (after: number | null) =>
     call('GET', '/v1/events?' + q(after === null ? { limit: 1 } : { after, wait: 25, limit: 50 }), { timeout: LONG_POLL_MS }),

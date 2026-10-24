@@ -58,8 +58,9 @@ def check(cond, message):
 class Core:
     """Hub, agent and tmux for one test."""
 
-    def __init__(self, run, binary, logs):
+    def __init__(self, run, binary, logs, hub_args=()):
         self.run, self.bin, self.logs = run, binary, logs
+        self.hub_args = list(hub_args)
         self.dir = Path(run.tmp) / secrets.token_hex(4)
         self.dir.mkdir(mode=0o700)
         self.port = free_port()
@@ -93,9 +94,7 @@ class Core:
         shell = "env -i PATH=/usr/bin:/bin TERM=xterm LANG=C.UTF-8 PS1='$ ' bash --norc --noprofile"
         self.tmux_cmd("-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "shell", "-x", "80", "-y", "24", shell)
         self.tmux_cmd("select-pane", "-t", "work:0.0", "-T", "test-pane")
-        self.spawn("hub", "hub", "serve", "--dir", str(self.dir / "hub"), "--listen", f"127.0.0.1:{self.port}",
-                   "--public-url", self.url)
-        wait_for("hub", lambda: (self.dir / "hub" / "admin.sock").exists())
+        self.start_hub()
         code = self.cli("hub", "pair-code", "--dir", str(self.dir / "hub"), "--host", HOST)
         self.cli("agent", "pair", "--dir", str(self.dir / "agent"), code)
         self.start_agent()
@@ -104,7 +103,7 @@ class Core:
 
     def start_hub(self):
         self.spawn("hub", "hub", "serve", "--dir", str(self.dir / "hub"), "--listen", f"127.0.0.1:{self.port}",
-                   "--public-url", self.url)
+                   "--public-url", self.url, *self.hub_args)
         wait_for("hub", lambda: (self.dir / "hub" / "admin.sock").exists())
 
     def start_agent(self):
@@ -241,6 +240,15 @@ class Proxy:
                     return self.reply(200, data, {**headers, **CORS})
                 if proxy.mode == "claude-hostile" and is_read:
                     return self.reply(200, hostile_claude_screen(), {"Content-Type": "text/plain", **CORS})
+                if proxy.mode == "stt-hostile" and bare == "/v1/transcribe" and self.command != "OPTIONS":
+                    if self.command == "GET":
+                        return self.reply(204, b"", CORS)
+                    text = "run \x1b[31mthe\x07 tests " + "y" * 10000 + "\n"
+                    return self.reply(200, text.encode(), {"Content-Type": "text/plain; charset=utf-8", **CORS})
+                if proxy.mode == "stt-lies" and bare == "/v1/transcribe" and self.command != "OPTIONS":
+                    if self.command == "GET":
+                        return self.reply(204, b"", CORS)
+                    return self.reply(502, b'{"error":"provider_unavailable"}', {"Content-Type": "application/json", **CORS})
                 if proxy.mode == "events-hostile" and self.command == "GET" and bare == "/v1/events" and "after=" in path:
                     n = sum(1 for r in proxy.requests if r["method"] == "GET" and r["path"].startswith("/v1/events?after="))
                     time.sleep(1)
@@ -295,6 +303,47 @@ class Proxy:
 
     def paths(self, prefix):
         return [r for r in self.requests if r["path"].startswith(prefix)]
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+# --- a stand-in transcriber ------------------------------------------------------------
+
+class Transcriber:
+    """What whisper.cpp's server answers: a fixed sentence for any clip, and
+    a record of every clip it was given."""
+
+    def __init__(self, logs, text="run the tests again"):
+        self.text = text
+        self.clips = []
+        self.log = open(logs / "transcriber.log", "a")
+        self.port = free_port()
+        self.url = f"http://127.0.0.1:{self.port}/v1/audio/transcriptions"
+        stt = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                wav = body[body.find(b"RIFF"):] if b"RIFF" in body else b""
+                end = wav.find(b"\r\n--")
+                wav = wav[:end] if end > 0 else wav
+                stt.clips.append(wav)
+                stt.log.write(f"{time.strftime('%H:%M:%S')} clip {len(wav)} bytes\n")
+                stt.log.flush()
+                data = json.dumps({"text": stt.text}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self):
         self.server.shutdown()

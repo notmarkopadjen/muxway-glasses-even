@@ -30,6 +30,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | `src/protocol.ts` | text-mode lines, pane names, URL and token rules |
 | `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
 | `src/answers.ts` | the fixed answers ([screens](features/screens.md)) |
+| `src/voice.ts` | the microphone: frames, meter, the WAV ([spoken replies](features/spoken-replies.md)) |
 | `src/text.ts` | the measured font, wrapping and fitting by pixels, clamping by bytes, filters |
 | `src/settings.ts`, `src/phone.ts`, `index.html` | the phone pane ([phone pane](features/phone-pane.md)) |
 | `app.json`, `scripts/pack.sh` | the Even Hub manifest and the package ([install](features/install.md)) |
@@ -106,6 +107,8 @@ sequenceDiagram
   the bottom and the app is in the foreground; paused, it is not read
   until the view is at the bottom again. The list is read every 10 s and
   on every event.
+- A spoken clip goes to `POST /v1/transcribe` as a 16 kHz mono WAV, at
+  most 60 s, and the text comes back for review before it is typed.
 - `401` forgets the token at once and stops polling: a refused token is
   tried exactly once. `429` pauses for ten seconds. A network error
   doubles the events loop's wait up to a minute.

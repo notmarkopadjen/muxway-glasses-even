@@ -9,13 +9,25 @@ import { BODY_LINES, Glasses, PIN_LINES, SPLIT_LINES, type Block, type MenuSpec,
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, parseEvents, parsePanes, type Attention, type Pane } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
-import { LINE_PX, rows as splitRows, wrapRows } from './text.ts'
+import { LINE_PX, rows as splitRows, textWidth, typed, wrapRows } from './text.ts'
+import { GRACE_SECONDS, MIN_SECONDS, Recorder, toneFrame } from './voice.ts'
 
 type View =
   | { kind: 'panes'; page: number }
   | { kind: 'pane'; pane: Pane }
   | { kind: 'answers'; pane: Pane }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
+  | { kind: 'listen'; pane: Pane }
+  | { kind: 'heard'; pane: Pane }
+
+type VoicePhase = 'recording' | 'working' | 'review' | 'error'
+
+interface Voice {
+  phase: VoicePhase
+  seconds: number
+  text: string
+  error: string
+}
 
 const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
 const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
@@ -25,7 +37,8 @@ const FLASH_MS = 4_000
 const MENU_CLOSE_MS = 1500
 const ROWS_PER_LIST_PAGE = 19
 
-const MENU = { refresh: 1, reveal: 2, bottom: 3, panes: 4, needsYou: 5 }
+const MENU = { refresh: 1, reveal: 2, bottom: 3, panes: 4, needsYou: 5, typeOnly: 6, sayAgain: 7 }
+const SAY_IT = '» Say it'
 
 interface Attn {
   kind: Attention
@@ -61,6 +74,14 @@ export class App {
   private foreground = true
   private menuAt = 0
   private unsubscribe: (() => void) | null = null
+  /** The hub has a transcriber: the answers offer Say it. */
+  private canSpeak = false
+  private recorder: Recorder
+  private voice: Voice | null = null
+  private voiceTimer: ReturnType<typeof setInterval> | null = null
+  /** Frames from a generated tone instead of the mic: the test harness, loopback only. */
+  toneMic = false
+  private toneTimer: ReturnType<typeof setInterval> | null = null
   /** The phone pane is told which pane is open, for its reply box. */
   onPane: ((pane: Pane | null) => void) | null = null
 
@@ -71,6 +92,7 @@ export class App {
     this.bridge = bridge
     this.log = log
     this.view = new Glasses(bridge, (m) => log('glasses: ' + m), trace)
+    this.recorder = new Recorder(bridge)
     this.unsubscribe = bridge.onEvenHubEvent((e) => void this.onEvent(e))
   }
 
@@ -82,6 +104,7 @@ export class App {
 
   stop() {
     this.sleep()
+    void this.endVoice()
     this.unsubscribe?.()
     this.unsubscribe = null
   }
@@ -91,6 +114,7 @@ export class App {
     this.listError = null
     this.paneError = null
     this.etag = ''
+    this.canSpeak = false
     this.sleep()
     await this.redraw()
     this.wake()
@@ -102,6 +126,7 @@ export class App {
     this.scheduleList(0)
     if (this.top.kind === 'pane') this.schedulePane(0)
     this.runEvents()
+    void this.probeVoice()
   }
 
   private sleep() {
@@ -111,6 +136,23 @@ export class App {
     this.listTimer = this.paneTimer = null
     this.eventsGen++
     this.eventsRunning = false
+    if (this.voice?.phase === 'recording') void this.endVoice()
+  }
+
+  /** Whether the hub has a transcriber; asked once per wake. */
+  private async probeVoice() {
+    if (!getSettings().voice) {
+      this.canSpeak = false
+      return
+    }
+    try {
+      await api.transcribeProbe()
+      this.canSpeak = true
+      this.log('spoken replies: the hub has a transcriber')
+    } catch (e) {
+      this.canSpeak = false
+      if (e instanceof ApiError && e.status === 404) this.log('spoken replies: no transcriber on the hub')
+    }
   }
 
   // -------------------------------------------------------------------- data
@@ -272,6 +314,10 @@ export class App {
 
   // ---------------------------------------------------------------- gestures
   private async onEvent(e: EvenHubEvent) {
+    if (e.audioEvent) {
+      this.recorder.push(e.audioEvent.audioPcm as Uint8Array | number[] | undefined)
+      return
+    }
     if (e.menuItemClickEvent?.itemID != null) {
       this.menuAt = Date.now()
       this.awake()
@@ -299,7 +345,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind === 'pane') await this.onTap()
+          if (this.top.kind === 'pane' || this.top.kind === 'listen' || this.top.kind === 'heard') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -338,6 +384,7 @@ export class App {
     }
     const left = this.stack.pop()!
     this.flash = null
+    if (left.kind === 'listen' || left.kind === 'heard') await this.endVoice()
     if (left.kind === 'pane') {
       this.raw = []
       this.body = []
@@ -366,6 +413,15 @@ export class App {
 
   private async onTap() {
     const v = this.top
+    if (v.kind === 'listen') {
+      if (this.voice?.phase === 'recording') await this.finishVoice(v.pane)
+      else if (this.voice?.phase === 'error') await this.beginVoice(v.pane, true)
+      return
+    }
+    if (v.kind === 'heard') {
+      await this.sendVoice(v.pane, true)
+      return
+    }
     if (v.kind !== 'pane') return
     if (v.pane.writable) await this.push({ kind: 'answers', pane: v.pane })
     else await this.readPane(true)
@@ -384,7 +440,12 @@ export class App {
       if (!pane) return
       await this.openPane(pane)
     } else if (v.kind === 'answers') {
-      const a = ANSWERS[idx]
+      const offset = this.offersVoice(v.pane) ? 1 : 0
+      if (offset && idx === 0) {
+        await this.beginVoice(v.pane, false)
+        return
+      }
+      const a = ANSWERS[idx - offset]
       if (a) await this.push({ kind: 'confirm', pane: v.pane, answer: a })
     } else if (v.kind === 'confirm') {
       const { pane, answer } = v
@@ -436,7 +497,127 @@ export class App {
         await this.openPane(pane)
         break
       }
+      case MENU.typeOnly:
+        if (this.top.kind === 'heard') await this.sendVoice(this.top.pane, false)
+        break
+      case MENU.sayAgain:
+        if (this.top.kind === 'heard' || this.top.kind === 'listen') await this.beginVoice(this.top.pane, true)
+        break
     }
+  }
+
+  // ------------------------------------------------------------------- voice
+  private offersVoice(pane: Pane): boolean {
+    return this.canSpeak && pane.writable && getSettings().voice
+  }
+
+  /** Opens the mic on the Listening page; again replaces the page already there. */
+  private async beginVoice(pane: Pane, again: boolean) {
+    await this.endVoice()
+    this.voice = { phase: 'recording', seconds: 0, text: '', error: '' }
+    if (again) {
+      this.stack.pop()
+      this.stack.push({ kind: 'listen', pane })
+      await this.redraw()
+    } else {
+      // The answers list is left behind: the pane is where the text ends up.
+      this.stack.pop()
+      await this.push({ kind: 'listen', pane })
+    }
+    const ok = await this.recorder.start()
+    if (!ok) this.log('audioControl did not confirm the mic; waiting for frames')
+    if (this.toneMic) {
+      let n = 0
+      this.toneTimer = setInterval(() => this.recorder.push(toneFrame(n++)), 100)
+    }
+    this.voiceTimer = setInterval(() => void this.tickVoice(pane), 500)
+    this.log('listening for ' + paneName(pane))
+  }
+
+  private async tickVoice(pane: Pane) {
+    const v = this.voice
+    if (!v || v.phase !== 'recording') return
+    v.seconds = Math.max(this.recorder.seconds, this.recorder.elapsed)
+    if (this.recorder.elapsed > GRACE_SECONDS && this.recorder.seconds === 0) {
+      await this.stopMic()
+      v.phase = 'error'
+      v.error = 'no audio from the mic · let the Even app use it'
+      this.log('no frames arrived from the mic', 'bad')
+      await this.redraw()
+      return
+    }
+    if (this.recorder.full) await this.finishVoice(pane)
+    else await this.redraw()
+  }
+
+  private async stopMic() {
+    if (this.voiceTimer) clearInterval(this.voiceTimer)
+    if (this.toneTimer) clearInterval(this.toneTimer)
+    this.voiceTimer = this.toneTimer = null
+    await this.recorder.stop()
+  }
+
+  /** Closes the mic and forgets the clip and the transcript. */
+  private async endVoice() {
+    await this.stopMic()
+    this.recorder.reset()
+    this.voice = null
+  }
+
+  /** The tap on Listening: the clip goes to the hub, the text comes back for review. */
+  private async finishVoice(pane: Pane) {
+    const v = this.voice
+    if (!v || v.phase !== 'recording') return
+    await this.stopMic()
+    v.seconds = this.recorder.seconds
+    if (this.recorder.seconds < MIN_SECONDS) {
+      v.phase = 'error'
+      v.error = this.recorder.seconds === 0 ? 'no audio from the mic · let the Even app use it' : 'too short · say it again'
+      this.recorder.reset()
+      await this.redraw()
+      return
+    }
+    v.phase = 'working'
+    await this.redraw()
+    const t0 = Date.now()
+    try {
+      const a = await api.transcribe(this.recorder.wav())
+      // What input takes: no control characters, at most 4096 bytes, whatever a hub answered.
+      const text = typed(a.body).trim()
+      if (!text) throw new ApiError(502)
+      v.text = text
+      v.phase = 'review'
+      this.log(`transcribed ${v.seconds.toFixed(1)} s in ${Date.now() - t0} ms`, 'ok')
+      this.stack.pop()
+      this.stack.push({ kind: 'heard', pane })
+    } catch (e) {
+      v.phase = 'error'
+      v.error = e instanceof ApiError ? e.message : 'transcription failed'
+      this.log('transcription failed: ' + v.error, 'bad')
+    }
+    this.recorder.reset()
+    await this.redraw()
+  }
+
+  /** The tap on Heard this: the text goes to the pane, with or without Enter. */
+  private async sendVoice(pane: Pane, enter: boolean) {
+    const text = this.voice?.text
+    if (!text) return
+    this.voice = null
+    this.stack.pop()
+    let words = enter ? 'sent what you said ⏎' : 'typed what you said'
+    try {
+      await api.text(pane.address, text)
+      if (enter) await api.key(pane.address, 'Enter')
+      this.log(`sent ${text.length} characters you said to ${paneName(pane)}`, 'ok')
+    } catch (e) {
+      words = await this.failed(e, 'POST input')
+    }
+    this.flash = { text: words, until: Date.now() + FLASH_MS }
+    this.later(FLASH_MS)
+    this.offset = 0
+    await this.redraw()
+    await this.readPane(true)
   }
 
   /** Sends the answer piece by piece and says what happened in the head. */
@@ -557,7 +738,35 @@ export class App {
     }
     if (v.kind === 'answers') {
       menu.push({ id: MENU.panes, label: 'Panes' })
-      return { kind: 'list', head: 'answer ' + paneName(v.pane), ...this.hint('▽ choose · ● pick · ×× back'), blocks: [], items: ANSWERS.map((a) => a.label), menu }
+      const items = (this.offersVoice(v.pane) ? [SAY_IT] : []).concat(ANSWERS.map((a) => a.label))
+      return { kind: 'list', head: 'answer ' + paneName(v.pane), ...this.hint('▽ choose · ● pick · ×× back'), blocks: [], items, menu }
+    }
+    if (v.kind === 'listen') {
+      const s = this.voice ?? { phase: 'error', seconds: 0, text: '', error: 'nothing recorded' }
+      let head: string
+      let body: string[]
+      let hint: string
+      if (s.phase === 'recording') {
+        head = `listening · ${Math.round(s.seconds)} s`
+        body = ['', meter(this.recorder.level), '', `${Math.round(s.seconds)} s · tap when done`]
+        hint = '● stop · ×× cancel'
+      } else if (s.phase === 'working') {
+        head = `transcribing ${s.seconds.toFixed(1)} s of audio…`
+        body = ['', '', '', 'the hub is listening to it']
+        hint = '×× cancel'
+      } else {
+        head = s.error
+        body = ['', '', '', 'tap to say it again']
+        hint = '● say it again · ×× cancel'
+      }
+      while (body.length < BODY_LINES) body.push('')
+      return { kind: 'text', head: `${paneName(v.pane)} · ${head}`, ...this.hint(hint), blocks: [{ lines: body, height: BODY_LINES, level: 4 }], items: [], menu: [{ id: MENU.panes, label: 'Panes' }] }
+    }
+    if (v.kind === 'heard') {
+      const lines = wrapRows([this.voice?.text ?? ''], LINE_PX)
+      while (lines.length < BODY_LINES) lines.push('')
+      const own: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }, { id: MENU.panes, label: 'Panes' }]
+      return { kind: 'text', head: `heard this · ${(this.voice?.seconds ?? 0).toFixed(1)} s`, ...this.hint('● send ⏎ · ≡ menu · ×× cancel'), blocks: [{ lines: lines.slice(0, BODY_LINES), height: BODY_LINES, level: 4 }], items: [], menu: own }
     }
     menu.push({ id: MENU.panes, label: 'Panes' })
     return {
@@ -569,6 +778,12 @@ export class App {
       menu,
     }
   }
+}
+
+/** A line of blocks as long as the sound is loud, to the width of the screen. */
+function meter(level: number): string {
+  const cells = Math.round(Math.min(1, level * 3) * Math.floor(LINE_PX / textWidth('█')))
+  return '█'.repeat(cells) || '·'
 }
 
 function typeOf(ev?: { eventType?: OsEventTypeList }): OsEventTypeList | null {

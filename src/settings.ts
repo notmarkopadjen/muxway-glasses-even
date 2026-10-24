@@ -17,11 +17,13 @@ export interface Settings {
   charset: 'latin1' | 'utf-8'
   /** the Claude Code lens on panes that run it */
   lens: boolean
+  /** spoken replies, when the hub has a transcriber */
+  voice: boolean
 }
 
 const KEY = 'muxway.settings.v1'
 
-const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true }
+const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true }
 
 let current: Settings = { ...DEFAULTS }
 let bridge: EvenAppBridge | null = null
@@ -41,6 +43,7 @@ function normalize(s: Partial<Settings> | null | undefined): Settings {
     lines: bounded(s?.lines, 50, 500, DEFAULTS.lines),
     charset: s?.charset === 'utf-8' ? 'utf-8' : 'latin1',
     lens: s?.lens !== false,
+    voice: s?.voice !== false,
   }
 }
 
@@ -79,8 +82,10 @@ export function fromQuery(loc: { hostname: string; search: string }): Partial<Se
     const v = q.get(k)
     if (v !== null) out[k] = Number(v)
   }
-  const lens = q.get('lens')
-  if (lens !== null) out.lens = lens !== '0' && lens !== 'false'
+  for (const k of ['lens', 'voice'] as const) {
+    const v = q.get(k)
+    if (v !== null) out[k] = v !== '0' && v !== 'false'
+  }
   return out
 }
 

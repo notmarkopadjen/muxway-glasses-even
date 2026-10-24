@@ -19,6 +19,8 @@ function tracer(): ((p: Page) => void) | null {
 
 async function boot() {
   const trace = tracer()
+  // Read before the settings loader strips the query from the address.
+  const toneMic = new URLSearchParams(window.location.search).get('mic') === 'tone' && isLoopback(window.location.hostname)
   // The bridge exists inside the Even app and the simulator only; in a
   // plain browser the phone pane still works for the settings.
   const bridge = await Promise.race<EvenAppBridge | null>([waitForEvenAppBridge(), new Promise<null>((r) => setTimeout(() => r(null), 4000))])
@@ -35,6 +37,8 @@ async function boot() {
   plog('bridge ready')
   app = new App(bridge, plog, trace)
   app.onPane = showOpenPane
+  // The test harness has no microphone: a generated tone stands in, from loopback only.
+  app.toneMic = toneMic
   await app.start()
 }
 

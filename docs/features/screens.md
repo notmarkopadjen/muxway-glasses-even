@@ -90,6 +90,9 @@ answer build                          send y ⏎ to build?
 ▽ choose · ● pick · ×× back
 ```
 
+When the hub has a transcriber the list opens with **» Say it**, which
+leads to the [spoken reply](spoken-replies.md) pages.
+
 A fixed set, in that order. `y ⏎` and `n ⏎` send the letter and then
 `Enter`; `1`, `2` and `3` send the digit alone, which is how Claude Code
 takes a choice on a question or a permission prompt; the rest are the

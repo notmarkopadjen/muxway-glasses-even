@@ -23,15 +23,24 @@ function fakeBridge() {
     shutDownPageContainer: async () => true,
     setLocalStorage: async () => true,
     getLocalStorage: async () => '',
+    mic: [] as boolean[],
+    audioControl: async (open: boolean) => (b.mic.push(open), true),
   }
   return b
 }
 
-function fakeHub() {
+function fakeHub(stt = false) {
   const calls: string[] = []
+  const bodies: unknown[] = []
   const fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
     const u = String(url)
     calls.push(init?.method === 'POST' ? 'POST ' + u : u)
+    if (init?.body !== undefined) bodies.push(init.body)
+    if (u.includes('/v1/transcribe')) {
+      if (!stt) return new Response('{"error":"not_found"}', { status: 404 })
+      if (init?.method === 'POST') return new Response('run the tests again\n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+      return new Response(null, { status: 204 })
+    }
     if (u.includes('/v1/events')) {
       if (u.includes('wait=')) await new Promise((r) => setTimeout(r, 300))
       return new Response('next\t1\n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
@@ -43,7 +52,7 @@ function fakeHub() {
     if (u.includes('/v1/panes')) return new Response(LIST, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
     return new Response(null, { status: 204 })
   }
-  return { calls, fetch }
+  return { calls, bodies, fetch }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -87,4 +96,53 @@ test('foreground exit stops the requests, enter and gestures resume them', async
   assert.ok(hub.calls.length > again, 'a gesture did not wake the app')
   app.stop()
   await sleep(400)
+})
+
+test('a spoken reply: Say it, frames, stop, read back, send with Enter', async () => {
+  const hub = fakeHub(true)
+  globalThis.fetch = hub.fetch as typeof fetch
+  await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'b'.repeat(43), every: 1, voice: true })
+  const bridge = fakeBridge()
+  const app = new App(bridge as never, () => {}, null)
+  app.toneMic = true
+  await app.start()
+  await sleep(200)
+  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never }) // the pane
+  await sleep(200)
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // answers
+  await sleep(100)
+  const answers = bridge.pages[bridge.pages.length - 1] as { listObject?: { itemContainer: { itemName: string[] } }[] }
+  assert.equal(answers.listObject?.[0].itemContainer.itemName[0], '» Say it')
+  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never }) // Say it
+  await sleep(1300)
+  assert.deepEqual(bridge.mic, [true], 'the mic was not opened once')
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // stop
+  await sleep(300)
+  assert.deepEqual(bridge.mic, [true, false], 'the mic was not closed')
+  const wav = hub.bodies.find((b) => b instanceof ArrayBuffer) as ArrayBuffer
+  assert.ok(wav && wav.byteLength > 44 + 16000, 'no clip of at least a second was posted')
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // send
+  await sleep(300)
+  const posts = hub.bodies.filter((b) => typeof b === 'string')
+  assert.deepEqual(posts, ['{"text":"run the tests again"}', '{"key":"Enter"}'])
+  app.stop()
+  await sleep(300)
+})
+
+test('without a transcriber the answers offer no Say it', async () => {
+  const hub = fakeHub(false)
+  globalThis.fetch = hub.fetch as typeof fetch
+  await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'c'.repeat(43), every: 1, voice: true })
+  const bridge = fakeBridge()
+  const app = new App(bridge as never, () => {}, null)
+  await app.start()
+  await sleep(200)
+  bridge.cb!({ listEvent: { eventType: OsEventTypeList.CLICK_EVENT, currentSelectItemIndex: 0 } as never })
+  await sleep(200)
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
+  await sleep(100)
+  const answers = bridge.pages[bridge.pages.length - 1] as { listObject?: { itemContainer: { itemName: string[] } }[] }
+  assert.equal(answers.listObject?.[0].itemContainer.itemName[0], '⏎ Enter')
+  app.stop()
+  await sleep(300)
 })

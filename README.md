@@ -8,14 +8,16 @@ Even Realities G2 client for [muxway](https://github.com/notmarkopadjen/muxway):
 
 An Even Hub app: a page the Even phone app loads and that draws on the
 glasses. It lists the panes your token may see, shows the last lines of
-one, answers it from a fixed set of replies, and tells you when Claude
-Code in a pane asks a question or waits for a permission. Settings and
+one, answers it from a fixed set of replies or with your voice, and
+tells you when Claude Code in a pane asks a question or waits for a
+permission. Settings and
 free-text replies live on the phone, in the same app.
 
 - [Screens and gestures](docs/features/screens.md)
 - [Notifications](docs/features/notifications.md)
 - [The Claude Code lens](docs/features/lenses.md)
 - [The phone pane](docs/features/phone-pane.md)
+- [Spoken replies](docs/features/spoken-replies.md)
 - [Install](docs/features/install.md)
 - [Architecture](docs/ARCHITECTURE.md)
 
