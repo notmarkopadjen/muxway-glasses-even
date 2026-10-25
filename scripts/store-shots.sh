@@ -20,7 +20,7 @@ pick F32_f32 list-selected 02-selected.png
 pick F33_f33 split-marked 03-split.png
 pick F11_f11 pane-hello 04-pane.png
 pick F14_f14 lens 05-lens.png
-pick F13_f13 answers 06-answers.png
+pick F14_f14 answers-offer 06-answers.png
 pick F35_f35 listening-graph 07-listening.png
 pick F35_f35 heard-box 08-heard.png
 pick F15_f15 banner 09-banner.png

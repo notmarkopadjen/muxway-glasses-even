@@ -213,3 +213,13 @@ Deviations:
   in the hint is a unit test.
 - **Eight lines in the columns, not seven,** once the band's 4 px gap
   went with the picture.
+
+## Test run
+
+76 tests, all passing at `9c7d338`: the end-to-end suite in the
+simulator (security first, then the features, the phone pane in
+Chromium), 48 unit tests, and the search of every log for the run's
+tokens and keys. Recorded as
+[test run #9](https://github.com/notmarkopadjen/muxway-glasses-even/issues/9).
+The listing's screenshots are retaken from that run; the answers shot
+now comes from the lens test, so it shows the suggestion first.
