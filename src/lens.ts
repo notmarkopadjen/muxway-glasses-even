@@ -2,8 +2,8 @@
 // screen with chrome (the summary of the last turn, notices on the
 // right, a rule that may carry the session name, the input box, a rule
 // and a footer). On the glasses only the conversation is wanted: the
-// chrome waits until revealed, and a box with text in it stays at the
-// bottom.
+// chrome waits until revealed, and what the box holds, Claude's
+// suggestion, is offered as the first answer.
 
 export interface Shaped {
   body: string[]

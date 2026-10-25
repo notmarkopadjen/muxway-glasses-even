@@ -28,10 +28,11 @@ The lens:
   **notices** (blank rows and rows starting with eight spaces right above
   the top rule) and the **summary** (the one row above those that starts
   with a spinner mark and names a duration such as `58s` or `5m 27s`);
-- hides the **input box** when it holds nothing but the prompt mark or
-  Claude's own hint (`Try "..."`), and **pins** it to the bottom of the
-  screen, brightest, when someone typed into it at the terminal; the
-  transcript scrolls above it;
+- hides the **input box**. When it holds more than the prompt mark or
+  Claude's own hint (`Try "..."`), that is Claude's suggestion of what to
+  say next, and it becomes the **first answer** on the answers page
+  ([screens](screens.md)): the text in quotes, which sends it and
+  `Enter`. The body keeps the whole height;
 - drops the **blank rows** between the transcript and the chrome.
 
 On a pane whose program is `claude` (the list's command column) the lens
@@ -51,7 +52,7 @@ flowchart LR
         T[transcript] --> S[summary] --> E[blank rows] --> N[notice] --> R1[rule + name] --> B[input box] --> R2[rule] --> F[footer]
     end
     T --> body
-    B -- typed --> pinned
+    B -- "holds text" --> answer[first answer]
     S -. "reveal" .-> body
     N -. "reveal" .-> body
     B -. "reveal, empty" .-> body
@@ -80,5 +81,10 @@ hide rows after the last rule, the empty box between the rules, the blank
 and right-aligned rows above the top rule and one summary row above
 those; forced, at most the rows after the last prompt row among the final
 eight. Reveal all shows everything it hid. The worst a crafted screen
-does is hide its own last rows until the wearer picks Reveal all. The
+does is hide its own last rows until the wearer picks Reveal all.
+
+What the box holds is shown as an answer and sent only when the wearer
+picks it and confirms. It goes back to the same pane, cleaned of control
+characters and cut at 4096 bytes, so a crafted box can type into its own
+program what the program could have typed itself, and nothing more. The
 end-to-end suite has these cases (S05).

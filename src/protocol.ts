@@ -185,7 +185,7 @@ export function checkToken(raw: string): { token: string } | { error: string } {
   return { token: s }
 }
 
-/** A refusal in a few words, for a head line. */
+/** A refusal in a few words, for the hint. */
 export function errorWords(status: number): string {
   switch (status) {
     case -1:

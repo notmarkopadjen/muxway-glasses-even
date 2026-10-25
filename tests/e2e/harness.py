@@ -429,10 +429,9 @@ def direct(hub_url, token, method, path, body=None, accept="text/plain"):
 # --- the simulator ---------------------------------------------------------------------
 
 def words(page):
-    """Every word a page shows: head, hint, blocks, the bands' text."""
-    parts = [page["head"], page["hint"]]
+    """Every word a page shows: the hint and the blocks."""
+    parts = [page["hint"]]
     parts += [l for b in page["blocks"] for l in b["lines"]]
-    parts += [c["text"] for c in page.get("charts", []) if c.get("text")]
     return "\n".join(parts)
 
 class Sim:
@@ -514,7 +513,7 @@ class Sim:
         return found[0]
 
     def head(self, text, what=None, timeout=25):
-        """A page that says the text somewhere: head, hint, a block or a title band."""
+        """A page that says the text somewhere: the hint or a block."""
         return self.expect(lambda p: text in words(p), what or f"a page saying {text!r}", timeout)
 
     def block(self, name, page=None):
@@ -538,9 +537,8 @@ class Sim:
         return float(out.stdout.strip() or 0)
 
     def lines(self):
-        """The lines of pane text on screen now: the body, then the pinned block."""
-        p = self.last()
-        return [l for b in p["blocks"] if b.get("name") in ("body", "pinned") for l in b["lines"]]
+        """The lines of pane text on screen now."""
+        return self.block("body") or []
 
     def input(self, action, wait=0.8):
         self.mark = len(self.trace())

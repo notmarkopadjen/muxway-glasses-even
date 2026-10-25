@@ -1,14 +1,14 @@
 // What every page says and draws, from the app's state: the pane list,
-// the columns, the pane, the answers, the voice pages. A status line on
-// top, a hint at the foot, bold title bands, bordered boxes.
+// the columns, the pane, the answers, the voice pages. Text from the top
+// down, a hint at the foot, bordered boxes.
 
 import { ANSWERS, short, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, type Attention, type Host, type Pane } from './protocol.ts'
-import { BAND_H, band, tiles, type Chart } from './raster.ts'
-import { CANVAS_W, LINE_PX, textWidth, wrapRows } from './text.ts'
+import { tiles, type Chart } from './raster.ts'
+import { CANVAS_W, LINE_PX, typed, wrapRows } from './text.ts'
 
 export const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
 export const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
@@ -25,7 +25,6 @@ export interface Model {
   needsYou: Pane | null
   flash: string | null
   toast: string | null
-  clock: string
   lens: boolean
   canSpeak: boolean
   /** Whether a listing has arrived since the start. */
@@ -51,7 +50,10 @@ export interface Reader {
 }
 
 // --- geometry ------------------------------------------------------------------------------
-const BODY_Y = TOP + BAND_H + 4
+const TITLE_H = 30
+const BODY_Y = TOP + TITLE_H
+/** Lines of a pane under its title, down to the hint. */
+const BODY_LINES = Math.floor((HINT_Y - BODY_Y) / LINE_H)
 const COL_GAP = 8
 const FOOT_Y = TOP + 140 + 6
 const FOOT_H = HINT_Y - 6 - FOOT_Y
@@ -66,15 +68,6 @@ export function sorted(panes: Pane[]): Pane[] {
   return panes.slice().sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
 }
 
-/** The status line, the same on every page: panes that need you, panes in all, the host, the clock. */
-export function statusHead(m: Model): string {
-  if (m.configured && !m.loaded) return 'reading the hub ' + '·'.repeat(Math.max(1, Math.min(3, m.dots)))
-  const n = m.panes.filter(needs).length
-  const line = (gap: string) => [`★ ${n}`, `≡ ${m.panes.length}`, m.hosts[0] ? `${m.hosts[0].online ? '●' : '○'} ${m.hosts[0].name}` : '○ no host', m.clock].join(gap)
-  const wide = line('  ')
-  return textWidth(wide) <= CANVAS_W - 32 ? wide : line(' ')
-}
-
 function hint(m: Model, base: string): Pick<Page, 'hint' | 'hintLevel' | 'hintBorder'> {
   if (m.toast) return { hint: m.toast, hintLevel: 4, hintBorder: true }
   if (m.listError) return { hint: m.listError, hintLevel: 4 }
@@ -86,10 +79,24 @@ function footer(lines: string[]): Block {
   return { name: 'footer', x: 2, y: FOOT_Y, w: CANVAS_W - 4, h: FOOT_H, lines, level: 3 }
 }
 
-/** The pane's rows through the lens, wrapped to a width: the body and the pinned box. */
-export function shaped(p: Pane, raw: string[], widthPx: number, lens: boolean, reveal: boolean): { body: string[]; pinned: string[] } {
+/** The pane's rows through the lens, wrapped to a width. Claude's input box is not drawn: what it holds is offered as an answer. */
+export function shaped(p: Pane, raw: string[], widthPx: number, lens: boolean, reveal: boolean): string[] {
   const s = lens ? shapeClaude(raw, reveal, runsClaude(p.command)) : null
-  return { body: wrapRows(s ? s.body : raw, widthPx), pinned: s ? wrapRows(s.pinned, widthPx) : [] }
+  return wrapRows(s ? s.body : raw, widthPx)
+}
+
+/** Claude's suggestion, from its input box, as an answer: the text and Enter. Null when the box is empty. */
+export function offerOf(p: Pane, raw: string[], lens: boolean): Answer | null {
+  const s = lens && raw.length ? shapeClaude(raw, false, runsClaude(p.command)) : null
+  if (!s || !p.writable) return null
+  const text = typed(
+    s.pinned
+      .map((r) => r.trim().replace(/^(❯|>)\s*/, ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
+  return text ? { label: `"${text}"`, pieces: [{ text }, { key: 'Enter' }] } : null
 }
 
 function ago(seconds: number, now: number): string {
@@ -116,8 +123,10 @@ export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'non
   return (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + (p.command && p.command !== name ? ` · ${p.command}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
 }
 
-/** Rows on the list at once: the page's eight text containers less the head and the hint; the window slides under the cursor. */
-export const LIST_ROWS = 6
+/** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
+export const LIST_ROWS = 7
+/** The rows spread down to the hint, so no band is left dark under them. */
+const ROW_PITCH = Math.floor((HINT_Y - TOP) / LIST_ROWS)
 export const MAX_SELECTED = 3
 const ROW_W = CANVAS_W - 4
 
@@ -173,12 +182,15 @@ export function listPage(m: Model, now: number): Page {
     const at = start + i
     // The cursor is a mark, not only a brightness: on the glasses the brightest row alone was missed.
     const text = items[at] === undefined ? ' ' : (at === cursor && m.loaded ? '> ' : '  ') + items[at]
-    blocks.push({ name: 'row' + at, x: 2, y: TOP + i * LINE_H, w: ROW_W, h: LINE_H, lines: [text], level: at === cursor && m.loaded ? 4 : 3 })
+    blocks.push({ name: 'row' + at, x: 2, y: TOP + i * ROW_PITCH, w: ROW_W, h: ROW_PITCH, lines: [text], level: at === cursor && m.loaded ? 4 : 3 })
   }
   // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
   const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
-  const base = !m.loaded ? 'reading the hub…' : where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
-  return { kind: 'dash', head: statusHead(m), ...hint(m, base), blocks, charts: [], items: [], menu: [] }
+  const offline = m.hosts.filter((h) => !h.online).map((h) => `○ ${h.name} offline · `).join('')
+  const base = !m.loaded
+    ? 'reading the hub ' + '·'.repeat(Math.max(1, Math.min(3, m.dots)))
+    : offline + where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
+  return { kind: 'dash', ...hint(m, base), blocks, charts: [], items: [], menu: [] }
 }
 
 // --- side by side -------------------------------------------------------------------------
@@ -187,34 +199,28 @@ export function splitPage(m: Model): Page {
   const shown = selectedPanes(m)
   const columns = Math.max(2, shown.length)
   const colW = Math.floor((CANVAS_W - COL_GAP * (columns - 1)) / columns)
-  const lines = Math.floor((HINT_Y - 4 - BODY_Y) / LINE_H)
   const blocks: Block[] = []
-  const charts: Chart[] = []
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    const title = `${MARK[p.attention]} ${paneName(p)} · ${p.command}`
-    const art = band(title, colW, chosen)
-    if (art) charts.push(...tiles(art, x, TOP, `band:${colW}:${chosen ? 1 : 0}:${title}`, (chosen ? '» ' : '') + title))
-    else blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: BAND_H, lines: [(chosen ? '» ' : '') + title], level: chosen ? 4 : 2 })
+    const title = `${chosen ? '» ' : ''}${MARK[p.attention]} ${paneName(p)} · ${p.command}`
+    blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
     if (r?.error) text = [r.error]
     else if (!r || !r.raw.length) text = ['reading…']
     else {
-      const s = shaped(p, r.raw, colW - 4, m.lens, false)
-      const body = s.pinned.length ? s.body.slice(-(lines - s.pinned.length)).concat(s.pinned) : s.body.slice(-lines)
-      text = body
-      while (text.length < lines) text.unshift('')
+      text = shaped(p, r.raw, colW - 4, m.lens, false).slice(-BODY_LINES)
+      while (text.length < BODY_LINES) text.unshift('')
     }
-    blocks.push({ name: 'col' + i, x, y: BODY_Y, w: colW, h: lines * LINE_H, lines: text, level: chosen ? 4 : 2 })
+    blocks.push({ name: 'col' + i, x, y: BODY_Y, w: colW, h: BODY_LINES * LINE_H, lines: text, level: chosen ? 4 : 2 })
   })
   if (!shown.length) blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
   const sel = m.marked >= 0 ? shown[m.marked] : undefined
-  const base = sel ? `▽ next pane · ● ${sel.writable ? 'answer' : 'refresh'} · ×× the list` : '▽ open a pane · ● refresh · ×× the list'
+  const base = sel ? `▽ next pane · ● open ${paneName(sel)} · ×× the list` : '▽ pick a pane · ● refresh · ×× the list'
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.needsYou) menu.push({ id: MENU.needsYou, label: 'Go to: ' + paneName(m.needsYou) })
-  return { kind: 'dash', head: statusHead(m), ...hint(m, base), blocks, charts, items: [], menu }
+  return { kind: 'dash', ...hint(m, base), blocks, charts: [], items: [], menu }
 }
 
 // --- the pane -----------------------------------------------------------------------------
@@ -225,37 +231,28 @@ export interface PaneState {
   state: string
 }
 
-const BAND_W = 376
+const TITLE_W = 376
 const BODY_W = CANVAS_W - 4
-const PIN_LINES = 2
 
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState): Page {
   const title = `${MARK[p.attention]} ${paneName(p)} · ${p.command || '?'}`
-  const charts: Chart[] = []
   const blocks: Block[] = []
-  const art = band(title, BAND_W)
-  if (art) charts.push(...tiles(art, 0, TOP, `band:${BAND_W}:0:${title}`, title))
-  else blocks.push({ name: 'title', x: 0, y: TOP, w: BAND_W, h: BAND_H, lines: [title], level: 4 })
-  blocks.push({ name: 'state', x: BAND_W + 8, y: TOP, w: CANVAS_W - BAND_W - 8, h: BAND_H, lines: [st.state], level: 2 })
-  const s = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, m.lens, st.reveal) : { body: [], pinned: [] }
-  const total = Math.floor((HINT_Y - 4 - BODY_Y) / LINE_H)
-  const pin = s.pinned.length ? PIN_LINES : 0
-  const size = pin ? total - pin - 1 : total
-  const end = s.body.length - st.offset * size
-  const lines = s.body.slice(Math.max(0, end - size), Math.max(0, end))
-  while (lines.length < size) lines.unshift('')
-  blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: size * LINE_H, lines, level: 3 })
-  if (pin) blocks.push({ name: 'pinned', x: 0, y: BODY_Y + size * LINE_H + 4, w: BODY_W, h: pin * LINE_H + 12, lines: s.pinned.slice(-pin), level: 4, border: true })
+  blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
+  blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })
+  const body = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, m.lens, st.reveal) : []
+  const end = body.length - st.offset * BODY_LINES
+  const lines = body.slice(Math.max(0, end - BODY_LINES), Math.max(0, end))
+  while (lines.length < BODY_LINES) lines.unshift('')
+  blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
   menu.push({ id: MENU.bottom, label: 'Bottom' })
   if (m.needsYou && m.needsYou.address !== p.address) menu.push({ id: MENU.needsYou, label: 'Go to: ' + paneName(m.needsYou) })
   return {
     kind: 'dash',
-    head: statusHead(m),
     ...hint(m, `▽ page · ● ${p.writable ? 'answer' : 'refresh'} · ≡ menu · ×× back`),
     blocks,
-    charts,
+    charts: [],
     items: [],
     menu,
   }
@@ -263,23 +260,21 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
 
 /** How many lines of the pane a page shows, for paging. */
 export function pageSize(p: Pane, r: Reader | undefined, lens: boolean, reveal: boolean): { size: number; total: number } {
-  const s = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, lens, reveal) : { body: [], pinned: [] }
-  const total = Math.floor((HINT_Y - 4 - BODY_Y) / LINE_H)
-  const size = s.pinned.length ? total - PIN_LINES - 1 : total
-  return { size, total: s.body.length }
+  const body = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, lens, reveal) : []
+  return { size: BODY_LINES, total: body.length }
 }
 
 // --- answers ------------------------------------------------------------------------------
 
-export function answersPage(m: Model, p: Pane, offerVoice: boolean): Page {
-  const items = (offerVoice ? [SAY_IT] : []).concat(ANSWERS.map((a) => a.label))
-  return { kind: 'list', head: statusHead(m), ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items, menu: [] }
+/** The answers: Claude's suggestion first when there is one, then Say it, then the fixed set. */
+export function answersPage(m: Model, p: Pane, offer: Answer | null, offerVoice: boolean): Page {
+  const items = (offer ? ['» ' + offer.label] : []).concat(offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label))
+  return { kind: 'list', ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
   return {
     kind: 'list',
-    head: statusHead(m),
     ...hint(m, `send ${short(a)} to ${paneName(p)}? · ×× back`),
     blocks: [],
     charts: [],
@@ -306,32 +301,28 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
   const charts: Chart[] = []
   const name = paneName(p)
   if (v.phase === 'recording') {
-    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: BAND_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
+    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
     const graph = sparkline(v.levels, GRAPH_W, GRAPH_H)
     charts.push(...tiles(graph, 8, BODY_Y, `levels:${v.levels.length}:${v.levels.slice(-6).map((l) => Math.round(l * 20)).join(',')}`))
     blocks.push({ name: 'note', x: 8, y: BODY_Y + GRAPH_H + 24, w: CANVAS_W - 16, h: LINE_H * 2, lines: [`${Math.round(v.seconds)} of 60 s · tap when done`, 'what you say goes to your hub, then to its transcriber'], level: 2 })
-    return { kind: 'dash', head: statusHead(m), ...hint(m, '● stop · ×× cancel'), blocks, charts, items: [], menu: [] }
+    return { kind: 'dash', ...hint(m, '● stop · ×× cancel'), blocks, charts, items: [], menu: [] }
   }
   if (v.phase === 'working') {
-    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: BAND_H, lines: [`transcribing ${v.seconds.toFixed(1)} s of audio…`], level: 4 })
+    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`transcribing ${v.seconds.toFixed(1)} s of audio…`], level: 4 })
     blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H * 2 + 12, lines: ['the hub is listening to it', 'a few seconds on a small server'], level: 2, border: true })
-    return { kind: 'dash', head: statusHead(m), ...hint(m, '×× cancel'), blocks, charts, items: [], menu: [] }
+    return { kind: 'dash', ...hint(m, '×× cancel'), blocks, charts, items: [], menu: [] }
   }
-  blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: BAND_H, lines: [v.error || 'nothing recorded'], level: 4 })
+  blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [v.error || 'nothing recorded'], level: 4 })
   blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H + 12, lines: ['tap to say it again'], level: 2, border: true })
-  return { kind: 'dash', head: statusHead(m), ...hint(m, '● say it again · ×× cancel'), blocks, charts, items: [], menu: [] }
+  return { kind: 'dash', ...hint(m, '● say it again · ×× cancel'), blocks, charts, items: [], menu: [] }
 }
 
 export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
   const blocks: Block[] = []
-  const charts: Chart[] = []
-  const title = `heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`
-  const art = band(title, CANVAS_W)
-  if (art) charts.push(...tiles(art, 0, TOP, `band:${CANVAS_W}:0:${title}`, title))
-  else blocks.push({ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: BAND_H, lines: [title], level: 4 })
+  blocks.push({ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
   const rows = Math.floor((HINT_Y - 4 - BODY_Y - 12) / LINE_H)
   const lines = wrapRows([v.text], LINE_PX - 16).slice(0, rows)
   blocks.push({ name: 'text', x: 0, y: BODY_Y, w: CANVAS_W, h: rows * LINE_H + 12, lines, level: 4, border: true })
   const menu: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }]
-  return { kind: 'dash', head: statusHead(m), ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts, items: [], menu }
+  return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts: [], items: [], menu }
 }

@@ -27,29 +27,28 @@ On a writable pane, when the hub has a transcriber, the Answers list
 opens with **» Say it**. It leads through three pages:
 
 ```
-[★ 0]  ≡ 1  □□ 2  ● alice-laptop  16:51
 ● listening · 4 s · test-pane
    ╱╲    ╱╲╱╲      ╱╲
   ╱  ╲╱╲╱    ╲╱╲╱╲╱  ╲╱╲
- ▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
 4 of 60 s · tap when done
 ● stop · ×× cancel
 ```
 
 - **Listening**: the microphone opens, frames are kept in memory, a
   **graph** of your loudness over the last fourteen seconds runs across
-  the page, the seconds count towards the sixty-second cap, and
-  the line above counts the seconds. **Tap** when done. Four seconds without a frame gives `no audio from the mic ·
+  the page, and the top line and the note count the seconds towards
+  the sixty-second cap. **Tap** when done. Four seconds without a frame gives `no audio from the mic ·
   let the Even app use it`; sixty seconds is the longest clip, after
   which the app stops by itself; under half a second is `too short`.
-- **Transcribing**: the clip goes to the hub as a WAV; the head says how
-  long it was. The hub forwards it to the transcriber its owner set.
-- **Heard this**: the text in a framed box under a bold band with the
+- **Transcribing**: the clip goes to the hub as a WAV; the top line says
+  how long it was. The hub forwards it to the transcriber its owner set.
+- **Heard this**: the text in a framed box under a title line with the
   clip's length. Reading it is the confirmation:
   **tap** sends it and then `Enter`, like the phone's send, and the pane
   is read at once. The menu has **Type without Enter** and **Say it
   again**; a **double tap** cancels and nothing is sent.
-- Any failure (the transcriber down, a refusal) is a head line with
+- Any failure (the transcriber down, a refusal) is the top line, with
   `say it again` in the hint; a tap tries again.
 
 The mic is closed on stop, cancel, back, foreground exit and when the

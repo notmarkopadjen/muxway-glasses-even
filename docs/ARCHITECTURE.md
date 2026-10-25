@@ -25,9 +25,9 @@ preflight such a page needs. The glasses see only what the page draws.
 |---|---|
 | `src/main.ts` | boot: the bridge, settings, the phone pane, the app |
 | `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
-| `src/views.ts` | what every page says and draws: the status line, the pane list, the columns, the pane, the answers, the voice pages |
-| `src/glasses.ts` | the two page kinds, head and hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
-| `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline and sparkline charts, the bold title band drawn in the canvas |
+| `src/views.ts` | what every page says and draws: the pane list, the columns, the pane, the answers, the voice pages |
+| `src/glasses.ts` | the two page kinds, the hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
+| `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline and sparkline charts, a bitmap cut into image containers |
 | `src/api.ts` | the calls: listings in JSON, pane content in text mode, caps, timeouts, ETag, errors in words |
 | `src/protocol.ts` | the listings' JSON, pane names, URL and token rules |
 | `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
@@ -51,8 +51,9 @@ the whole design:
   the app. So the pane list is drawn by the app with a cursor of its own,
   the pane is a text page the app pages itself, and the answers are the
   OS's lists;
-- a page holds at most eight text containers, the head and the hint
-  among them: six blocks, so the pane list shows six rows at a time;
+- a page holds at most eight text containers, the hint among them:
+  seven blocks, so the pane list shows seven rows at a time, and there
+  is no head line;
 - the glasses refused a page with an 8 px wide picture that the
   simulator took, so no picture thinner than 16 px is sent; where the
   window sits is said in words;
@@ -64,19 +65,21 @@ the whole design:
   row is at most 63 bytes);
 - a text change is a flicker-free in-place upgrade; a layout change is a
   rebuild during which input is dropped, so each page kind keeps one
-  geometry (the pane has two: with and without the pinned block);
+  geometry;
+- pictures go over Bluetooth in tiles and are slow next to text, so
+  titles are text and the only picture left is the loudness graph;
 - the font drops glyphs it lacks silently, so pane text is asked from the
   hub in Latin-1 by default and the app's own glyphs are ones known to
   render (`⏎` and `↑` are not among them, so the answers spell out Enter,
   Up and Down).
 
-Every page is the **status line** (brightest), a **body** and a **hint**
-line (dimmest) naming the gestures that work there. Pictures, four greys
-in image containers of at most 288 x 144, carry what text cannot: the
-the loudness graph and the bold
-title bands drawn in the WebView's canvas. A picture is pushed once and
-skipped while its key is unchanged; a page the wearer has left stops its
-pushes. A 240 x 140 bar chart is 34 KB of pixels, a title band 9 KB.
+Every page is a **body** from the top of the glasses down to a **hint**
+line (dimmest) naming the gestures that work there; on a dash page the
+hint is the container that takes the gestures. Pictures, four greys in
+image containers of at most 288 x 144, carry what text cannot: the
+loudness graph while listening. A picture is pushed once and skipped
+while its key is unchanged; a page the wearer has left stops its pushes.
+A 240 x 140 bar chart is 34 KB of pixels.
 
 ## Screens
 
@@ -87,12 +90,12 @@ stateDiagram-v2
     Panes --> Pane: tap a row
     Panes --> Panes: hold a row: select
     Panes --> Columns: tap "open N side by side"
-    Columns --> Pane: scroll
+    Columns --> Columns: scroll: mark a column
+    Columns --> Pane: tap (a column marked)
     Pane --> Columns: double tap (opened from the columns)
     Columns --> Panes: double tap
     Pane --> Panes: double tap
     Pane --> Answers: tap (writable pane)
-    Columns --> Answers: tap (a column marked)
     Answers --> Confirm: tap an answer
     Confirm --> Pane: Confirm sends, Cancel does not
     Answers --> Pane: double tap

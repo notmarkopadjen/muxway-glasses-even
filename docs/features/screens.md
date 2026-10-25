@@ -4,21 +4,16 @@ Four gestures reach everything:
 
 | Gesture | Does |
 |---|---|
-| scroll | moves the cursor on the pane list; opens the next or previous pane from the columns; moves the highlight in a list; pages the pane |
-| tap | opens the row under the cursor; on a pane, its answers (or reads it again when it is read-only) |
+| scroll | moves the cursor on the pane list; marks the next or previous column on the columns; moves the highlight in a list; pages the pane |
+| tap | opens the row under the cursor; on the columns, opens the marked pane; on a pane, its answers (or reads it again when it is read-only) |
 | hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that needs you |
 | double tap | back one page; leaves selection mode; from the pane list, out of the app, which the OS confirms first |
 
-Every page has the same frame. The **status line** at the top says how
-many panes need you, how many panes there are, the host and the clock:
-
-```
-★ 1  ≡ 3  ● alice-laptop  16:51
-```
-
-At the foot a **hint** names the gestures that work on the page. A
-notification arrives as a bordered **banner** in its place for ten
-seconds; the result of an answer flashes on the pane for four.
+Every page is text from the top of the glasses down to a **hint** at the
+foot, which names the gestures that work on the page. There is no status
+line: the list's order and marks say which panes need you. A notification
+arrives as a bordered **banner** in the hint's place for ten seconds; the
+result of an answer flashes on the pane for four.
 
 ```mermaid
 stateDiagram-v2
@@ -30,10 +25,10 @@ stateDiagram-v2
     Selecting --> Split: tap "open N side by side"
     Selecting --> List: tap "clear selection", double tap
     Pane --> List: double tap
-    Split --> PaneS: scroll (the next or previous column)
-    PaneS --> Split: double tap
+    Split --> Split: scroll (mark the next or previous column)
+    Split --> PaneS: tap, with a column marked
+    PaneS --> Split: double tap (the column stays marked)
     Split --> List: double tap
-    Split --> Answers: tap, with a column marked
     Pane --> Answers: tap (writable)
     PaneS --> Answers: tap (writable)
     Answers --> Confirm: tap an answer
@@ -44,29 +39,31 @@ stateDiagram-v2
 ## Loading
 
 ```
+reading the hub…
+
+
+
+
+
+
 reading the hub ··
-reading the hub…
-
-
-
-reading the hub…
 ```
 
-Until the first listing has arrived the list has one row and the status
-line's dots move every half second. A failed first read puts the error
-in the hint; the row stays. Nothing on the page says what the panes are
-doing before the hub has said so.
+Until the first listing has arrived the list has one row and the hint's
+dots move every half second. A failed first read puts the error in the
+hint; the row stays. Nothing on the page says what the panes are doing
+before the hub has said so.
 
 ## The pane list: the main screen
 
 ```
-★ 1  ≡ 4  ● alice-laptop  16:51
   [x] ★ build · claude · needs permission
   [x] ● tests · bash · done
 > [ ] · logs · tail · active
   [ ] · api · claude · quiet 4m
   → open 2 side by side
   → clear selection
+
 ▽ move · ● select · 3 at most · ×× done
 ```
 
@@ -89,10 +86,12 @@ waiting at its prompt is `quiet` and the age grows. Neither word claims
 that a pane is working: the hub knows a pane's state only when a hook
 reported it ([notifications](notifications.md)).
 
-The list is drawn by the app, six rows at a time, with a **cursor**,
-`>`, on the brightest row; the scroll moves it and the rows slide under
-it, and with more panes than rows the hint starts with where the window
-sits, `5–10 of 200`. A **tap** opens the pane under the cursor.
+The list is drawn by the app, seven rows at a time spread down to the
+hint, with a **cursor**, `>`, on the brightest row; the scroll moves it
+and the rows slide under it. With more panes than rows the hint starts
+with where the window sits, `4–10 of 200`; a host that is offline is
+named there first, `○ alice-laptop offline`. A **tap** opens the pane
+under the cursor.
 
 A **hold** starts **selection mode** with that pane selected: every pane
 row gets a box, `[x]` or `[ ]`, a tap on a row selects or unselects it,
@@ -109,52 +108,51 @@ confirms. Nowhere else leaves the app.
 ## Side by side
 
 ```
-★ 1  ≡ 4  ● alice-laptop  16:51
-█ » ★ build · claude █    ● tests · bash
+» ★ build · claude       ● tests · bash
 ● Bash(make test)        $ make test
   ok                     ok
-> y                      $
-▽ next pane · ● answer · ×× the list
+  ...                    $
+▽ next pane · ● open build · ×× the list
 ```
 
 The selected panes in the list's order, two or three columns, each a
-pane: a bold **title band** with its mark, name and program, and the
-last lines through the lens wrapped to the column. All of them follow,
-each with its own ETag. The **scroll opens a pane**: forward opens the
-column after the marked one, or the first when none is marked; back
-opens the column before it, or the last. At either end the scroll does
-nothing. A **double tap** on a pane opened this way comes back to the
-columns with that column **marked**, its band inverted and its text
-brightest, and the next scroll goes on from there. A **tap** with a
-column marked opens its answers; with none it reads the columns again.
-A **double tap** on the columns goes back to the list, the selection
-kept.
+title line with its mark, name and program, and the last eight lines
+through the lens wrapped to the column. All of them follow, each with
+its own ETag. Titles are text, so the page carries no pictures.
+
+The **scroll marks a column** and opens nothing: forward marks the next
+one, or the first when none is marked; back the previous one, or the
+last. At either end it stays. The marked column's title starts with `»`
+and is brightest, its text too. A **tap** opens the marked pane full,
+where the scroll pages and a tap answers as on any pane; with none
+marked, the tap reads the columns again. A **double tap** on the open
+pane comes back to the columns with the mark kept; on the columns, back
+to the list with the selection kept.
 
 ## The pane
 
 ```
-★ 1  ≡ 3  ● alice-laptop  16:51
-█ ★ build · claude █              needs permission
+★ build · claude                  needs permission
   ● Bash(make test)
     ok
   ...
-┌────────────────────────────────────────────────────┐
-│ > y                                                │
-└────────────────────────────────────────────────────┘
+
+
+
+
 ▽ page · ● answer · ≡ menu · ×× back
 ```
 
-The **title band** in bold (mark, name, program) with the pane's
-**state** beside it: the attention in words (`asks a question`, `needs
-permission`, `idle`, `done`), else `following`, `paused · 2 pages up`,
-`reading…`, or the error (`host offline`, `no connection`, `not found`);
-after an answer the state flashes what happened for a few seconds (`sent
-y, Enter`, `read only`). The body is the last lines of the pane,
+The **title** (mark, name, program) with the pane's **state** beside
+it: the attention in words (`asks a question`, `needs permission`,
+`idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
+the error (`host offline`, `no connection`, `not found`); after an
+answer the state flashes what happened for a few seconds (`sent y,
+Enter`, `read only`). The body is the last lines of the pane,
 `GET /v1/panes/{address}` in text mode with `lines` (setting, default
 200) and `width=400`, wrapped by the app to the body's width, through
-the [lens](lenses.md). Six lines fit; with a pinned box, four and the box
-in its **frame**. The state says where the window sits while paging
-(`paused · 2 pages up`).
+the [lens](lenses.md): eight lines, down to the hint. Claude Code's
+input box is not drawn; what it holds is the first answer.
 
 - **Following**: at the bottom, the pane is read every *follow* seconds
   with `If-None-Match`, and a `304` costs nothing on the glasses.
@@ -170,57 +168,62 @@ in its **frame**. The state says where the window sits while paging
 ## Answers and confirmation
 
 ```
+» "run the tests again"
+» Say it
+Enter
+y, Enter
+n, Enter
+1 · Claude Code's first choice
 answer build · ▽ choose · ● pick · ×× back
-  » Say it
-  Enter
-  y, Enter
-  n, Enter
-  1 · Claude Code's first choice
-  2 · second choice
-  3 · third choice
-  Esc
-  Ctrl-C
-  Tab
-  Shift-Tab
-  Up
-  Down
 ```
 
-When the hub has a transcriber the list opens with **» Say it**, which
-leads to the [spoken reply](spoken-replies.md) pages.
+When Claude Code suggests what to say next, its input box holds the
+suggestion, and the list opens with it in quotes: picking it sends that
+text and `Enter`. It is taken from the pane when the answers open, and
+the confirmation sends exactly that. When the hub has a transcriber the
+next row is **» Say it**, which leads to the [spoken
+reply](spoken-replies.md) pages.
 
-A fixed set, in that order. `y, Enter` and `n, Enter` send the letter and
+Then a fixed set, in this order: `Enter`, `y, Enter`, `n, Enter`, `1 ·
+Claude Code's first choice`, `2`, `3`, `Esc`, `Ctrl-C`, `Tab`,
+`Shift-Tab`, `Up`, `Down`. `y, Enter` and `n, Enter` send the letter and
 then `Enter`; `1`, `2` and `3` send the digit alone, which is how Claude
 Code takes a choice on a question or a permission prompt; the rest are
 the protocol's keys (`Enter`, `Escape`, `C-c`, `Tab`, `BTab`, `Up`,
-`Down`). Nothing else can be sent from the glasses: free text comes from
-the [phone pane](phone-pane.md) or your voice.
+`Down`). Free text beyond the suggestion comes from the [phone
+pane](phone-pane.md) or your voice.
 
 A tap on an answer opens the confirmation, a two-row list with **Cancel**
-first and highlighted, **Confirm** second, the question in the hint.
-Confirm posts to `POST /v1/panes/{address}/input`, one request per piece,
-goes back to the pane, reads it at once and flashes the result. A double
-tap on either page goes back without sending.
+first and highlighted, **Confirm** second, the question in the hint
+(`send "run the tests again" to build?`). Confirm posts to
+`POST /v1/panes/{address}/input`, one request per piece, goes back to
+the pane, reads it at once and flashes the result. A double tap on
+either page goes back without sending.
 
 ## Security considerations
 
 - The glasses send only the answers above, each after a confirmation, or
   a transcript read back first; a mis-tap cannot send `Ctrl-C` to a
-  running build. Keys are the protocol's names, text is one to four
-  printable characters.
+  running build. Keys are the protocol's names.
+- The suggestion is the pane's own text sent back to the same pane, only
+  when the wearer picks and confirms it. Control characters are removed
+  before it is shown or sent, it is cut at 4096 bytes, and the log keeps
+  its size, not its words. The hub checks the write grant as for every
+  answer.
 - Whether a pane may be written to comes from the hub's `mode`; a title
   cannot forge it, and a hub or proxy that lies about the mode gains a
-  refused request (`403 read only`).
+  refused request (`403 read only`). A read-only pane offers no
+  suggestion.
 - Rows are clamped by pixels before they reach the firmware, so a
   hostile title cannot reject the page; the mark and the selection's
   box come from the listing's fields and the wearer's gestures, never
-  from the title; a listing of hundreds of panes is six rows and a
+  from the title; a listing of hundreds of panes is seven rows and a
   cursor.
 - The selection is a list of addresses the hub returned, held in memory
   only and pruned to every listing; a hostile listing cannot select
   anything.
-- Pictures are drawn by the app from numbers it computed and names it
-  cleaned; nothing from the network is read as an image. At most four
-  pictures a page.
-- The status line, the hint and the state never carry the token or an
-  error body, only words.
+- Pictures are drawn by the app from numbers it computed; nothing from
+  the network is read as an image. The only one left is the loudness
+  graph while listening.
+- The hint and the state never carry the token or an error body, only
+  words.

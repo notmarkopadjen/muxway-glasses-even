@@ -21,7 +21,7 @@ sequenceDiagram
   returns. The first call, without `after`, only takes the cursor, so old
   events are not replayed as new.
 - An event of kind `question`, `permission`, `idle` or `done` sets the
-  pane's **mark** (`★ ● ○`) in the list and the pane's head, shows a
+  pane's **mark** (`★ ● ○`) in the list and the pane's title, shows a
   **toast** in the hint line for ten seconds, brightest (`★ build: Claude
   needs your permission to use Bash`), reads the list again, and reads the
   pane again when it is the open one. `working` clears the mark.

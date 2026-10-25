@@ -101,7 +101,13 @@ def rows(p):
 
 def listed(p):
     """The pane list with the panes in it, not the loading row."""
-    return p["kind"] == "dash" and p["head"].startswith("★") and bool(rows(p)) and not rows(p)[0].startswith("reading the hub")
+    return p["kind"] == "dash" and bool(rows(p)) and not rows(p)[0].startswith("reading the hub") and not p["hint"].startswith("reading the hub")
+
+
+def total(p):
+    """How many rows the list has: the hint says it when they do not fit, else they are all on screen."""
+    m = re.match(r"\d+–\d+ of (\d+) · ", p["hint"])
+    return int(m.group(1)) if m else len(rows(p))
 
 
 def home(sim, timeout=25):
@@ -115,7 +121,7 @@ def open_pane(sim, name="test-pane"):
     home(sim)
     sim.shot("list")
     sim.tap()
-    page = sim.expect(lambda p: any(c.get("text", "").find(name) >= 0 for c in p["charts"]) or any(b.get("name") == "title" for b in p["blocks"]), "the pane")
+    page = sim.expect(lambda p: any(b.get("name") == "title" and name in b["lines"][0] for b in p["blocks"]), "the pane")
     wait_for("the pane's rows", lambda: "following" in sim.state() or "paused" in sim.state(), 10)
     sim.shot("pane")
     return page
@@ -146,8 +152,9 @@ def col(page, i):
     return None
 
 
-def band_texts(page):
-    return [c["text"] for c in page["charts"] if c.get("text")]
+def titles(page):
+    """The title lines on the page: the pane's, or the columns' in order."""
+    return [b["lines"][0] for b in page["blocks"] if b.get("name", "").startswith("title")]
 
 
 # --- security -----------------------------------------------------------------------
@@ -218,20 +225,32 @@ def s04(run, name):
         run.cleanups.clear()
 
 
-@test("S05", "Hostile Claude Code screen: at most the chrome hidden, nothing crashes, reveal shows all", "e2e-security")
+@test("S05", "Hostile Claude Code screen: at most the chrome hidden, the box offered clean and sent as printable text only, reveal shows all", "e2e-security")
 def s05(run, name):
     core, proxy, sim, tok = setup(run, name, mode="claude-hostile", params={"charset": "utf-8"})
     open_pane(sim)
     page = sim.last()
-    pinned = sim.block("pinned", page)
-    check(pinned, "the box was not pinned")
-    check(any("box" in l and "bell" in l for l in pinned), f"the box is not the pinned row: {pinned}")
+    check(not any("bell" in l for l in sim.lines()), "the box is on the pane")
     check(not any("fake footer" in l for l in sim.lines()), "the footer was shown unasked")
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the screen")
     sim.shot("hostile")
     sim.menu(1)
     sim.expect(lambda p: any("fake footer" in l for b in p["blocks"] for l in b["lines"]), "reveal all", 10)
     sim.shot("revealed")
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    offer = page["items"][0]
+    check(offer.startswith('» "box ') and "bell" in offer, f"the box is not the first answer: {page['items'][:2]}")
+    check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", offer) and len(offer.encode()) <= 63, offer)
+    sim.shot("hostile-offer")
+    sim.choose(0)
+    sim.head('send "box', "the confirmation")
+    sim.choose(1)
+    sim.head('sent "box', "the flash", 10)
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(posts == [{"text": "box [31mred[0m bell nul"}, {"key": "Enter"}], str(posts))
+    check(all(r["path"].startswith("/v1/panes/alice-laptop/work/0.0/") for r in proxy.requests if r["method"] == "POST"), "a write to another pane")
+    check(not any("bell" in e["message"] for e in sim.console()), "the box's text in the console")
     check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
 
 
@@ -258,7 +277,7 @@ def s07(run, name):
     check(items[0].startswith("· ★ "), f"the forged mark became the pane's: {items[0]}")
     check("read-only" in items[0] or items[0].endswith("…"), f"the forged mode was believed: {items[0]}")
     check(items[1].startswith("· tab here"), f"the tab survived as a tab: {items[1]}")
-    check("★ 1" not in page["head"], f"a title raised attention: {page['head']}")
+    check(not any(r.startswith("★") for r in items), f"a title raised attention: {items}")
     time.sleep(1)
     sim.shot("rows")
     check(not any("refused" in e["message"] for e in sim.console()), "the firmware refused the page")
@@ -280,15 +299,15 @@ def s02(run, name):
 @test("S30", "A listing of 200 panes with long titles and times out of range: a page of rows, words clamped, page accepted", "e2e-security")
 def s30(run, name):
     core, proxy, sim, tok = setup(run, name, mode="list-hostile")
-    page = sim.expect(lambda p: listed(p) and "≡ 200" in p["head"], "the 200 panes", 20)
-    check(len(rows(page)) == 6, f"{len(rows(page))} rows")
+    page = sim.expect(lambda p: listed(p) and total(p) == 200, "the 200 panes", 20)
+    check(len(rows(page)) == 7, f"{len(rows(page))} rows")
     for row in rows(page):
         check("-" not in row.split("·")[-1], f"a negative age: {row}")
-    check(page["charts"] == [] and page["hint"].startswith("1–6 of 200 · "), f"the list page: {page['charts']} {page['hint']}")
+    check(page["charts"] == [] and page["hint"].startswith("1–7 of 200 · "), f"the list page: {page['charts']} {page['hint']}")
     sim.shot("hostile-list")
     sim.move(9)
-    page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "row4", "the window slid")
-    check(page["hint"].startswith("5–10 of 200 · "), page["hint"])
+    page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "row3", "the window slid")
+    check(page["hint"].startswith("4–10 of 200 · "), page["hint"])
     sim.shot("hostile-list-slid")
     time.sleep(1)
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
@@ -298,7 +317,7 @@ def s30(run, name):
 def s31(run, name):
     core, proxy, sim, tok = setup(run, name, mode="list-junk")
     # The body is over the app's cap, so the listing is cut and parsed as empty, or parsed with the one pane: either is fine.
-    page = sim.expect(lambda p: p["kind"] == "dash" and ("≡ 1" in p["head"] or "≡ 0" in p["head"]), "the listing survived", 20)
+    page = sim.expect(lambda p: listed(p) and total(p) <= 1, "the listing survived", 20)
     check(all(len(row) < 200 for row in rows(page)), f"rows: {rows(page)}")
     n = len([r for r in proxy.requests if r["path"] == "/v1/panes"])
     wait_for("the list is read again", lambda: len([r for r in proxy.requests if r["path"] == "/v1/panes"]) > n, 15)
@@ -439,20 +458,19 @@ def f10(run, name):
     page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "two rows")
     check(rows(page)[0].startswith("● logs") and rows(page)[0].endswith("· done · read-only"), f"rows: {rows(page)}")
     check(rows(page)[1].startswith("· test-pane · bash · active"), f"rows: {rows(page)}")
-    check("≡ 2" in page["head"], page["head"])
     sim.shot("list")
     for i in range(10):
         core.new_window(f"w{i:02d}")
-    page = sim.expect(lambda p: listed(p) and "≡ 12" in p["head"] and len(rows(p)) == 6, "a full window", 25)
+    page = sim.expect(lambda p: listed(p) and total(p) == 12 and len(rows(p)) == 7, "a full window", 25)
     check(page["blocks"][0]["name"] == "row0" and sim.cursor(page) == 0, "the window moved without the cursor")
     sim.shot("list-full")
     sim.move(11)
     page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 11, "the cursor at the end")
     # Addresses sort as text, so work/10.0 and work/11.0 come before work/2.0 and w07 is last.
-    check(page["blocks"][0]["name"] == "row6" and rows(page)[-1].startswith("· w07"), f"the window did not slide: {rows(page)}")
+    check(page["blocks"][0]["name"] == "row5" and rows(page)[-1].startswith("· w07"), f"the window did not slide: {rows(page)}")
     sim.shot("list-end")
     sim.tap()
-    sim.expect(lambda p: any("w07" in t for t in band_texts(p)), "the last pane opened")
+    sim.expect(lambda p: any("w07" in t for t in titles(p)), "the last pane opened")
 
 
 @test("F11", "Open a pane, read its last lines, see a new line within the follow interval", "UI")
@@ -534,27 +552,36 @@ def f13(run, name):
     sim.shot("after-ctrl-c")
 
 
-@test("F14", "The Claude Code lens: chrome hidden, the box pinned and framed, reveal all", "UI")
+@test("F14", "The Claude Code lens: chrome hidden, the suggestion not drawn but offered first and sent, reveal all", "UI")
 def f14(run, name):
     core, proxy, sim, tok = setup(run, name, mode="claude", says_claude=True)
     home(sim)
-    sim.expect(lambda p: "≡ 1" in p["head"], "the list read")
     sim.tap()
-    page = sim.expect(lambda p: sim.block("pinned", p) is not None, "the pinned box", 15)
+    page = sim.expect(lambda p: (sim.block("body", p) or [""])[-1] == "* pong", "the lens", 15)
     body = sim.block("body", page)
-    check(body[-1] == "* pong", f"body ends with {body[-1]!r}")
-    check(sim.block("pinned", page) == ["> fix the typo in README"], sim.block("pinned", page))
-    check(any(b.get("name") == "pinned" and b.get("border") for b in page["blocks"]), "the box has no frame")
+    check(len(body) == 8, f"{len(body)} lines")
+    check(not any("fix the typo" in l for l in body), "the suggestion is on the pane")
     check(not any("auto mode" in l or "Crunched" in l for l in body), "chrome in the body")
-    check(any("claude" in t for t in band_texts(page)), f"the band does not name the program: {band_texts(page)}")
+    check(any("claude" in t for t in titles(page)), f"the title does not name the program: {titles(page)}")
+    check(page["charts"] == [], "a picture on the pane")
     sim.shot("lens")
     sim.menu(1)
-    page = sim.expect(lambda p: any("auto mode" in l for l in (sim.block("body", p) or [])), "reveal all", 10)
-    check(sim.block("pinned", page) is None, "reveal pinned something")
+    sim.expect(lambda p: any("auto mode" in l for l in (sim.block("body", p) or [])), "reveal all", 10)
     sim.shot("lens-reveal")
     sim.menu(1)
-    sim.expect(lambda p: sim.block("pinned", p) is not None, "the lens again", 10)
-    sim.shot("lens-again")
+    sim.expect(lambda p: not any("auto mode" in l for l in (sim.block("body", p) or ["auto mode"])), "the lens again", 10)
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(page["items"][:2] == ['» "fix the typo in README"', "Enter"], page["items"][:3])
+    sim.shot("answers-offer")
+    sim.choose(0)
+    sim.head('send "fix the typo in README"', "the confirmation")
+    sim.choose(1)
+    sim.head('sent "fix the typo in README"', "the flash", 10)
+    wait_for("typed", lambda: "fix the typo in README" in core.pane(), 5)
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(posts == [{"text": "fix the typo in README"}, {"key": "Enter"}], str(posts))
+    sim.shot("offer-sent")
 
 
 @test("F15", "A notification: a banner within two seconds, the pane first in the list with its word, cleared by working", "UI")
@@ -569,11 +596,11 @@ def f15(run, name):
     check(any(m["label"] == "Go to: build" for m in page["menu"]), page["menu"])
     sim.shot("banner")
     sim.back()
-    page = sim.expect(lambda p: listed(p) and p["head"].startswith("★ 1 ") and rows(p)[0].startswith("★ build"), "build first in the list")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("★ build"), "build first in the list")
     check(rows(page)[0] == "★ build · bash · needs permission", rows(page)[0])
     sim.shot("list-attention")
     core.notify("working", "", "work:build.0")
-    page = sim.expect(lambda p: listed(p) and p["head"].startswith("★ 0 ") and not any(i.startswith("★") for i in rows(p)), "cleared", 8)
+    page = sim.expect(lambda p: listed(p) and not any(i.startswith("★") for i in rows(p)), "cleared", 8)
     check(any(i.startswith("· build · bash · ") and ("active" in i or "quiet" in i) for i in rows(page)), rows(page))
     sim.shot("list-cleared")
 
@@ -600,17 +627,17 @@ def f17(run, name):
 def f30(run, name):
     core, proxy, sim, tok = setup(run, name, mode="slow-list", before=lambda c: c.new_window("build"))
     page = sim.expect(lambda p: p["kind"] == "dash" and rows(p) == ["reading the hub…"], "the loading row", 10)
-    check(page["head"].startswith("reading the hub ·"), page["head"])
-    check(page["hint"] == "reading the hub…", page["hint"])
+    check(page["hint"].startswith("reading the hub ·"), page["hint"])
+    check("head" not in page, "a head on the page")
     sim.shot("loading")
-    heads = set()
+    hints = set()
     end = time.time() + 2
     while time.time() < end:
-        heads.update(p["head"] for p in sim.trace() if p["head"].startswith("reading the hub"))
+        hints.update(p["hint"] for p in sim.trace() if p["hint"].startswith("reading the hub"))
         time.sleep(0.2)
-    check(len(heads) >= 2, f"the dots did not move: {heads}")
-    page = sim.expect(lambda p: listed(p) and "≡ 2" in p["head"], "the list", 20)
-    check(page["head"].startswith("★ 0  ≡ 2  ● "), page["head"])
+    check(len(hints) >= 2, f"the dots did not move: {hints}")
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "the list", 20)
+    check(page["blocks"][0]["y"] == 0, "the list does not start at the top")
     check(page["hint"] == "▽ move · ● open · hold to select · ×× exit", page["hint"])
     check(page["blocks"][0]["lines"][0].startswith("> "), "no cursor mark on the first row")
     check(page["menu"] == [], "the list has a menu, so a hold would open it")
@@ -630,7 +657,7 @@ def f31(run, name):
         core.notify("question", "Which file?", "work:0.0")
         core.notify("done", "", "work:tests.0")
     core, proxy, sim, tok = setup(run, name, before=before)
-    page = sim.expect(lambda p: listed(p) and p["head"].startswith("★ 2 ") and len(rows(p)) == 4, "four rows", 20)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 4 and rows(p)[1].startswith("★"), "four rows", 20)
     check(rows(page)[0] == "★ test-pane · bash · asks a question", rows(page))
     check(rows(page)[1] == "★ build · bash · needs permission", rows(page))
     check(rows(page)[2] == "● tests · bash · done", rows(page))
@@ -639,7 +666,7 @@ def f31(run, name):
     sim.tap()
     wait_for("the first pane", lambda: sim.block("state") is not None, 10)
     check(sim.state() == "asks a question", sim.state())
-    check(any("test-pane" in t for t in band_texts(sim.last())), band_texts(sim.last()))
+    check(any("test-pane" in t for t in titles(sim.last())), titles(sim.last()))
     sim.shot("first-pane")
 
 
@@ -664,8 +691,9 @@ def f32(run, name):
     sim.shot("list-selected")
     sim.pick(4)
     page = sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None, "the columns")
-    check(len(band_texts(page)) == 2 and "test-pane" in band_texts(page)[0] and "build" in band_texts(page)[1], band_texts(page))
-    check(not any(t.startswith("»") for t in band_texts(page)), "a column marked before any scroll")
+    check(len(titles(page)) == 2 and "test-pane" in titles(page)[0] and "build" in titles(page)[1], titles(page))
+    check(not any(t.startswith("»") for t in titles(page)), "a column marked before any scroll")
+    check(page["charts"] == [], "a picture on the columns")
     page = sim.expect(lambda p: any("left-side" in l for l in (col(p, 0) or {"lines": []})["lines"]) and any("right-side" in l for l in (col(p, 1) or {"lines": []})["lines"]), "both columns read", 15)
     sim.shot("split")
     core.keys("echo later", "Enter")
@@ -681,7 +709,7 @@ def f32(run, name):
     sim.shot("list-three")
     sim.pick(4)
     page = sim.expect(lambda p: p["kind"] == "dash" and col(p, 2) is not None, "three columns", 10)
-    check(len(band_texts(page)) == 3, band_texts(page))
+    check(len(titles(page)) == 3, titles(page))
     sim.shot("split-three")
     sim.back()
     home(sim)
@@ -695,39 +723,41 @@ def f32(run, name):
     page = sim.expect(lambda p: listed(p) and not any(i.startswith("[") for i in rows(p)), "a double tap leaves selection mode")
 
 
-@test("F33", "In the columns a scroll opens a pane; back returns with it marked; the next scroll opens the next; tap answers the marked; back reaches the list", "UI")
+@test("F33", "In the columns a scroll marks a pane without opening it; tap opens the marked, which pages and answers; back returns with it marked; back reaches the list", "UI")
 def f33(run, name):
     def before(core):
         core.new_window("build")
         core.keys("seq 1 40", "Enter", target="work:build.0")
     core, proxy, sim, tok = setup(run, name, before=before)
-    to_split(sim)
+    page = to_split(sim)
+    check(page["hint"].startswith("▽ pick a pane · ● refresh"), page["hint"])
     sim.scroll("down")
-    page = sim.expect(lambda p: sim.block("state", p) is not None and any("test-pane" in t for t in band_texts(p)), "test-pane full", 10)
-    sim.shot("split-first")
-    sim.back()
-    page = sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None, "back on the columns")
-    check(band_texts(page)[0].startswith("» ") and "test-pane" in band_texts(page)[0], band_texts(page))
-    check(page["hint"].startswith("▽ next pane · ● answer"), page["hint"])
+    page = sim.expect(lambda p: col(p, 1) is not None and titles(p)[0].startswith("» "), "the first column marked", 10)
+    check("test-pane" in titles(page)[0] and not titles(page)[1].startswith("» "), titles(page))
+    check(page["hint"].startswith("▽ next pane · ● open test-pane"), page["hint"])
     sim.shot("split-marked")
     sim.scroll("down")
-    page = sim.expect(lambda p: sim.block("state", p) is not None and any("build" in t for t in band_texts(p)), "build full", 10)
+    page = sim.expect(lambda p: col(p, 1) is not None and titles(p)[1].startswith("» ") and not titles(p)[0].startswith("» "), "the second column marked", 10)
+    sim.shot("split-second")
+    sim.scroll("down")
+    time.sleep(1)
+    page = sim.last()
+    check(col(page, 1) is not None and titles(page)[1].startswith("» "), "a scroll past the last column moved the mark or opened something")
+    sim.tap()
+    sim.expect(lambda p: sim.block("state", p) is not None and any("build" in t for t in titles(p)), "build full", 10)
     wait_for("the sequence", lambda: "40" in (sim.block("body") or []), 10)
     sim.scroll("up")
     sim.head("paused · 1 page up", "paged")
-    sim.shot("split-second")
-    sim.back()
-    page = sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None and band_texts(p)[1].startswith("» "), "the second column marked")
-    sim.scroll("down")
-    time.sleep(1)
-    check(sim.last()["kind"] == "dash" and col(sim.last(), 1) is not None, "a scroll past the last column opened something")
+    sim.shot("split-open")
     sim.tap()
-    sim.head("answer build", "the answers of the marked pane")
-    sim.shot("split-answers")
+    sim.head("answer build", "the answers of the open pane")
     sim.back()
-    sim.expect(lambda p: p["kind"] == "dash" and col(p, 1) is not None, "back on the columns")
+    sim.expect(lambda p: sim.block("state", p) is not None and any("build" in t for t in titles(p)), "back on build", 10)
     sim.back()
-    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ") and rows(p)[1].startswith("[x] "), "the list, selection kept")
+    page = sim.expect(lambda p: col(p, 1) is not None and titles(p)[1].startswith("» "), "back on the columns, build marked")
+    sim.shot("split-back")
+    sim.back()
+    sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ") and rows(p)[1].startswith("[x] "), "the list, selection kept")
     sim.shot("list-after")
 
 
@@ -750,7 +780,7 @@ def f35(run, name):
     sim.tap()
     page = sim.head("heard this", "the transcript", 15)
     check(any(b.get("name") == "text" and b.get("border") for b in page["blocks"]), "the transcript has no box")
-    check(any("heard this" in t for t in band_texts(page)), band_texts(page))
+    check(any("heard this" in t for t in titles(page)), titles(page))
     sim.shot("heard-box")
 
 

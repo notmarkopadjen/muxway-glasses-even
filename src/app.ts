@@ -16,7 +16,7 @@ type View =
   | { kind: 'list' }
   | { kind: 'split' }
   | { kind: 'pane'; pane: Pane; fromSplit: boolean }
-  | { kind: 'answers'; pane: Pane }
+  | { kind: 'answers'; pane: Pane; offer: Answer | null }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
   | { kind: 'listen'; pane: Pane }
   | { kind: 'heard'; pane: Pane }
@@ -62,7 +62,7 @@ export class App {
   private selected: string[] = []
   /** Selection mode on the list: a tap selects the row under the cursor instead of opening it. */
   private selecting = false
-  /** The column the last scroll opened, -1 for none. */
+  /** The column the scroll marked on the columns, -1 for none. */
   private marked = -1
   /** The list's cursor and its window's first row. */
   private row = 0
@@ -74,7 +74,8 @@ export class App {
   private flash: { text: string; until: number } | null = null
   private toast: { text: string; until: number } | null = null
   private clearTimer: ReturnType<typeof setTimeout> | null = null
-  private clockTimer: ReturnType<typeof setInterval> | null = null
+  /** Redraws now and then, so a row's "quiet 4m" grows older. */
+  private tickTimer: ReturnType<typeof setInterval> | null = null
   private cursor: number | null = null
   private eventsRunning = false
   private eventsGen = 0
@@ -132,7 +133,7 @@ export class App {
 
   private wake() {
     this.foreground = true
-    if (!this.clockTimer) this.clockTimer = setInterval(() => void this.redraw(), 30_000)
+    if (!this.tickTimer) this.tickTimer = setInterval(() => void this.redraw(), 30_000)
     if (!isConfigured()) return
     if (!this.loaded && !this.dotsTimer) {
       this.dotsTimer = setInterval(() => {
@@ -149,9 +150,9 @@ export class App {
     this.foreground = false
     if (this.listTimer) clearTimeout(this.listTimer)
     if (this.readTimer) clearTimeout(this.readTimer)
-    if (this.clockTimer) clearInterval(this.clockTimer)
+    if (this.tickTimer) clearInterval(this.tickTimer)
     this.listTimer = this.readTimer = null
-    this.clockTimer = null
+    this.tickTimer = null
     this.stopDots()
     this.eventsGen++
     this.eventsRunning = false
@@ -471,13 +472,13 @@ export class App {
       return
     }
     if (v.kind === 'split') {
-      // The scroll opens a pane: the column after the marked one, or before it; the first or the last when none is marked.
+      // The scroll marks a column, the next or the previous; the first or the last when none is marked. A tap opens it.
       const cols = this.columns()
       if (!cols.length) return
       const next = this.marked < 0 ? (dir > 0 ? 0 : cols.length - 1) : this.marked + dir
       if (next < 0 || next >= cols.length) return
       this.marked = next
-      await this.openPane(cols[next], true)
+      await this.redraw()
       return
     }
     if (v.kind !== 'pane') return
@@ -524,24 +525,37 @@ export class App {
     }
     if (v.kind === 'split') {
       const sel = this.focus()
-      if (sel?.writable) await this.push({ kind: 'answers', pane: sel })
+      if (sel) await this.openPane(sel, true)
       else await this.readPanes(true)
       return
     }
     if (v.kind !== 'pane') return
-    if (v.pane.writable) await this.push({ kind: 'answers', pane: v.pane })
+    if (v.pane.writable) await this.openAnswers(v.pane)
     else await this.readPanes(true)
+  }
+
+  /** The answers, with Claude's suggestion as it stands now: the confirmation sends this, not a later reading. */
+  private async openAnswers(pane: Pane) {
+    const offer = V.offerOf(pane, this.readers.get(pane.address)?.raw ?? [], getSettings().lens)
+    await this.push({ kind: 'answers', pane, offer })
   }
 
   private async onSelect(idx: number) {
     const v = this.top
     if (v.kind === 'answers') {
-      const offset = this.offersVoice(v.pane) ? 1 : 0
-      if (offset && idx === 0) {
+      if (v.offer) {
+        if (idx === 0) {
+          await this.push({ kind: 'confirm', pane: v.pane, answer: v.offer })
+          return
+        }
+        idx--
+      }
+      const voice = this.offersVoice(v.pane) ? 1 : 0
+      if (voice && idx === 0) {
         await this.beginVoice(v.pane, false)
         return
       }
-      const a = ANSWERS[idx - offset]
+      const a = ANSWERS[idx - voice]
       if (a) await this.push({ kind: 'confirm', pane: v.pane, answer: a })
     } else if (v.kind === 'confirm') {
       const { pane, answer } = v
@@ -643,7 +657,9 @@ export class App {
         if (p.text !== undefined) await api.text(pane.address, p.text)
         else if (p.key !== undefined) await api.key(pane.address, p.key)
       }
-      this.log(`sent ${short(answer)} to ${paneName(pane)}`, 'ok')
+      // The suggestion is pane text: the log keeps its size only.
+      const what = ANSWERS.includes(answer) ? short(answer) : `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes`
+      this.log(`sent ${what} to ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST input')
     }
@@ -800,7 +816,6 @@ export class App {
   }
 
   private model(): V.Model {
-    const now = new Date()
     const s = getSettings()
     return {
       configured: isConfigured(),
@@ -810,7 +825,6 @@ export class App {
       needsYou: this.needsYou(),
       flash: this.flash && this.flash.until > Date.now() ? this.flash.text : null,
       toast: this.toast && this.toast.until > Date.now() ? this.toast.text : null,
-      clock: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
       lens: s.lens,
       canSpeak: this.canSpeak,
       loaded: this.loaded,
@@ -849,7 +863,7 @@ export class App {
         return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state })
       }
       case 'answers':
-        return V.answersPage(m, v.pane, this.offersVoice(v.pane))
+        return V.answersPage(m, v.pane, v.offer, this.offersVoice(v.pane))
       case 'confirm':
         return V.confirmPage(m, v.pane, v.answer)
       case 'listen':

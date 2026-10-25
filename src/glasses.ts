@@ -2,7 +2,7 @@
 // kinds. A dash page is free-positioned text blocks, some with a border,
 // and up to four image containers, and no list, so the firmware hands its
 // scrolls to the app. A list page hands the highlight to the OS and gets
-// taps back. Every page has a head line, a body and a hint line.
+// taps back. Every page has a body and a hint line.
 //
 // A text change is an in-place upgrade; a layout change is a rebuild,
 // during which input is dropped and pictures are wiped, so each page kind
@@ -28,29 +28,27 @@ import { MAX_IMG_H, MAX_IMG_W, MIN_IMG } from './bitmap.ts'
 import type { Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, clampBytes, fitWidth } from './text.ts'
 
-export const HEAD_H = 30
-export const TOP = 34
+export const TOP = 0
 export const HINT_Y = 258
 export const HINT_H = 30
 export const LINE_H = 28
-/** Whole list rows only: a row is 40 px, and a sixth would be cut by the hint. */
-export const LIST_H = 200
+/** Whole list rows only: a row is 40 px, and a seventh would be cut by the hint. */
+export const LIST_H = 240
 export const MAX_LIST_ITEMS = 20
 export const LIST_ROW_PX = 490
 export const LIST_ROW_BYTES = 63
 export const MENU_LABEL_BYTES = 32
-/** Text containers a page may hold are eight, the head and the hint among them. */
-export const MAX_BLOCKS = 6
+/** Text containers a page may hold are eight, the hint among them. */
+export const MAX_BLOCKS = 7
 export const MAX_CHARTS = 4
 /** Inner padding of a bordered block; a plain block has none, so whole lines fit. */
 export const BORDER_PAD = 6
 
-const ID_HEAD = 1
 const ID_HINT = 2
 const ID_LIST = 3
 const ID_BLOCK0 = 10
 const ID_CHART0 = 20
-const HEAD_CHARS = 200
+const HINT_CHARS = 200
 const BLOCK_CHARS = 1900
 
 export interface Block {
@@ -72,7 +70,6 @@ export interface MenuSpec {
 
 export interface Page {
   kind: 'list' | 'dash'
-  head: string
   hint: string
   hintLevel: number
   /** The hint drawn as a banner, bordered and bright: a toast. */
@@ -84,15 +81,15 @@ export interface Page {
 }
 
 export function emptyPage(kind: 'list' | 'dash' = 'dash'): Page {
-  return { kind, head: '', hint: '', hintLevel: 1, blocks: [], charts: [], items: [], menu: [] }
+  return { kind, hint: '', hintLevel: 1, blocks: [], charts: [], items: [], menu: [] }
 }
 
 function level(n: number): number {
   return Math.max(0, Math.min(4, Math.round(n)))
 }
 
-function headText(s: string): string {
-  return (fitWidth(s, LINE_PX) || ' ').slice(0, HEAD_CHARS)
+function hintText(s: string): string {
+  return (fitWidth(s, LINE_PX) || ' ').slice(0, HINT_CHARS)
 }
 
 /** The block's text: its lines fitted to its width, as many as it has room for. */
@@ -160,8 +157,8 @@ export class Glasses {
   }
 
   private payload(p: Page) {
-    const textObject = [this.text(ID_HEAD, 'head', 0, 0, CANVAS_W, HEAD_H, headText(p.head), 4, p.kind === 'list' ? 0 : 1, 1)]
-    textObject.push(this.text(ID_HINT, 'hint', 0, HINT_Y, CANVAS_W, HINT_H, headText(p.hint), p.hintLevel, 0, 2, !!p.hintBorder))
+    // On a dash page the hint takes the gestures; on a list page the list does.
+    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y, CANVAS_W, HINT_H, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, 2, !!p.hintBorder)]
     p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
@@ -253,8 +250,7 @@ export class Glasses {
     if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) return this.draw(p, gen)
     const prev = this.last
     this.last = clone(p)
-    if (p.head !== prev.head) await this.upgrade(ID_HEAD, 'head', headText(p.head))
-    if (p.hint !== prev.hint || p.hintLevel !== prev.hintLevel) await this.upgrade(ID_HINT, 'hint', headText(p.hint), p.hintLevel)
+    if (p.hint !== prev.hint || p.hintLevel !== prev.hintLevel) await this.upgrade(ID_HINT, 'hint', hintText(p.hint), p.hintLevel)
     for (let i = 0; i < p.blocks.length; i++) {
       const a = p.blocks[i]
       const b = prev.blocks[i]

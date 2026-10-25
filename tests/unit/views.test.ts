@@ -3,7 +3,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Pane } from '../../src/protocol.ts'
-import { LIST_ROWS, listLayout, listWindow, rowLabel, selectedPanes, sorted, stateWord, statusHead, type Model } from '../../src/views.ts'
+import { HINT_Y, LINE_H } from '../../src/glasses.ts'
+import { LIST_ROWS, answersPage, listLayout, listPage, listWindow, offerOf, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, type Model } from '../../src/views.ts'
 
 const NOW = 1_000_000
 
@@ -20,7 +21,6 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
     needsYou: null,
     flash: null,
     toast: null,
-    clock: '16:51',
     lens: true,
     canSpeak: false,
     loaded: true,
@@ -89,12 +89,61 @@ test('the window slides only when the cursor leaves it', () => {
   assert.deepEqual(l.what.slice(40).map((w) => w.kind), ['open', 'clear'])
 })
 
-test('before the first listing: one row and the dots in the head', () => {
+test('before the first listing: one row and the dots in the hint', () => {
   const m = model([], { loaded: false, dots: 2 })
   assert.deepEqual(listLayout(m, NOW).items, ['reading the hub…'])
   assert.equal(listLayout(m, NOW).what[0].kind, 'none')
-  assert.equal(statusHead(m), 'reading the hub ··')
-  assert.equal(statusHead(model([pane('w/0.0', { attention: 'question' })])), '★ 1  ≡ 1  ● alice-laptop  16:51')
+  assert.equal(listPage(m, NOW).hint, 'reading the hub ··')
+  const offline = model([pane('w/0.0')], { hosts: [{ name: 'alice-laptop', online: false }] })
+  assert.ok(listPage(offline, NOW).hint.startsWith('○ alice-laptop offline · '), listPage(offline, NOW).hint)
   assert.deepEqual(listLayout(model([], { configured: false }), NOW).items, ['set the hub and token on the phone'])
   assert.deepEqual(listLayout(model([]), NOW).items, ['no panes exposed to this token'])
+})
+
+test('the list: seven rows from the top down to the hint, no head', () => {
+  const panes = Array.from({ length: 10 }, (_, i) => pane(`w/${i}.0`))
+  const page = listPage(model(panes), NOW)
+  assert.equal(LIST_ROWS, 7)
+  assert.equal(page.blocks.length, 7)
+  assert.equal(page.blocks[0].y, 0)
+  const last = page.blocks[6]
+  assert.ok(last.y + last.h <= HINT_Y && HINT_Y - (last.y + last.h) < LINE_H, `the last row ends at ${last.y + last.h}`)
+  assert.equal('head' in page, false)
+})
+
+const CLAUDE = ['● Done.', '', '────────', '❯ run the tests again', '────────', '  ⏵⏵ auto mode on']
+
+test('the suggestion: not drawn, offered first, its text and Enter', () => {
+  const p = pane('w/0.0', { title: 'build' })
+  const reading = { raw: CLAUDE, error: null }
+  const page = panePage(model([p], { reading: () => reading }), p, reading, { offset: 0, reveal: false, state: 'following' })
+  const body = page.blocks.find((b) => b.name === 'body')!
+  assert.ok(!body.lines.some((l) => l.includes('run the tests')), 'the suggestion is on the pane')
+  assert.equal(body.lines.length, Math.floor((HINT_Y - 30) / LINE_H))
+  assert.equal(page.blocks.filter((b) => b.name === 'pinned').length, 0)
+  assert.equal(page.charts.length, 0, 'the title is text')
+  const offer = offerOf(p, CLAUDE, true)!
+  assert.deepEqual(offer.pieces, [{ text: 'run the tests again' }, { key: 'Enter' }])
+  assert.deepEqual(answersPage(model([p]), p, offer, true).items.slice(0, 3), ['» "run the tests again"', '» Say it', 'Enter'])
+  assert.equal(offerOf(p, ['a', '────────', '❯ ', '────────'], true), null)
+  assert.equal(offerOf(p, ['a', '────────', '❯ Try "fix the bug"', '────────'], true), null)
+  assert.equal(offerOf(pane('w/1.0', { writable: false }), CLAUDE, true), null)
+  assert.equal(offerOf(p, CLAUDE, false), null)
+  // A box over several rows is one line; control characters never reach the text sent.
+  const long = offerOf(p, ['a', '────────', '❯ one\u001b[31m', '  two\u0007', '────────'], true)!
+  assert.equal(long.pieces[0].text, 'one[31m two')
+})
+
+test('the columns: text titles, the mark, eight lines', () => {
+  const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' })]
+  const reading = { raw: Array.from({ length: 40 }, (_, i) => String(i)), error: null }
+  const sel = ['alice-laptop/w/1.0', 'alice-laptop/w/2.0']
+  let page = splitPage(model(panes, { selected: sel, reading: () => reading }))
+  assert.equal(page.charts.length, 0)
+  assert.deepEqual(page.blocks.filter((b) => b.name?.startsWith('title')).map((b) => b.lines[0]), ['· one · claude', '· two · claude'])
+  assert.equal(page.blocks.find((b) => b.name === 'col0')!.lines.length, 8)
+  assert.equal(page.hint, '▽ pick a pane · ● refresh · ×× the list')
+  page = splitPage(model(panes, { selected: sel, marked: 1, reading: () => reading }))
+  assert.equal(page.blocks.find((b) => b.name === 'title1')!.lines[0], '» · two · claude')
+  assert.equal(page.hint, '▽ next pane · ● open two · ×× the list')
 })
