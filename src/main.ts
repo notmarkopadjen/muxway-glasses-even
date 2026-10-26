@@ -4,6 +4,7 @@ import type { Page } from './glasses.ts'
 import { isLoopback } from './protocol.ts'
 import { mountPhone, plog, showOpenPane } from './phone.ts'
 import { TEST_BUILD, loadSettings } from './settings.ts'
+import './phone.css'
 
 let app: App | null = null
 

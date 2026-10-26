@@ -41,6 +41,11 @@ drops that code altogether. `npm run dev` serves the test build too, and
 Vite's server binds to `127.0.0.1` only, so neither the dev page nor its
 doors are reachable from another machine.
 
+The page carries a Content-Security-Policy (`index.html`): scripts and
+styles from its own files, connections to `https:` and loopback `http:`
+only, no inline script. The simulator runs under it in every end-to-end
+test, so a change the policy would block fails the suite.
+
 ## A run
 
 ```mermaid

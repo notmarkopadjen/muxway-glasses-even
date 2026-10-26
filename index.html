@@ -3,28 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- Scripts and styles from the page's own files only, no inline script; the network is the hub
+         (https) and, for the simulator and the tests, a loopback server. The Even bridge is injected
+         by the app outside the page's policy and needs nothing here. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https: http://127.0.0.1:* http://localhost:*; img-src 'self'; base-uri 'none'; form-action 'none'" />
     <title>muxway</title>
-    <style>
-      :root { --fg: #33ff66; --dim: #1f9a3f; --bg: #000; --bad: #ff5544; }
-      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
-        font: 14px/1.5 ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace; -webkit-text-size-adjust: 100%; }
-      #app { padding: 14px 12px 40px; box-sizing: border-box; max-width: 640px; margin: 0 auto; }
-      h1 { font-size: 14px; font-weight: normal; margin: 0 0 12px; white-space: pre; }
-      .box { border: 1px solid var(--dim); padding: 10px 12px; margin: 0 0 14px; }
-      .box h2 { font-size: 14px; font-weight: normal; margin: -21px 0 8px; background: var(--bg); display: inline-block; padding: 0 6px; }
-      label { display: block; color: var(--dim); margin: 8px 0 2px; }
-      input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--dim); background: #020; color: var(--fg);
-        font: inherit; border-radius: 0; }
-      textarea { min-height: 64px; }
-      button { margin: 10px 8px 0 0; padding: 8px 14px; border: 1px solid var(--fg); background: var(--bg); color: var(--fg); font: inherit; border-radius: 0; }
-      button:active { background: var(--fg); color: var(--bg); }
-      .status { margin-top: 8px; white-space: pre-wrap; word-break: break-word; color: var(--dim); }
-      .ok { color: var(--fg); } .bad { color: var(--bad); }
-      .row { display: flex; gap: 12px; } .row > div { flex: 1; }
-      label.check { display: flex; align-items: center; gap: 8px; } label.check input { width: auto; }
-      #log { max-height: 220px; overflow: auto; color: var(--dim); } #log .ok { color: var(--fg); } #log .bad { color: var(--bad); }
-      .hint { color: var(--dim); }
-    </style>
   </head>
   <body>
     <div id="app">
