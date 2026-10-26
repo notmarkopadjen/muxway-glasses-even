@@ -109,6 +109,11 @@ function q(params: Record<string, string | number>): string {
   return new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
 }
 
+/** The address in a path, each segment escaped; the listing parser has already checked its grammar. */
+function at(address: string): string {
+  return address.split('/').map(encodeURIComponent).join('/')
+}
+
 export const api = {
   me: () => call('GET', '/v1/me', { json: true }),
   /** The listings come as JSON: the bars need activity and the attention's time, which text mode has not. */
@@ -116,9 +121,9 @@ export const api = {
   hosts: () => call('GET', '/v1/hosts', { json: true }),
   /** The last rows, unwrapped (width 400): the glasses wrap by pixels themselves. */
   pane: (address: string, etag: string) =>
-    call('GET', `/v1/panes/${address}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
-  text: (address: string, text: string) => call('POST', `/v1/panes/${address}/input`, { body: JSON.stringify({ text }) }),
-  key: (address: string, key: string) => call('POST', `/v1/panes/${address}/input`, { body: JSON.stringify({ key }) }),
+    call('GET', `/v1/panes/${at(address)}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
+  text: (address: string, text: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ text }) }),
+  key: (address: string, key: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ key }) }),
   /** Whether the hub has a transcriber: 204, or 404 which the caller reads as no. */
   transcribeProbe: () => call('GET', '/v1/transcribe'),
   /** A 16 kHz mono WAV to text; the transcriber may take a while. */

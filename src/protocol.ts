@@ -41,19 +41,25 @@ export interface Event {
 
 const ATTENTION = ['question', 'permission', 'idle', 'done'] as const
 const HOST = /^[a-z0-9-]{1,32}$/
+const ALIAS = /^@[a-z0-9-]{1,32}$/
+const NAME = /^[A-Za-z0-9._-]{1,64}$/
+const INDEX = /^[0-9]{1,4}$/
 const MAX_LIST = 500
 
 function attention(s: unknown): Attention | '' {
   return typeof s === 'string' && (ATTENTION as readonly string[]).includes(s) ? (s as Attention) : ''
 }
 
+/** host/session/window.pane or host/@alias, as the protocol spells them; anything else is not a pane. */
 function address(s: unknown): { host: string; path: string } | null {
-  if (typeof s !== 'string') return null
-  const slash = s.indexOf('/')
-  if (slash < 1 || s.length > 200) return null
-  const host = s.slice(0, slash)
-  const path = s.slice(slash + 1)
-  if (!HOST.test(host) || path.length === 0 || /[^\x21-\x7e]/.test(path)) return null
+  if (typeof s !== 'string' || s.length > 200) return null
+  const [host, ...rest] = s.split('/')
+  if (!HOST.test(host)) return null
+  const path = rest.join('/')
+  if (rest.length === 1) return ALIAS.test(path) ? { host, path } : null
+  if (rest.length !== 2) return null
+  const dot = rest[1].lastIndexOf('.')
+  if (dot < 0 || !NAME.test(rest[0]) || !NAME.test(rest[1].slice(0, dot)) || !INDEX.test(rest[1].slice(dot + 1))) return null
   return { host, path }
 }
 
