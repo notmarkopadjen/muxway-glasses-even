@@ -26,30 +26,44 @@ jobs:
         with:
           node-version: 22
 
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      # The suite builds the hub from the core repository. While that is
+      # private, CI needs a read token for it; without one the suite runs
+      # on developers' machines only and CI says so.
+      - name: Is the core repository reachable
+        id: core
+        env:
+          CORE_TOKEN: ${{ secrets.MUXWAY_CORE_TOKEN }}
+        run: |
+          if [ -z "$CORE_TOKEN" ]; then
+            echo "::notice::end-to-end tests skipped: no access to the core repository (secret MUXWAY_CORE_TOKEN)"
+            echo "suite=none" >> "$GITHUB_OUTPUT"
+          else
+            echo "suite=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: steps.core.outputs.suite == 'yes'
         with:
-          go-version-file: ../muxway/go.mod
+          repository: notmarkopadjen/muxway
+          token: ${{ secrets.MUXWAY_CORE_TOKEN }}
+          path: muxway-core
+          persist-credentials: false
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        if: steps.core.outputs.suite == 'yes'
+        with:
+          go-version-file: muxway-core/go.mod
           cache: false
 
       - name: Run end-to-end tests
         id: run
-        env:
-          CORE_TOKEN: ${{ secrets.MUXWAY_CORE_TOKEN }}
+        if: steps.core.outputs.suite == 'yes'
         run: |
-          # The suite builds the hub from the core repository. While that is
-          # private, CI needs a read token for it; without one the suite runs
-          # on developers' machines only and CI says so.
-          if [ -z "$CORE_TOKEN" ]; then
-            echo "::notice::end-to-end tests skipped: no access to the core repository (secret MUXWAY_CORE_TOKEN)"
-            echo "suite=none" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git clone -q --depth 1 "https://x-access-token:${CORE_TOKEN}@github.com/notmarkopadjen/muxway.git" ../muxway
           sudo apt-get update -q && sudo apt-get install -y -q tmux xvfb libwebkit2gtk-4.1-0
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
           echo "suite=yes" >> "$GITHUB_OUTPUT"
-          MUXWAY_CORE=../muxway scripts/e2e.sh
+          MUXWAY_CORE=muxway-core scripts/e2e.sh
 
       - name: Keep logs, screenshots and traces
         if: always() && steps.run.outputs.suite == 'yes'
