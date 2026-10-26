@@ -10,3 +10,4 @@
 /dist/
 /*.ehpk
 /tests/e2e/__pycache__/
+/.claude/
