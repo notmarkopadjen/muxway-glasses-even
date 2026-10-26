@@ -3,6 +3,8 @@
 The page the Even app shows on the phone while the app runs. It is the
 only place a token is typed, and the way to send free text to a pane.
 Green on black, monospace, box frames: a terminal, as every muxway UI.
+Setting the hub and the token here is the last step of the
+[install](install.md), which has the flow as a diagram.
 
 ## Hub
 

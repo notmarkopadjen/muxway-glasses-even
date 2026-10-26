@@ -4,6 +4,19 @@ The app is an Even Hub app: a web page packed as an `.ehpk` and
 installed through the Even Hub developer portal, or run from a
 development server while developing.
 
+```mermaid
+sequenceDiagram
+    participant D as Developer
+    participant P as Even Hub portal
+    participant E as Even app on the phone
+    participant G as Glasses
+    D->>D: scripts/pack.sh https://hub.example.com (hub origin into the whitelist)
+    D->>P: upload muxway.ehpk as a beta build, self as tester
+    E->>P: install from the beta section
+    D->>E: open the app, set the hub URL, paste the token (phone pane)
+    E->>G: the pane list
+```
+
 ## The hub
 
 The hub must be reachable over HTTPS from the phone and answer CORS

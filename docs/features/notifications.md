@@ -9,9 +9,9 @@ sequenceDiagram
     participant CC as Claude Code in a pane
     participant H as Hub
     participant A as App
-    A->>H: GET /v1/events?after=12&wait=25 (text mode)
+    A->>H: GET /v1/events?after=12&wait=25
     CC->>H: permission "Claude needs your permission to use Bash" (through the agent)
-    H-->>A: 13 <tab> ... <tab> alice-laptop/work/1.0 <tab> permission <tab> Claude needs ...
+    H-->>A: {seq 13, alice-laptop/work/1.0, permission, Claude needs ...}
     A->>A: mark ★ on work/1.0, toast in the hint line, list read
     A->>H: GET /v1/events?after=13&wait=25
 ```

@@ -76,6 +76,12 @@ corners, keyboard first, information-dense. No gradients, no rounded SaaS
 cards, no stock illustrations. On tiny screens (feature phones, glasses)
 retro is native: respect the device, do not imitate a bigger one.
 
+The clients are one product. This client follows the glasses column of
+the core's
+[`docs/ui-guideline.md`](https://github.com/notmarkopadjen/muxway/blob/main/docs/ui-guideline.md)
+(section 1.6, actions and their triggers): a shared feature or a gesture
+is in that table before it is bound here.
+
 ## 5. How work is done
 
 Every feature follows `docs/templates/feature.md`:
@@ -104,8 +110,10 @@ limits; and that no secret appears in any response or log.
 
 - End-to-end tests run the real binaries against a throwaway tmux server and
   a test hub, never against a real machine.
-- Browser and UI tests use Playwright and plain `.html` fixture pages where
-  a page is needed, so a test can be opened and replayed by hand.
+- The glasses are tested on the Even Hub simulator through its automation
+  API; only the phone pane is tested in a browser with Playwright, with
+  plain `.html` fixture pages where a page is needed, so a test can be
+  opened and replayed by hand.
 - Every run writes a run directory: a summary, the full log of every
   component, and for UI tests a screenshot (and a trace) at each step and on
   failure.
@@ -129,3 +137,16 @@ retro clients keep text mode and nothing is renamed for them.
   from a fixed set of answers or from the paired phone.
 - UI tests run against the device simulator and the core repository's test
   hub.
+
+Build and test (Node 22, `npm ci` once):
+
+```sh
+scripts/build.sh                         # type-check and build dist/
+scripts/pack.sh https://hub.example.com  # muxway.ehpk with your hub whitelisted
+npm run test:unit                        # the pure modules
+MUXWAY_CORE=../muxway scripts/e2e.sh     # the end-to-end suite, or chosen tests: scripts/e2e.sh S05 F14
+```
+
+`scripts/e2e.sh` needs Xvfb, `libwebkit2gtk-4.1-0` (the simulator), Go
+(it builds the hub and agent), Python 3, Node 22 and a checkout of the
+core repository in `MUXWAY_CORE` (default `../muxway`).

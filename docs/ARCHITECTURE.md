@@ -2,14 +2,15 @@
 
 A muxway client for Even Realities G2 glasses. It speaks the hub's
 [protocol v1](https://github.com/notmarkopadjen/muxway/blob/main/docs/protocol/v1.md)
-in text mode, nothing else.
+and nothing else: listings and events as JSON, pane content in text mode,
+where the hub's wrapping and charset folding are what the glasses want.
 
 ## Where it sits
 
 ```mermaid
 flowchart LR
     G[G2 glasses] -- BLE --> E[Even app on the phone: WebView with this page]
-    E -- "HTTPS, bearer token, text mode" --> H[(muxway hub)]
+    E -- "HTTPS, bearer token: JSON listings, text-mode panes" --> H[(muxway hub)]
     H --> A[agent + tmux]
 ```
 
@@ -18,6 +19,24 @@ it a bridge to the glasses (the Even Hub SDK), and shows the page itself
 on the phone. The phone does the network: the page calls the hub directly
 over HTTPS with `Authorization: Bearer`, and the hub answers the CORS
 preflight such a page needs. The glasses see only what the page draws.
+
+## Protocol features used
+
+| Call | How | For |
+|---|---|---|
+| `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `attention`, `activity`; hosts online or not |
+| `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
+| `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
+| `GET /v1/events` | JSON long poll: `?limit=1` for the cursor, then `?after=N&wait=25&limit=50` | notifications |
+| `GET /v1/transcribe` | `204` or `404` | whether **Say it** is offered |
+| `POST /v1/transcribe` | `audio/wav`, 16 kHz mono, up to 60 s | the spoken reply's text |
+
+Every call carries `Authorization: Bearer <token>`, `credentials: omit`,
+`cache: no-store`, and relies on the hub's CORS answers for bearer-token
+pages. Addresses in paths are the listing's, checked against the
+protocol's grammar and escaped segment by segment. Nothing else of the
+protocol (sessions, windows, files, resize, admin) is used.
 
 ## Source layout
 
