@@ -2,16 +2,43 @@
 ┌─ muxway-glasses-even ─┐
 ```
 
-Even Realities G2 client for [muxway](https://github.com/notmarkopadjen/muxway): your tmux panes at a glance, and a word back when an AI coding CLI needs you.
+Even Realities G2 client for [muxway](https://github.com/notmarkopadjen/muxway):
+your tmux panes at a glance, and a word back when an AI coding CLI needs
+you.
 
-> Early development. Runs in the Even Hub simulator; first builds for the glasses.
+![Claude Code through the lens: the conversation, no chrome](store/shots/05-lens.png)
+
+> Worn daily on the G2. Runs in the Even Hub simulator for development.
 
 An Even Hub app: a page the Even phone app loads and that draws on the
 glasses. It lists the panes your token may see, shows the last lines of
 one, answers it from a fixed set of replies or with your voice, and
 tells you when Claude Code in a pane asks a question or waits for a
-permission. Settings and
-free-text replies live on the phone, in the same app.
+permission. Settings and free-text replies live on the phone, in the
+same app.
+
+## What it does
+
+- **The pane list**, panes that wait for you first, each with its word:
+  *asks a question*, *needs permission*, *done*. Scroll moves, tap opens,
+  hold selects two for side by side.
+- **A pane**, following its tail, or two panes in columns.
+- **The Claude Code lens** reshapes Claude Code's screen for eight short
+  lines: the conversation stays, the chrome goes, and whatever Claude
+  suggests in its input box is offered as the first answer.
+- **Answers**: Enter, `y`, `n`, numbered choices, a few keys; or **say
+  it**, read the transcript back on the glasses, and send.
+- **A banner** at the foot of whatever you are reading when a pane needs
+  you, and *go to* from the menu.
+
+<p>
+<img src="store/shots/01-list.png" alt="The pane list, panes waiting first" width="288">
+<img src="store/shots/06-answers.png" alt="The answers, Claude Code's suggestion first" width="288">
+</p>
+<p>
+<img src="store/shots/07-listening.png" alt="Listening, with the graph of your voice" width="288">
+<img src="store/shots/09-banner.png" alt="A notification banner at the foot of a pane" width="288">
+</p>
 
 - [Screens and gestures](docs/features/screens.md)
 - [Notifications](docs/features/notifications.md)
@@ -20,6 +47,11 @@ free-text replies live on the phone, in the same app.
 - [Spoken replies](docs/features/spoken-replies.md)
 - [Install](docs/features/install.md)
 - [Architecture](docs/ARCHITECTURE.md)
+
+The other clients, and the hub: [muxway](https://github.com/notmarkopadjen/muxway)
+(web client, protocol),
+[muxway-android](https://github.com/notmarkopadjen/muxway-android),
+[muxway-midp](https://github.com/notmarkopadjen/muxway-midp).
 
 ## Build
 
@@ -33,10 +65,7 @@ scripts/pack.sh https://hub.example.com  # muxway.ehpk for the Even Hub portal, 
 
 The hub must answer CORS preflights for bearer-token clients, which it
 does since protocol v1 gained them (see the core's `docs/protocol/v1.md`).
-Listings are read as JSON, pane content in text mode.
-
-Contributors and AI agents: read [AGENTS.md](AGENTS.md) first.
-Security issues: see [SECURITY.md](SECURITY.md).
+Listings and events are read as JSON, pane content in text mode.
 
 ## Tests
 
@@ -55,4 +84,8 @@ phone pane is tested in Chromium with Playwright. Each run writes
 `test-runs/<id>/` with a summary, JUnit results, logs, screenshots, a
 Playwright trace and `report/index.html`. Needs tmux, Xvfb, Go, Python 3,
 Node 22, `libwebkit2gtk-4.1-0` for the simulator and Playwright's
-Chromium (`npx playwright install chromium`).
+Chromium (`npx playwright install chromium`). The screenshots above are
+the store listing's, taken by `scripts/store-shots.sh` from such a run.
+
+Contributors and AI agents: read [AGENTS.md](AGENTS.md) first.
+Security issues: see [SECURITY.md](SECURITY.md).
