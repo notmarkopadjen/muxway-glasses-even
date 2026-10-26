@@ -23,6 +23,10 @@ export interface Settings {
 
 const KEY = 'muxway.settings.v1'
 
+// Set by vite's define: true in a test build alone (vite build --mode test), see docs/testing.md.
+declare const __MX_TEST__: boolean
+export const TEST_BUILD = typeof __MX_TEST__ !== 'undefined' && __MX_TEST__
+
 const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true }
 
 let current: Settings = { ...DEFAULTS }
@@ -64,15 +68,21 @@ function writeLocal(s: Settings) {
   }
 }
 
+/** Whether the page may take settings from its URL: a test build, served from loopback. */
+function takesQuery(loc: { hostname: string }): boolean {
+  return TEST_BUILD && isLoopback(loc.hostname)
+}
+
 /**
- * Settings from the page's own URL, taken only when the page is served
+ * Settings from the page's own URL, taken only by a test build served
  * from loopback: the simulator and the test harness. A packed or
- * sideloaded app never takes a token from a URL.
+ * sideloaded app never takes a token from a URL; the production build
+ * has no code for it.
  */
 export function fromQuery(loc: { hostname: string; search: string }): Partial<Settings> | null {
   const q = new URLSearchParams(loc.search)
   if (![...q.keys()].some((k) => k in DEFAULTS)) return null
-  if (!isLoopback(loc.hostname)) return null
+  if (!takesQuery(loc)) return null
   const out: Partial<Settings> = {}
   for (const k of ['hub', 'token', 'charset'] as const) {
     const v = q.get(k)
@@ -92,7 +102,7 @@ export function fromQuery(loc: { hostname: string; search: string }): Partial<Se
 /** True when the URL carries settings the page may not take: the phone pane says so. */
 export function refusedQuery(loc: { hostname: string; search: string }): boolean {
   const q = new URLSearchParams(loc.search)
-  return [...q.keys()].some((k) => k in DEFAULTS) && !isLoopback(loc.hostname)
+  return [...q.keys()].some((k) => k in DEFAULTS) && !takesQuery(loc)
 }
 
 export async function loadSettings(b: EvenAppBridge | null): Promise<Settings> {

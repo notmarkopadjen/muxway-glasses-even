@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",
-    "dev": "vite",
+    "dev": "vite --mode test",
     "test:unit": "node --test tests/unit/*.test.ts",
     "simulate": "evenhub-simulator http://127.0.0.1:5173 --automation-port 9898"
   },

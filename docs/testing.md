@@ -27,6 +27,20 @@ Between the app and the hub sits a recording **proxy** (`tests/e2e/harness.py`,
 body, bytes that are not UTF-8, hostile Claude Code screens, forged pane
 titles, hostile events.
 
+## The test build
+
+The harness drives the page through three doors a shipped app must not
+have: settings in the URL (`?hub=&token=`), the trace of every drawn page
+(`?trace=<id>`, posted to the server that serves the page) and the tone
+in place of a microphone (`?mic=tone`). Each opens only in a **test
+build** served from loopback. The build is `vite build --mode test`,
+which `scripts/build.sh --test` makes and `scripts/e2e.sh` uses; it sets
+the constant `__MX_TEST__` to true, and the production build
+(`scripts/build.sh`, `scripts/pack.sh`) sets it to false, so the bundler
+drops that code altogether. `npm run dev` serves the test build too, and
+Vite's server binds to `127.0.0.1` only, so neither the dev page nor its
+doors are reachable from another machine.
+
 ## A run
 
 ```mermaid
@@ -85,10 +99,10 @@ sequenceDiagram
     participant E as scripts/e2e.sh
     participant GH as GitHub
     CI->>E: run suite
-    E-->>CI: test-runs/<id>/ (summary, results.xml, logs, screens, traces)
+    E-->>CI: test-runs/RUN-ID/ (summary, results.xml, logs, screens, traces)
     CI->>GH: upload run directory as artifact
     CI->>GH: check run from results.xml
-    CI->>GH: issue "Run <id>: result @ commit" (closed if passed)
+    CI->>GH: issue "Run RUN-ID: result @ commit" (closed if passed)
 ```
 
 Considered and not used: an Allure report on GitHub Pages (needs a paid plan
