@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ANSWERS, short } from '../../src/answers.ts'
+import { ANSWERS } from '../../src/answers.ts'
 import { byteLength } from '../../src/text.ts'
 
 const KEYS = ['Enter', 'Tab', 'BTab', 'BSpace', 'Escape', 'Up', 'Down', 'Left', 'Right', 'PageUp', 'PageDown', 'Home', 'End', 'C-c', 'C-d', 'C-z', 'C-l']
@@ -15,6 +15,7 @@ test('answers: only protocol keys and printable text, labels fit a row', () => {
     }
   }
   assert.equal(ANSWERS.length <= 19, true)
-  assert.equal(short(ANSWERS[3]), '1')
-  assert.equal(short(ANSWERS[1]), 'y, Enter')
+  assert.equal(ANSWERS[3].short, '1')
+  assert.equal(ANSWERS[1].short, 'y, Enter')
+  for (const a of ANSWERS) assert.ok(a.short.length > 0 && a.label.startsWith(a.short), a.label)
 })

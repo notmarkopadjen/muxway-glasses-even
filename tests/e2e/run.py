@@ -227,7 +227,7 @@ def s04(run, name):
 
 @test("S05", "Hostile Claude Code screen: at most the chrome hidden, the box offered clean and sent as printable text only, reveal shows all", "e2e-security")
 def s05(run, name):
-    core, proxy, sim, tok = setup(run, name, mode="claude-hostile", params={"charset": "utf-8"})
+    core, proxy, sim, tok = setup(run, name, mode="claude-hostile", params={"charset": "utf-8"}, says_claude=True)
     open_pane(sim)
     page = sim.last()
     check(not any("bell" in l for l in sim.lines()), "the box is on the pane")
@@ -244,11 +244,15 @@ def s05(run, name):
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", offer) and len(offer.encode()) <= 63, offer)
     sim.shot("hostile-offer")
     sim.choose(0)
-    sim.head('send "box', "the confirmation")
-    sim.choose(1)
+    page = sim.head("send this to test-pane?", "the confirmation")
+    shown = " ".join(sim.block("text", page) or [])
+    check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", shown), "control characters on the confirmation")
+    sim.shot("hostile-confirm")
+    sim.tap()
     sim.head('sent "box', "the flash", 10)
     posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
     check(posts == [{"text": "box [31mred[0m bell nul"}, {"key": "Enter"}], str(posts))
+    check(posts[0]["text"] == shown, f"sent {posts[0]['text']!r}, showed {shown!r}")
     check(all(r["path"].startswith("/v1/panes/alice-laptop/work/0.0/") for r in proxy.requests if r["method"] == "POST"), "a write to another pane")
     check(not any("bell" in e["message"] for e in sim.console()), "the box's text in the console")
     check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
@@ -281,6 +285,51 @@ def s07(run, name):
     time.sleep(1)
     sim.shot("rows")
     check(not any("refused" in e["message"] for e in sim.console()), "the firmware refused the page")
+
+
+@test("S08", "The suggestion: none from a shell's rules or from a box too long to show whole; what Claude's box sends is what the confirmation showed", "e2e-security")
+def s08(run, name):
+    def answers(sim):
+        open_pane(sim)
+        sim.tap()
+        return sim.head("answer test-pane", "the answers")
+
+    def no_writes(proxy):
+        check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "the app wrote")
+
+    def teardown():
+        for fn in reversed(run.cleanups):
+            fn()
+        run.cleanups.clear()
+
+    # A shell that printed two rules around a command: the hub says bash, so no suggestion.
+    core, proxy, sim, tok = setup(run, f"{name}-shell", mode="shell-rules")
+    page = answers(sim)
+    check(page["items"][0] == "Enter" and not any(i.startswith("»") for i in page["items"]), f"a shell's rows were offered: {page['items'][:2]}")
+    sim.shot("shell-answers")
+    no_writes(proxy)
+    teardown()
+    # Claude's box, longer than the confirmation can show whole: not offered at all.
+    core, proxy, sim, tok = setup(run, f"{name}-long", mode="claude-long", says_claude=True)
+    page = answers(sim)
+    check(page["items"][0] == "Enter" and not any(i.startswith("»") for i in page["items"]), f"a long box was offered: {page['items'][:2]}")
+    sim.shot("long-answers")
+    no_writes(proxy)
+    teardown()
+    # Claude's box: the confirmation shows every word, and those words are what is sent.
+    core, proxy, sim, tok = setup(run, f"{name}-claude", mode="claude", says_claude=True)
+    page = answers(sim)
+    check(page["items"][0].startswith('» "'), f"no suggestion: {page['items'][:2]}")
+    sim.choose(0)
+    page = sim.head("send this to test-pane?", "the confirmation")
+    check(page["kind"] == "dash" and page["items"] == [], "the confirmation is a list")
+    shown = " ".join(sim.block("text", page) or [])
+    check(shown == "fix the typo in README", f"the box shows {shown!r}")
+    sim.shot("claude-confirm")
+    sim.tap()
+    sim.head("sent ", "the flash", 10)
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    check(posts == [{"text": shown}, {"key": "Enter"}], f"sent {posts}, showed {shown!r}")
 
 
 @test("S02", "The token is in no URL, no console line and on no screen", "e2e-security")
@@ -575,8 +624,10 @@ def f14(run, name):
     check(page["items"][:2] == ['» "fix the typo in README"', "Enter"], page["items"][:3])
     sim.shot("answers-offer")
     sim.choose(0)
-    sim.head('send "fix the typo in README"', "the confirmation")
-    sim.choose(1)
+    page = sim.head("send this to test-pane?", "the confirmation")
+    check(sim.block("text", page) == ["fix the typo in README"], f"the confirmation's box: {sim.block('text', page)}")
+    sim.shot("offer-confirm")
+    sim.tap()
     sim.head('sent "fix the typo in README"', "the flash", 10)
     wait_for("typed", lambda: "fix the typo in README" in core.pane(), 5)
     posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]

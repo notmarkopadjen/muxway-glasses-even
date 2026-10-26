@@ -178,11 +178,11 @@ answer build · ▽ choose · ● pick · ×× back
 ```
 
 When Claude Code suggests what to say next, its input box holds the
-suggestion, and the list opens with it in quotes: picking it sends that
-text and `Enter`. It is taken from the pane when the answers open, and
-the confirmation sends exactly that. When the hub has a transcriber the
-next row is **» Say it**, which leads to the [spoken
-reply](spoken-replies.md) pages.
+suggestion, and on a pane the hub says runs `claude` the list opens with
+it in quotes: picking it sends that text and `Enter`. It is taken from
+the pane when the answers open, and the confirmation sends exactly that.
+When the hub has a transcriber the next row is **» Say it**, which leads
+to the [spoken reply](spoken-replies.md) pages.
 
 Then a fixed set, in this order: `Enter`, `y, Enter`, `n, Enter`, `1 ·
 Claude Code's first choice`, `2`, `3`, `Esc`, `Ctrl-C`, `Tab`,
@@ -193,12 +193,25 @@ the protocol's keys (`Enter`, `Escape`, `C-c`, `Tab`, `BTab`, `Up`,
 `Down`). Free text beyond the suggestion comes from the [phone
 pane](phone-pane.md) or your voice.
 
-A tap on an answer opens the confirmation, a two-row list with **Cancel**
-first and highlighted, **Confirm** second, the question in the hint
-(`send "run the tests again" to build?`). Confirm posts to
+A tap on a fixed answer opens the confirmation, a two-row list with
+**Cancel** first and highlighted, **Confirm** second, the question in the
+hint (`send y, Enter to build?`). Confirm posts to
 `POST /v1/panes/{address}/input`, one request per piece, goes back to
 the pane, reads it at once and flashes the result. A double tap on
 either page goes back without sending.
+
+The suggestion's confirmation is the page the [spoken
+reply](spoken-replies.md) uses: `send this to build?` over the whole
+text in a box, a tap sends it and `Enter`, a double tap goes back. A
+suggestion too long for that box is not offered.
+
+```
+send this to build?
+┌────────────────────────────────────────────┐
+│ run the tests again                        │
+└────────────────────────────────────────────┘
+● send + Enter · ×× back
+```
 
 ## Security considerations
 
@@ -206,10 +219,13 @@ either page goes back without sending.
   a transcript read back first; a mis-tap cannot send `Ctrl-C` to a
   running build. Keys are the protocol's names.
 - The suggestion is the pane's own text sent back to the same pane, only
-  when the wearer picks and confirms it. Control characters are removed
-  before it is shown or sent, it is cut at 4096 bytes, and the log keeps
-  its size, not its words. The hub checks the write grant as for every
-  answer.
+  when the wearer picks it and confirms it on a page that shows every
+  word: what is shown is what is sent, with no cut in between, and a text
+  that would not fit (200 bytes) is not offered. It is offered only on a
+  pane the hub names `claude`; two rules in a shell's output are not a
+  box (see [lenses](lenses.md)). Control characters are removed before it
+  is shown or sent, and the log keeps its size, not its words. The hub
+  checks the write grant as for every answer.
 - Whether a pane may be written to comes from the hub's `mode`; a title
   cannot forge it, and a hub or proxy that lies about the mode gains a
   refused request (`403 read only`). A read-only pane offers no

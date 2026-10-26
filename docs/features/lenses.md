@@ -28,11 +28,12 @@ The lens:
   **notices** (blank rows and rows starting with eight spaces right above
   the top rule) and the **summary** (the one row above those that starts
   with a spinner mark and names a duration such as `58s` or `5m 27s`);
-- hides the **input box**. When it holds more than the prompt mark or
-  Claude's own hint (`Try "..."`), that is Claude's suggestion of what to
-  say next, and it becomes the **first answer** on the answers page
-  ([screens](screens.md)): the text in quotes, which sends it and
-  `Enter`. The body keeps the whole height;
+- hides the **input box**. On a pane the hub says runs `claude`, when it
+  holds more than the prompt mark or Claude's own hint (`Try "..."`),
+  that is Claude's suggestion of what to say next, and it becomes the
+  **first answer** on the answers page ([screens](screens.md)): the text
+  in quotes, which sends it and `Enter` after a confirmation that shows
+  every word. The body keeps the whole height;
 - drops the **blank rows** between the transcript and the chrome.
 
 On a pane whose program is `claude` (the list's command column) the lens
@@ -40,7 +41,8 @@ is forced: it does the same when it finds the rules and guesses when it
 does not (the last row among the final eight that starts with `❯` or
 `> ` is the box). On other programs it applies only when it finds the
 two rules, else the rows are shown as they are, so a plain shell never
-loses a row.
+loses a row. It never offers a suggestion there: only a pane the hub
+names `claude` has a box.
 
 **Reveal all** in the menu shows everything in place, without the rules
 or the blank rows; **Lens on** hides it again. The phone pane's **Claude
@@ -83,8 +85,18 @@ those; forced, at most the rows after the last prompt row among the final
 eight. Reveal all shows everything it hid. The worst a crafted screen
 does is hide its own last rows until the wearer picks Reveal all.
 
-What the box holds is shown as an answer and sent only when the wearer
-picks it and confirms. It goes back to the same pane, cleaned of control
-characters and cut at 4096 bytes, so a crafted box can type into its own
-program what the program could have typed itself, and nothing more. The
-end-to-end suite has these cases (S05).
+What the box holds is offered as an answer only when the hub's listing
+names the pane's program `claude`. Two rules are easy to come by in any
+pane: a README, a log or `git log` can print them around a line of its
+choosing, and a shell pane's "box" would be a command the wearer never
+typed. The hub takes the program's name from tmux on the host, which a
+pane's own output cannot change.
+
+The wearer sees every word before it goes. The answers row shows the text
+in quotes, cut to the row, and the confirmation is a page with the whole
+text in a box; a box that would not fit that page whole (over 200 bytes
+or more rows than it has) is not offered at all, so nothing can hide
+behind a cut. Sent, the text goes back to the same pane, cleaned of
+control characters, so a crafted box can type into its own program what
+the program could have typed itself, and nothing more. The end-to-end
+suite has these cases (S05, S08).

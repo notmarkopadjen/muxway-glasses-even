@@ -3,7 +3,7 @@
 // and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
-import { ANSWERS, short, type Answer } from './answers.ts'
+import { ANSWERS, type Answer } from './answers.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
 import { paneName, parseEvents, parseHosts, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
@@ -18,6 +18,7 @@ type View =
   | { kind: 'pane'; pane: Pane; fromSplit: boolean }
   | { kind: 'answers'; pane: Pane; offer: Answer | null }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
+  | { kind: 'offer'; pane: Pane; answer: Answer }
   | { kind: 'listen'; pane: Pane }
   | { kind: 'heard'; pane: Pane }
 
@@ -227,7 +228,7 @@ export class App {
   /** The panes on screen: the open pane, or the columns. */
   private watched(): Pane[] {
     const v = this.top
-    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'confirm' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
+    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'confirm' || v.kind === 'offer' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
     if (v.kind === 'split') return this.columns()
     return []
   }
@@ -503,6 +504,12 @@ export class App {
       await this.sendVoice(v.pane, true)
       return
     }
+    if (v.kind === 'offer') {
+      this.stack.pop()
+      this.stack.pop()
+      await this.send(v.pane, v.answer)
+      return
+    }
     if (v.kind === 'list') {
       const row = this.listRow()
       if (!row) return
@@ -545,7 +552,7 @@ export class App {
     if (v.kind === 'answers') {
       if (v.offer) {
         if (idx === 0) {
-          await this.push({ kind: 'confirm', pane: v.pane, answer: v.offer })
+          await this.push({ kind: 'offer', pane: v.pane, answer: v.offer })
           return
         }
         idx--
@@ -651,14 +658,14 @@ export class App {
   }
 
   private async send(pane: Pane, answer: Answer) {
-    let words = 'sent ' + short(answer)
+    let words = 'sent ' + answer.short
     try {
       for (const p of answer.pieces) {
         if (p.text !== undefined) await api.text(pane.address, p.text)
         else if (p.key !== undefined) await api.key(pane.address, p.key)
       }
       // The suggestion is pane text: the log keeps its size only.
-      const what = ANSWERS.includes(answer) ? short(answer) : `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes`
+      const what = ANSWERS.includes(answer) ? answer.short : `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes`
       this.log(`sent ${what} to ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST input')
@@ -866,6 +873,8 @@ export class App {
         return V.answersPage(m, v.pane, v.offer, this.offersVoice(v.pane))
       case 'confirm':
         return V.confirmPage(m, v.pane, v.answer)
+      case 'offer':
+        return V.offerPage(m, v.pane, v.answer)
       case 'listen':
         return V.listenPage(m, v.pane, this.voiceView())
       case 'heard':

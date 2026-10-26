@@ -2,13 +2,13 @@
 // the columns, the pane, the answers, the voice pages. Text from the top
 // down, a hint at the foot, bordered boxes.
 
-import { ANSWERS, short, type Answer } from './answers.ts'
+import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, type Attention, type Host, type Pane } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
-import { CANVAS_W, LINE_PX, typed, wrapRows } from './text.ts'
+import { CANVAS_W, LINE_PX, byteLength, typed, wrapRows } from './text.ts'
 
 export const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
 export const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
@@ -57,6 +57,9 @@ const BODY_LINES = Math.floor((HINT_Y - BODY_Y) / LINE_H)
 const COL_GAP = 8
 const FOOT_Y = TOP + 140 + 6
 const FOOT_H = HINT_Y - 6 - FOOT_Y
+/** A bordered box of text from under the title down to the hint: the spoken reply, the suggestion. */
+const BOX_W = LINE_PX - 16
+const BOX_ROWS = Math.floor((HINT_Y - 4 - BODY_Y - 12) / LINE_H)
 
 export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
@@ -85,10 +88,18 @@ export function shaped(p: Pane, raw: string[], widthPx: number, lens: boolean, r
   return wrapRows(s ? s.body : raw, widthPx)
 }
 
-/** Claude's suggestion, from its input box, as an answer: the text and Enter. Null when the box is empty. */
+/** The most a suggestion may hold: the box on its confirmation shows it whole, or it is not offered. */
+export const OFFER_BYTES = 200
+
+/**
+ * Claude's suggestion, from its input box, as an answer: the text and Enter. Null when the box is
+ * empty, when the hub does not name the program claude (two rules in any shell's output are not a
+ * box), or when the text would not fit its confirmation whole.
+ */
 export function offerOf(p: Pane, raw: string[], lens: boolean): Answer | null {
-  const s = lens && raw.length ? shapeClaude(raw, false, runsClaude(p.command)) : null
-  if (!s || !p.writable) return null
+  if (!lens || !p.writable || !runsClaude(p.command) || !raw.length) return null
+  const s = shapeClaude(raw, false, true)
+  if (!s) return null
   const text = typed(
     s.pinned
       .map((r) => r.trim().replace(/^(❯|>)\s*/, ''))
@@ -96,7 +107,9 @@ export function offerOf(p: Pane, raw: string[], lens: boolean): Answer | null {
       .replace(/\s+/g, ' ')
       .trim(),
   )
-  return text ? { label: `"${text}"`, pieces: [{ text }, { key: 'Enter' }] } : null
+  if (!text || byteLength(text) > OFFER_BYTES || wrapRows([text], BOX_W).length > BOX_ROWS) return null
+  const label = `"${text}"`
+  return { label, short: label, pieces: [{ text }, { key: 'Enter' }] }
 }
 
 function ago(seconds: number, now: number): string {
@@ -275,12 +288,24 @@ export function answersPage(m: Model, p: Pane, offer: Answer | null, offerVoice:
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
   return {
     kind: 'list',
-    ...hint(m, `send ${short(a)} to ${paneName(p)}? · ×× back`),
+    ...hint(m, `send ${a.short} to ${paneName(p)}? · ×× back`),
     blocks: [],
     charts: [],
     items: ['Cancel', 'Confirm'],
     menu: [],
   }
+}
+
+function textBox(text: string): Block {
+  const lines = wrapRows([text], BOX_W).slice(0, BOX_ROWS)
+  return { name: 'text', x: 0, y: BODY_Y, w: CANVAS_W, h: BOX_ROWS * LINE_H + 12, lines, level: 4, border: true }
+}
+
+/** The suggestion's confirmation: every word that will be sent, in a box; a tap sends it. */
+export function offerPage(m: Model, p: Pane, a: Answer): Page {
+  const text = a.pieces[0]?.text ?? ''
+  const blocks: Block[] = [{ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`send this to ${paneName(p)}?`], level: 4 }, textBox(text)]
+  return { kind: 'dash', ...hint(m, '● send + Enter · ×× back'), blocks, charts: [], items: [], menu: [] }
 }
 
 // --- spoken replies -------------------------------------------------------------------------
@@ -320,9 +345,7 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
 export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
-  const rows = Math.floor((HINT_Y - 4 - BODY_Y - 12) / LINE_H)
-  const lines = wrapRows([v.text], LINE_PX - 16).slice(0, rows)
-  blocks.push({ name: 'text', x: 0, y: BODY_Y, w: CANVAS_W, h: rows * LINE_H + 12, lines, level: 4, border: true })
+  blocks.push(textBox(v.text))
   const menu: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }]
   return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts: [], items: [], menu }
 }
