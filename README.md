@@ -89,3 +89,5 @@ the store listing's, taken by `scripts/store-shots.sh` from such a run.
 
 Contributors and AI agents: read [AGENTS.md](AGENTS.md) first.
 Security issues: see [SECURITY.md](SECURITY.md).
+
+[Apache License 2.0](LICENSE), like the rest of muxway.
