@@ -3,18 +3,21 @@
 ```
 
 Even Realities G2 client for [muxway](https://github.com/notmarkopadjen/muxway):
-your tmux panes at a glance, and a word back when an AI coding CLI needs
+your tmux panes at a glance, and a word back when an AI coding agent needs
 you.
 
 ![Claude Code through the lens: the conversation, no chrome](store/shots/05-lens.png)
+
+On the Even Hub store: to be provided. Anyone can pack it themselves
+with `scripts/pack.sh`, as [Build](#build) says.
 
 > Worn daily on the G2. Runs in the Even Hub simulator for development.
 
 An Even Hub app: a page the Even phone app loads and that draws on the
 glasses. It lists the panes your token may see, shows the last lines of
 one, answers it from a fixed set of replies or with your voice, and
-tells you when Claude Code in a pane asks a question or waits for a
-permission. Settings and free-text replies live on the phone, in the
+tells you when an AI coding agent in a pane asks a question or waits
+for a permission. Settings and free-text replies live on the phone, in the
 same app.
 
 ## What it does
@@ -30,6 +33,10 @@ same app.
   it**, read the transcript back on the glasses, and send.
 - **A banner** at the foot of whatever you are reading when a pane needs
   you, and *go to* from the menu.
+
+Only Claude Code has been tested so far; another AI coding agent needs
+its own hooks calling `muxway notify` on the host, and a lens for its
+screen.
 
 <p>
 <img src="store/shots/01-list.png" alt="The pane list, panes waiting first" width="288">

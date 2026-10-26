@@ -1,8 +1,8 @@
 # Notifications
 
-An AI coding CLI in a pane tells muxway when it needs its owner (see the
-core's notifications feature: Claude Code hooks run `muxway notify`). The
-glasses show it.
+An AI coding agent in a pane tells muxway when it needs its owner: its
+hooks run `muxway notify` on the host (see the core's notifications
+feature; Claude Code is the one tested). The glasses show it.
 
 ```mermaid
 sequenceDiagram
