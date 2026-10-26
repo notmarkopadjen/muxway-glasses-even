@@ -78,7 +78,7 @@ stateDiagram-v2
     [*] --> Columns: tap "open N side by side"
     Columns --> Columns: scroll (mark the next / previous column)
     Columns --> Pane: tap (with a column marked)
-    Columns --> Columns: tap (none marked: read again)
+    Columns --> Columns: tap (none marked, read again)
     Pane --> Pane: scroll (page)
     Pane --> Answers: tap (writable)
     Pane --> Columns: double tap (the column stays marked)

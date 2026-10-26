@@ -107,9 +107,9 @@ stateDiagram-v2
     [*] --> Loading
     Loading --> Panes: the first listing
     Panes --> Pane: tap a row
-    Panes --> Panes: hold a row: select
+    Panes --> Panes: hold a row to select
     Panes --> Columns: tap "open N side by side"
-    Columns --> Columns: scroll: mark a column
+    Columns --> Columns: scroll to mark a column
     Columns --> Pane: tap (a column marked)
     Pane --> Columns: double tap (opened from the columns)
     Columns --> Panes: double tap
@@ -119,7 +119,7 @@ stateDiagram-v2
     Confirm --> Pane: Confirm sends, Cancel does not
     Answers --> Pane: double tap
     Confirm --> Answers: double tap
-    Pane --> Pane: menu: Refresh, Reveal all, Bottom, Go to
+    Pane --> Pane: menu (Refresh, Reveal all, Bottom, Go to)
     Panes --> [*]: double tap, the OS asks
 ```
 
