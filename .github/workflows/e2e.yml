@@ -63,8 +63,10 @@ jobs:
           path: test-runs/
           retention-days: 90
 
+      # A pull request from a fork runs with a read-only token and cannot
+      # write check runs; its results are in the artifact and the job log.
       - name: Check run with per-test results
-        if: always() && steps.run.outputs.suite == 'yes'
+        if: always() && steps.run.outputs.suite == 'yes' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
         uses: dorny/test-reporter@dc3a92680fcc15842eef52e8c4606ea7ce6bd3f3 # v2.1.1
         with:
           name: e2e results

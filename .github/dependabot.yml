@@ -1,0 +1,18 @@
+# Dependencies are few and pinned; Dependabot proposes the bumps, a human
+# reviews them. Actions stay pinned to commit SHAs.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      even:
+        patterns: ["@evenrealities/*"]
+      tooling:
+        patterns: ["*"]
+        exclude-patterns: ["@evenrealities/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

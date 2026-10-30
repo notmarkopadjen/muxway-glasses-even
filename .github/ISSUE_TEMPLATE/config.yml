@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/notmarkopadjen/muxway-glasses-even/security/advisories/new
+    about: Report it privately here, never in a public issue. See SECURITY.md.
+  - name: The hub, the agent or the protocol
+    url: https://github.com/notmarkopadjen/muxway/issues
+    about: Flaws outside this client belong to the core repository.
