@@ -6,8 +6,9 @@
 
 Everything the Even Hub developer portal asks for when the app is
 submitted, ready to paste, and a template so the next client (and the
-next version) fills the same form the same way. Modelled on the owner's
-Build Agents submission pack, which went through review.
+next version) fills the same form the same way. Modelled on the
+submission pack of the owner's earlier app for the same glasses, which
+went through review.
 
 Out of scope: the submission itself, which is a person dragging the
 package into the portal; a marketing site.

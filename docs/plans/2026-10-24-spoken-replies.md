@@ -6,8 +6,8 @@
 
 Answer a pane with your voice: say it on the glasses, read the transcript
 back, send it. The fixed answers stay; this is the free text that until
-now only the phone could type. The pattern is the one the owner's Build
-Agents app uses and likes: the microphone opens only on that action, the
+now only the phone could type. The pattern is the one the owner's earlier
+app for the same glasses uses and likes: the microphone opens only on that action, the
 clip goes to a server the owner runs, the transcript comes back for
 review before anything is sent, and the glasses never talk to a
 speech-to-text provider themselves.
@@ -36,7 +36,7 @@ sequenceDiagram
     A->>H: POST input {"text": "run the tests again"}, then Enter
 ```
 
-**Where the transcriber lives: in the hub.** The Build Agents app has a
+**Where the transcriber lives: in the hub.** The owner's earlier app has a
 relay of its own for this; muxway already has a server the owner runs
 and the glasses already trust, so the hub forwards the clip. The hub
 owner configures it once (`--stt-url`, an OpenAI-compatible

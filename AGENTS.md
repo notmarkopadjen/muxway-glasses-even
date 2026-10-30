@@ -6,7 +6,7 @@ This is a client for [muxway](https://github.com/notmarkopadjen/muxway), which l
 
 ## 1. Privacy: nothing personal ever reaches GitHub
 
-This repository will be public. Git history is permanent: a value that was
+This repository is public. Git history is permanent: a value that was
 committed once can be recovered from history, forks and mirrors even after it
 is deleted. Treat every commit as published.
 
@@ -97,8 +97,8 @@ Every feature follows `docs/templates/feature.md`:
    done until its end-to-end tests pass and the run is recorded.
 5. **Docs.** Feature page, protocol changes and diagrams updated.
 
-Until the project is public, work is pushed directly to `main`. After that,
-every change goes through a pull request.
+Every change goes through a pull request; nothing is pushed to `main`
+directly.
 
 ## 6. Testing
 

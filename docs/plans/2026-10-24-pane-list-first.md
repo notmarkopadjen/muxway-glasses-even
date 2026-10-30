@@ -4,8 +4,8 @@
 
 ## 1. Goal
 
-The ring of dashboards with a tab bar was carried over from the Build
-Agents app and does not suit this one. On the glasses the owner wants
+The ring of dashboards with a tab bar was carried over from the owner's
+earlier app and does not suit this one. On the glasses the owner wants
 one thing on the main screen: **the panes**, and to get into one. Three
 reports from the real device drive the change:
 

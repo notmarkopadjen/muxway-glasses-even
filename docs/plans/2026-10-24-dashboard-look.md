@@ -5,7 +5,7 @@
 ## 1. Goal
 
 The first client is usable and plain: text in one weight, no pictures,
-one pane at a time. The owner's Build Agents app on the same glasses
+one pane at a time. The owner's earlier app on the same glasses
 shows what the display can do: a status line that doubles as a tab
 bar, a ring of dashboards walked by the scroll, rows with a bar chart
 lined up beside them, bold titles, bordered boxes, a loudness graph
@@ -19,7 +19,7 @@ columns.
 
 ## 2. Design
 
-### The kit, ported from Build Agents
+### The kit, ported from the earlier app
 
 - `bitmap.ts`: a four-grey raster (rectangles, frames, rules, hatching,
   lines), one byte per pixel, at most 288 x 144 per image container, up

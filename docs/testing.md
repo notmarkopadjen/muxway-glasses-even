@@ -110,7 +110,7 @@ sequenceDiagram
     CI->>GH: issue "Run RUN-ID: result @ commit" (closed if passed)
 ```
 
-Considered and not used: an Allure report on GitHub Pages (needs a paid plan
-while private; may be added for trends once public), and committing runs to
+Considered and not used: an Allure report on GitHub Pages (may be added
+for trends), and committing runs to
 the repository (logs and screenshots would risk leaking private data into
 permanent history).
