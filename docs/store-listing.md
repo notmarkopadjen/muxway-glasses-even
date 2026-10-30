@@ -23,7 +23,7 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 | `name` | `muxway` | 6 of 20 characters, no "Even" |
 | `version` | `0.5.0` | three-part semver |
 | `edition` | `202601` | exact |
-| `min_sdk_version` | `0.0.15` | the SDK the page is built against |
+| `min_sdk_version` | `0.0.16` | the SDK the page is built against |
 | `min_app_version` | `2.2.10` | stamped by `evenhub pack` |
 | `entrypoint` | `index.html` | in `dist/` |
 | `supported_languages` | `["en"]` | |
