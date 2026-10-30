@@ -38,7 +38,7 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 Your tmux panes, and a word back, on the G2
 ```
 
-**Description** (1843 / 2000 characters)
+**Description** (1910 / 2000 characters)
 
 ```
 muxway puts your tmux panes on the Even G2: see what is running on your machines, read the last lines of a pane, and answer it, without reaching for a laptop.
@@ -109,24 +109,31 @@ Keep it up until the review clears.
 
 ## 7. Screenshots
 
-From the simulator against the test hub, 576 x 288, synthetic panes
-(`alice-laptop`, `work/0.0`, a Claude Code fixture). Taken by
-`scripts/store-shots.sh`.
+From the simulator, 576 x 288, synthetic panes only. Most are taken
+against a demo hub with made-up content (two hosts, a C# project under
+test, a scripted Claude Code screen, a log), through the simulator's
+automation API with the test build pointed at that hub. The lens and
+the spoken replies come from the end-to-end run (`scripts/store-shots.sh`),
+since the demo hub has no transcriber and its Claude Code screen is a
+shell script, so the hub does not name the program `claude`.
 
-| File | Shows |
-|---|---|
-| `store/shots/01-list.png` | the pane list: panes waiting first, with their words |
-| `store/shots/02-selected.png` | two rows held, the open and clear rows under them |
-| `store/shots/03-split.png` | two panes side by side, one marked |
-| `store/shots/04-pane.png` | a pane, following, under its title |
-| `store/shots/05-lens.png` | Claude Code through the lens: the conversation, no chrome |
-| `store/shots/06-answers.png` | the answers, Claude Code's suggestion first |
-| `store/shots/07-listening.png` | listening, with the graph of your voice |
-| `store/shots/08-heard.png` | the transcript read back in its box |
-| `store/shots/09-banner.png` | a notification banner at the foot of a pane |
-| `store/shots/10-phone.png` | the phone screen after save & test |
+| File | Shows | From |
+|---|---|---|
+| `store/shots/01-list.png` | the pane list: a pane that needs permission and one that is done first, with their words | demo hub |
+| `store/shots/02-selected.png` | two rows held, the open row under them | demo hub |
+| `store/shots/03-split.png` | two panes side by side, the first marked | demo hub |
+| `store/shots/04-pane.png` | a pane under its title: Claude Code's permission prompt, folded for the glasses | demo hub |
+| `store/shots/05-lens.png` | Claude Code through the lens: the conversation, no chrome | end-to-end run |
+| `store/shots/06-answers.png` | the answers, Claude Code's suggestion first | end-to-end run |
+| `store/shots/07-listening.png` | listening, with the graph of your voice | end-to-end run |
+| `store/shots/08-heard.png` | the transcript read back in its box | end-to-end run |
+| `store/shots/09-banner.png` | a notification banner at the foot of a pane | demo hub |
+| `store/shots/10-phone.png` | the phone screen after save & test | demo hub |
+| `store/shots/11-answers-permission.png` | the answers to a permission prompt: Enter, y, n, Claude Code's 1 2 3 | demo hub |
 
-Pick `01`, `03`, `04`, `05`, `07`, `08` and `10` for the listing.
+Pick `01`, `03`, `04`, `11`, `05`, `07`, `09` and `10` for the listing,
+in that order: the list, the columns, a pane, its answers, the lens,
+listening, a banner, the phone.
 
 ## 8. Icon
 
