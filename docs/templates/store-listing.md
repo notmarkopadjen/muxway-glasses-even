@@ -99,10 +99,9 @@ Drawn, greyscale only, no colour, no noise.
 
 | File | Size | Format | Use |
 |---|---|---|---|
-| `public/icon.png` | 24 x 24 | 8-bit grey | inside the package |
-| `store/icon-512-foreground.png` | 512 x 512 | grey with alpha | portal foreground |
-| `store/icon-512-background.png` | 512 x 512 | 8-bit grey | portal background |
-| `store/icon-512.png` | 512 x 512 | 8-bit grey | flattened |
+| `public/icon.png` | 24 x 24 | RGBA, `#F4F4F4` on transparent | inside the package |
+| `store/icon-24-foreground.png` | 24 x 24 | the same file | portal foreground |
+| `store/icon-24-background.png` | 24 x 24 | RGBA, fully transparent | portal background |
 
 ## 9. QA self-check
 

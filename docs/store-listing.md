@@ -38,16 +38,16 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 Your tmux panes, and a word back, on the G2
 ```
 
-**Description** (1910 / 2000 characters)
+**Description** (1997 / 2000 characters)
 
 ```
 muxway puts your tmux panes on the Even G2: see what is running on your machines, read the last lines of a pane, and answer it, without reaching for a laptop.
 
-It is a client for muxway, an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and to nothing else.
+It is the glasses client of muxway (github.com/notmarkopadjen/muxway), an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and to nothing else.
 
 On the glasses, text from top to bottom, made for a glance:
 
-- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word that says only what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold starts selecting, and taps pick the rest.
+- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word for what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold starts selecting, and taps pick the rest.
 - Side by side: hold two or three panes and open them in columns, each under its title, all following. The scroll marks one, a tap opens it; a double tap comes back to the columns, and once more to the list.
 - A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome.
 - Answers: Claude Code's suggestion of what to say next, first; then a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
@@ -55,7 +55,7 @@ On the glasses, text from top to bottom, made for a glance:
 
 Scroll moves, tap opens, hold starts a selection (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
 
-No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it.
+No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it. Source: github.com/notmarkopadjen/muxway-glasses-even
 ```
 
 **Changelog** (0.5.0)
@@ -65,6 +65,11 @@ Claude Code's suggestion is no longer drawn over half the pane: it is the first 
 ```
 
 **Category**: Productivity (developer tools if offered)
+
+**Links** (where the portal asks for a website, source or support):
+`https://github.com/notmarkopadjen/muxway` for the project,
+`https://github.com/notmarkopadjen/muxway-glasses-even` for this client
+and its issues.
 
 ## 4. Permission justifications
 
@@ -138,14 +143,16 @@ listening, a banner, the phone.
 ## 8. Icon
 
 A terminal box with a prompt and a cursor, drawn from a pixel map by
-`tools/icons.py`; white on black, greyscale only, hard edges.
+`tools/icons.py` the way the portal validates an upload: 24 x 24, every
+pixel either `#F4F4F4` at full opacity or fully transparent, no
+anti-aliasing, strokes two pixels wide (every lit pixel in a 2 x 2
+block). The portal's own pixel editor accepts the same drawing.
 
 | File | Size | Format | Use |
 |---|---|---|---|
-| `public/icon.png` | 24 x 24 | 8-bit grey | inside the package |
-| `store/icon-512-foreground.png` | 512 x 512 | grey with alpha | portal foreground |
-| `store/icon-512-background.png` | 512 x 512 | 8-bit grey, black | portal background |
-| `store/icon-512.png` | 512 x 512 | 8-bit grey | flattened |
+| `public/icon.png` | 24 x 24 | RGBA, `#F4F4F4` on transparent | inside the package |
+| `store/icon-24-foreground.png` | 24 x 24 | the same file | portal foreground |
+| `store/icon-24-background.png` | 24 x 24 | RGBA, fully transparent | portal background; if the portal wants a non-empty one, draw it black in its editor |
 
 ## 9. QA self-check
 

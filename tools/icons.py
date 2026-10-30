@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Draws the app's icon from a pixel map into the sizes the Even Hub portal
-and the package take: public/icon.png (24 px, 8-bit grey), store/icon-512-
-foreground.png (grey with alpha), store/icon-512-background.png (black) and
-store/icon-512.png (flattened). Greyscale only, no colour, as the portal's
-guidelines require. PNGs are written by hand so nothing beyond Python is
+"""Draws the app's icon from a pixel map the way the Even Hub portal
+validates it: 24 x 24, every pixel either #F4F4F4 at full opacity or fully
+transparent, no anti-aliasing, and every lit pixel part of a 2 x 2 block
+(the thinnest stroke the portal accepts). Writes public/icon.png for the
+package and store/icon-24-foreground.png and store/icon-24-background.png
+for the portal. PNGs are written by hand so nothing beyond Python is
 needed."""
 
 import struct
@@ -11,82 +12,74 @@ import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+LIT = (0xF4, 0xF4, 0xF4, 0xFF)
+OFF = (0, 0, 0, 0)
 
-# A terminal box with the muxway mark: a prompt and a cursor, 24 x 24.
+# A terminal box with the muxway mark: a prompt and a cursor, 24 x 24,
+# strokes two pixels wide.
 ICON = """
 ........................
 ........................
-........................
 .######################.
-.#....................#.
-.#..####..............#.
-.#.....####...........#.
-.#........####........#.
-.#...........####.....#.
-.#........####........#.
-.#.....####...........#.
-.#..####..............#.
-.#....................#.
-.#.........########...#.
-.#....................#.
-.#....................#.
 .######################.
-.#........#..#........#.
-.#........#..#........#.
-.#........#..#........#.
+.##..................##.
+.##..................##.
+.##..................##.
+.##..###.............##.
+.##..###.............##.
+.##....###...........##.
+.##....###...........##.
+.##......###.........##.
+.##......###.........##.
+.##....###....####...##.
+.##....###....####...##.
+.##..###......####...##.
+.##..###......####...##.
+.##..................##.
+.##..................##.
+.##..................##.
 .######################.
-........................
+.######################.
 ........................
 ........................
 """
 
 
 def rows():
-    lines = [l for l in ICON.strip("\n").split("\n")]
+    lines = ICON.strip("\n").split("\n")
     assert len(lines) == 24 and all(len(l) == 24 for l in lines), "the map is 24 x 24"
-    return [[c == "#" for c in l] for l in lines]
+    bits = [[c == "#" for c in l] for l in lines]
+    for y, row in enumerate(bits):
+        for x, lit in enumerate(row):
+            if lit and not any(block(bits, x - dx, y - dy) for dx in (0, 1) for dy in (0, 1)):
+                raise SystemExit(f"pixel {x},{y} is not part of a 2 x 2 block")
+    return bits
 
 
-def png(width, height, pixels, color_type):
-    """pixels: rows of tuples (grey,) or (grey, alpha)."""
-    raw = b""
-    for row in pixels:
-        raw += b"\x00" + b"".join(bytes(p) for p in row)
+def block(bits, x, y):
+    return 0 <= x < 23 and 0 <= y < 23 and bits[y][x] and bits[y][x + 1] and bits[y + 1][x] and bits[y + 1][x + 1]
+
+
+def png(width, height, pixels):
+    """pixels: rows of RGBA tuples."""
+    raw = b"".join(b"\x00" + b"".join(bytes(p) for p in row) for row in pixels)
 
     def chunk(kind, data):
         c = kind + data
         return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
 
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
-
-
-def scaled(bits, size):
-    """The map scaled to size x size with hard edges, as a pixel icon should be."""
-    n = len(bits)
-    cell = size // n
-    pad = (size - cell * n) // 2
-    out = []
-    for y in range(size):
-        sy = (y - pad) // cell
-        row = []
-        for x in range(size):
-            sx = (x - pad) // cell
-            row.append(0 <= sy < n and 0 <= sx < n and bits[sy][sx])
-        out.append(row)
-    return out
 
 
 def main():
     bits = rows()
     (ROOT / "public").mkdir(exist_ok=True)
     (ROOT / "store").mkdir(exist_ok=True)
-    (ROOT / "public" / "icon.png").write_bytes(png(24, 24, [[(255 if b else 0,) for b in row] for row in bits], 0))
-    big = scaled(bits, 512)
-    (ROOT / "store" / "icon-512-foreground.png").write_bytes(png(512, 512, [[(255, 255 if b else 0) for b in row] for row in big], 4))
-    (ROOT / "store" / "icon-512-background.png").write_bytes(png(512, 512, [[(0,) for _ in range(512)] for _ in range(512)], 0))
-    (ROOT / "store" / "icon-512.png").write_bytes(png(512, 512, [[(255 if b else 0,) for b in row] for row in big], 0))
-    (ROOT / "store" / "icon-24-foreground.png").write_bytes(png(24, 24, [[(255, 255 if b else 0) for b in row] for row in bits], 4))
+    foreground = png(24, 24, [[LIT if b else OFF for b in row] for row in bits])
+    (ROOT / "public" / "icon.png").write_bytes(foreground)
+    (ROOT / "store" / "icon-24-foreground.png").write_bytes(foreground)
+    (ROOT / "store" / "icon-24-background.png").write_bytes(png(24, 24, [[OFF] * 24 for _ in range(24)]))
     print("icons drawn")
 
 

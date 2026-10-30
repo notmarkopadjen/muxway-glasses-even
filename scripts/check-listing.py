@@ -6,6 +6,7 @@ import json
 import re
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,15 +46,49 @@ if not block(listing, "Changelog"):
 for p in manifest["permissions"]:
     if f"**{p['name']}**" not in listing:
         bad.append(f"permission {p['name']} has no justification in the listing")
-for f, size, kind in [("public/icon.png", 24, 0), ("store/icon-512-foreground.png", 512, 4),
-                      ("store/icon-512-background.png", 512, 0), ("store/icon-512.png", 512, 0)]:
+def pixels(path):
+    """The RGBA pixels of a PNG written by tools/icons.py (8-bit RGBA, filter 0)."""
+    b = path.read_bytes()
+    pos, idat = 8, b""
+    while pos < len(b):
+        n, = struct.unpack(">I", b[pos:pos + 4])
+        if b[pos + 4:pos + 8] == b"IDAT":
+            idat += b[pos + 8:pos + 8 + n]
+        pos += 12 + n
+    raw = zlib.decompress(idat)
+    w, h, _, _ = png_size(path)
+    rows = []
+    for y in range(h):
+        line = raw[y * (1 + 4 * w):(y + 1) * (1 + 4 * w)]
+        if line[0] != 0:
+            return None
+        rows.append([tuple(line[1 + 4 * x:5 + 4 * x]) for x in range(w)])
+    return rows
+
+
+LIT, OFF = (0xF4, 0xF4, 0xF4, 0xFF), (0, 0, 0, 0)
+for f in ["public/icon.png", "store/icon-24-foreground.png", "store/icon-24-background.png"]:
     path = ROOT / f
     if not path.exists():
         bad.append(f"{f} missing")
         continue
     w, h, depth, colour = png_size(path)
-    if (w, h) != (size, size) or colour != kind:
-        bad.append(f"{f}: {w}x{h} colour type {colour}, want {size}x{size} type {kind}")
+    if (w, h, depth, colour) != (24, 24, 8, 6):
+        bad.append(f"{f}: {w}x{h} depth {depth} colour type {colour}, want 24x24 8-bit RGBA")
+        continue
+    rows = pixels(path)
+    if rows is None:
+        bad.append(f"{f}: not written by tools/icons.py")
+        continue
+    for y, row in enumerate(rows):
+        for x, px in enumerate(row):
+            if px == LIT and not any(
+                    0 <= x - dx < 23 and 0 <= y - dy < 23
+                    and all(rows[y - dy + j][x - dx + i] == LIT for i in (0, 1) for j in (0, 1))
+                    for dx in (0, 1) for dy in (0, 1)):
+                bad.append(f"{f}: pixel {x},{y} is not part of a 2 x 2 block")
+            elif px not in (LIT, OFF):
+                bad.append(f"{f}: pixel {x},{y} is {px}, neither #F4F4F4 opaque nor transparent")
 for m in re.finditer(r"`store/shots/([^`]+)`", listing):
     path = ROOT / "store" / "shots" / m.group(1)
     if not path.exists():
