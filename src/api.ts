@@ -124,6 +124,10 @@ export const api = {
     call('GET', `/v1/panes/${at(address)}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
   text: (address: string, text: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ text }) }),
   key: (address: string, key: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ key }) }),
+  /** A question's choice back to the process that asked; nothing is typed into the pane. */
+  answer: (address: string, choice: string) => call('POST', `/v1/panes/${at(address)}/answer`, { body: JSON.stringify({ choice }) }),
+  /** Every pane that waits, oldest first. */
+  inbox: () => call('GET', '/v1/inbox', { json: true }),
   /** Whether the hub has a transcriber: 204, or 404 which the caller reads as no. */
   transcribeProbe: () => call('GET', '/v1/transcribe'),
   /** A 16 kHz mono WAV to text; the transcriber may take a while. */

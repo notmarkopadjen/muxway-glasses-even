@@ -11,10 +11,17 @@ export interface Answer {
   /** The answer in a few characters, for the confirmation and the flash: "y, Enter", "Ctrl-C". The firmware font has no ⏎. */
   short: string
   pieces: Piece[]
+  /** A choice of a question asked with muxway ask: it goes to the asking process, not into the pane. */
+  choice?: string
 }
 
 function answer(label: string, pieces: Piece[], short = label): Answer {
   return { label, short, pieces }
+}
+
+/** A question's choice as an answer row: » yes. */
+export function choiceAnswer(choice: string): Answer {
+  return { label: '» ' + choice, short: choice, pieces: [], choice }
 }
 
 export const ANSWERS: readonly Answer[] = [
