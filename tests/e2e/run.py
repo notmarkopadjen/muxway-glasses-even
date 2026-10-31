@@ -66,7 +66,7 @@ class Run:
 
 
 def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"{HOST}/*", params=None,
-          revoke=False, before=None, says_claude=False, token=None, stt=False):
+          revoke=False, before=None, says_claude=False, says=None, token=None, stt=False):
     logs = run.logs(name)
     hub_args = []
     transcriber = None
@@ -81,7 +81,7 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
     if revoke:
         core.revoke_all()
     proxy = Proxy(core.url, logs, mode)
-    proxy.says_claude = says_claude
+    proxy.says = "claude" if says_claude else says
     run.cleanups.append(proxy.close)
     if before:
         before(core)
@@ -106,7 +106,7 @@ def listed(p):
 
 def total(p):
     """How many rows the list has: the hint says it when they do not fit, else they are all on screen."""
-    m = re.match(r"\d+–\d+ of (\d+) · ", p["hint"])
+    m = re.search(r"\d+–\d+ of (\d+) · ", p["hint"])
     return int(m.group(1)) if m else len(rows(p))
 
 
@@ -348,15 +348,17 @@ def s02(run, name):
 @test("S30", "A listing of 200 panes with long titles and times out of range: a page of rows, words clamped, page accepted", "e2e-security")
 def s30(run, name):
     core, proxy, sim, tok = setup(run, name, mode="list-hostile")
-    page = sim.expect(lambda p: listed(p) and total(p) == 200, "the 200 panes", 20)
+    # Every one of the 200 claims attention, so the inbox row leads them: 201 rows.
+    page = sim.expect(lambda p: listed(p) and total(p) == 201, "the 200 panes", 20)
     check(len(rows(page)) == 7, f"{len(rows(page))} rows")
     for row in rows(page):
         check("-" not in row.split("·")[-1], f"a negative age: {row}")
-    check(page["charts"] == [] and page["hint"].startswith("1–7 of 200 · "), f"the list page: {page['charts']} {page['hint']}")
+    check(rows(page)[0] == "⚑ inbox · 200 waiting", rows(page)[0])
+    check(page["charts"] == [] and page["hint"].startswith("⚑ 200 · 1–7 of 201 · "), f"the list page: {page['charts']} {page['hint']}")
     sim.shot("hostile-list")
     sim.move(9)
     page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "row3", "the window slid")
-    check(page["hint"].startswith("4–10 of 200 · "), page["hint"])
+    check(page["hint"].startswith("⚑ 200 · 4–10 of 201 · "), page["hint"])
     sim.shot("hostile-list-slid")
     time.sleep(1)
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
@@ -383,6 +385,74 @@ def say_it(sim, name="test-pane"):
     sim.shot("answers-say")
     sim.choose(0)
     return sim.head("listening", "listening", 10)
+
+
+@test("S40", "An answer needs a write grant and a writable pane: a read-only token is refused directly, a pane the proxy calls writable gets 403 on the glasses, and the ask still waits", "e2e-security")
+def s40(run, name):
+    # A token without a write grant, and a proxy that calls the pane writable all the same.
+    core, proxy, sim, tok = setup(run, name, write=None, mode="lie-writable")
+    open_pane(sim)
+    ask = core.ask("deploy to staging?", ["yes", "no"])
+    run.cleanups.append(ask.kill)
+    status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/answer", '{"choice":"yes"}')
+    check(status == 403, f"a read-only token's answer got {status}")
+    # The glasses believe the proxy and offer the choices; the hub knows better.
+    wait_for("the question on the pane", lambda: "asks a question" in sim.state(), 10)
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(page["items"][:2] == ["» yes", "» no"], page["items"][:3])
+    sim.choose(0)
+    sim.head("answer yes to test-pane?", "the confirmation")
+    sim.choose(1)
+    sim.head("read only", "the refusal", 10)
+    sim.shot("refused")
+    check(ask.poll() is None, "the ask ended although nothing answered it")
+    posts = [r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/answer") and r["headers"].get("Origin") is not None]
+    check(len(posts) == 1 and json.loads(posts[0]["body"]) == {"choice": "yes"}, str([(p["path"], p["body"]) for p in posts]))
+    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    ask.kill()
+
+
+@test("S41", "Hostile choices from the proxy: nine of them, one too long, one with an escape, one with a bar: no choice rows, the page intact", "e2e-security")
+def s41(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="choices-hostile")
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2 and rows(p)[1].startswith("★ test-pane"), "the question in the list", 20)
+    check(rows(page)[0] == "⚑ inbox · 1 waiting", rows(page))
+    sim.pick(1)
+    sim.expect(lambda p: any(b.get("name") == "title" and "test-pane" in b["lines"][0] for b in p["blocks"]), "the pane")
+    wait_for("the pane's rows", lambda: "asks a question" in sim.state(), 10)
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(not any(i.startswith("» ") and i != "» Say it" for i in page["items"]), f"a hostile choice became a row: {page['items'][:4]}")
+    check(page["items"][0] == "Enter", page["items"][:2])
+    check(not any("\x1b" in i or "|" in i for i in page["items"]), "a choice reached the page")
+    sim.shot("answers-no-choices")
+    check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
+
+
+@test("S42", "An answer when nothing waits any more: 409, said in words; a choice the hub did not offer: 400", "e2e-security")
+def s42(run, name):
+    core, proxy, sim, tok = setup(run, name)
+    status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/answer", '{"choice":"yes"}')
+    check(status == 409, f"an answer to no question got {status}")
+    open_pane(sim)
+    ask = core.ask("deploy to staging?", ["yes", "no"])
+    run.cleanups.append(ask.kill)
+    wait_for("the question on the pane", lambda: "asks a question" in sim.state(), 10)
+    status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/answer", '{"choice":"maybe"}')
+    check(status == 400, f"a choice not offered got {status}")
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(page["items"][:2] == ["» yes", "» no"], page["items"][:3])
+    # Answered elsewhere while the glasses still show the choices: the hub says so.
+    status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/answer", '{"choice":"no"}')
+    check(status == 204, f"the direct answer got {status}")
+    check(ask.wait(10) == 0 and ask.stdout.read().strip() == "no", "the ask did not get the direct answer")
+    sim.choose(0)
+    sim.head("answer yes to test-pane?", "the confirmation")
+    sim.choose(1)
+    sim.head("no question there now", "the words", 10)
+    sim.shot("no-question")
 
 
 @test("S25", "No transcriber: no Say it row; a hub that offers one and then fails: an error line, nothing sent", "e2e-security")
@@ -647,12 +717,14 @@ def f15(run, name):
     check(any(m["label"] == "Go to: build" for m in page["menu"]), page["menu"])
     sim.shot("banner")
     sim.back()
-    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("★ build"), "build first in the list")
-    check(rows(page)[0] == "★ build · bash · needs permission", rows(page)[0])
-    sim.shot("list-attention")
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) > 1 and rows(p)[1].startswith("★ build"), "build first among the panes")
+    check(rows(page)[0] == "⚑ inbox · 1 waiting", rows(page)[0])
+    check(rows(page)[1] == "★ build · bash · needs permission", rows(page)[1])
+    sim.shot("list-attention")  # the toast still holds the hint here; the count in it is F41's
     core.notify("working", "", "work:build.0")
-    page = sim.expect(lambda p: listed(p) and not any(i.startswith("★") for i in rows(p)), "cleared", 8)
-    check(any(i.startswith("· build · bash · ") and ("active" in i or "quiet" in i) for i in rows(page)), rows(page))
+    page = sim.expect(lambda p: listed(p) and not any(i.startswith("★") or i.startswith("⚑") for i in rows(p)), "cleared", 8)
+    check(any(i.startswith("· build · bash · ") and ("working" in i or "active" in i or "quiet" in i) for i in rows(page)), rows(page))
+    check(not page["hint"].startswith("⚑"), page["hint"])
     sim.shot("list-cleared")
 
 
@@ -698,27 +770,113 @@ def f30(run, name):
     check(not any("uncaught" in e["message"] for e in sim.console()), "an uncaught error on leaving")
 
 
-@test("F31", "Two panes waiting, one done and one quiet: first in the list with their words; tap opens the first", "UI")
+@test("F31", "Two panes waiting, one done and one quiet: the inbox row, then the panes with their words; the inbox page oldest first, a row opens its pane", "UI")
 def f31(run, name):
     def before(core):
         core.new_window("build")
         core.new_window("logs")
         core.new_window("tests")
         core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+        time.sleep(1.1)  # the inbox orders by the second
         core.notify("question", "Which file?", "work:0.0")
+        time.sleep(1.1)
         core.notify("done", "", "work:tests.0")
     core, proxy, sim, tok = setup(run, name, before=before)
-    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 4 and rows(p)[1].startswith("★"), "four rows", 20)
-    check(rows(page)[0] == "★ test-pane · bash · asks a question", rows(page))
-    check(rows(page)[1] == "★ build · bash · needs permission", rows(page))
-    check(rows(page)[2] == "● tests · bash · done", rows(page))
-    check(rows(page)[3] in ("· logs · bash · active", "· logs · bash · quiet 1m"), rows(page))
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 5 and rows(p)[2].startswith("★"), "five rows", 20)
+    check(rows(page)[0] == "⚑ inbox · 3 waiting", rows(page))
+    check(rows(page)[1] == "★ test-pane · bash · asks a question", rows(page))
+    check(rows(page)[2] == "★ build · bash · needs permission", rows(page))
+    check(rows(page)[3] == "● tests · bash · done", rows(page))
+    check(rows(page)[4] in ("· logs · bash · active", "· logs · bash · quiet 1m"), rows(page))
     sim.shot("list-attention")
     sim.tap()
-    wait_for("the first pane", lambda: sim.block("state") is not None, 10)
+    page = sim.expect(lambda p: p["kind"] == "list" and p["hint"].startswith("inbox · 3 waiting"), "the inbox page", 10)
+    items = page["items"]
+    check([i.rsplit(" · ", 1)[0] for i in items] == ["★ build · bash · needs permission", "★ test-pane · bash · asks a question", "● tests · bash · done"], items)
+    check(all(re.search(r" · \d+s$", i) for i in items), f"no age on a row: {items}")
+    check(any(r["path"] == "/v1/inbox" for r in proxy.requests), "the inbox was not read from the hub")
+    sim.shot("inbox")
+    sim.choose(1)
+    wait_for("the second pane", lambda: sim.block("state") is not None, 10)
     check(sim.state() == "asks a question", sim.state())
     check(any("test-pane" in t for t in titles(sim.last())), titles(sim.last()))
-    sim.shot("first-pane")
+    sim.shot("inbox-pane")
+    sim.back()
+    sim.expect(lambda p: p["kind"] == "list" and p["hint"].startswith("inbox · "), "back on the inbox", 10)
+    sim.back()
+    home(sim)
+
+
+@test("F40", "A question with choices: the toast, the row, the choices first on the answers page, confirmed, answered through /answer and nothing typed; muxway ask exits 0 with it", "UI")
+def f40(run, name):
+    core, proxy, sim, tok = setup(run, name)
+    open_pane(sim)
+    ask = core.ask("deploy to staging?", ["yes", "no", "later"])
+    run.cleanups.append(ask.kill)
+    page = sim.expect(lambda p: p.get("hintBorder") and p["hintLevel"] == 4, "the toast", 8)
+    check(page["hint"] == "★ test-pane: deploy to staging?", page["hint"])
+    sim.shot("toast")
+    wait_for("the state", lambda: "asks a question" in sim.state(), 10)
+    sim.tap()
+    page = sim.head("answer test-pane", "the answers")
+    check(page["items"][:4] == ["» yes", "» no", "» later", "Enter"], page["items"][:5])
+    sim.shot("answers-choices")
+    sim.choose(1)
+    page = sim.head("answer no to test-pane?", "the confirmation")
+    check(page["items"] == ["Cancel", "Confirm"], page["items"])
+    sim.shot("confirm")
+    sim.choose(1)
+    sim.head("answered no", "the flash", 10)
+    check(ask.wait(10) == 0, f"muxway ask exited {ask.returncode}")
+    check(ask.stdout.read().strip() == "no", "the ask did not print the choice")
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/answer")]
+    check(posts == [{"choice": "no"}], str(posts))
+    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    wait_for("the state cleared", lambda: "following" in sim.state(), 10)
+    sim.shot("answered")
+    sim.back()
+    page = sim.expect(lambda p: listed(p) and not any(i.startswith("⚑") for i in rows(p)), "nothing waits", 10)
+
+
+@test("F41", "The inbox from the list: two waiting on two windows, the oldest first; Go to takes the oldest", "UI")
+def f41(run, name):
+    def before(core):
+        core.new_window("build")
+        core.new_window("tests")
+        core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+        time.sleep(1.1)
+        core.notify("question", "Which file?", "work:tests.0")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 4, "the list", 20)
+    check(rows(page)[0] == "⚑ inbox · 2 waiting", rows(page))
+    check(page["hint"].startswith("⚑ 2 · "), page["hint"])
+    sim.shot("inbox-row")
+    sim.tap()
+    page = sim.expect(lambda p: p["kind"] == "list" and p["hint"].startswith("inbox · 2 waiting"), "the inbox page", 10)
+    check([i.rsplit(" · ", 1)[0] for i in page["items"]] == ["★ build · bash · needs permission", "★ tests · bash · asks a question"], page["items"])
+    sim.shot("inbox")
+    sim.back()
+    home(sim)
+    # The quiet pane: its menu's Go to names the pane that has waited longest.
+    sim.pick(3)
+    sim.expect(lambda p: any(b.get("name") == "title" and "test-pane" in b["lines"][0] for b in p["blocks"]), "test-pane")
+    wait_for("following", lambda: "following" in sim.state(), 10)
+    page = sim.last()
+    check(any(m["label"] == "Go to: build" for m in page["menu"]), page["menu"])
+    sim.shot("go-to-oldest")
+
+
+@test("F42", "A Codex pane is named Codex in the list and on the pane; working from its event", "UI")
+def f42(run, name):
+    core, proxy, sim, tok = setup(run, name, says="codex")
+    page = home(sim)
+    check(rows(page)[0].startswith("· test-pane · Codex · "), rows(page))
+    core.notify("working", "", "work:0.0")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0] == "· test-pane · Codex · working", "working", 8)
+    sim.shot("list-codex")
+    sim.tap()
+    page = sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "· test-pane · Codex" for b in p["blocks"]), "the pane names Codex", 10)
+    sim.shot("pane-codex")
 
 
 @test("F32", "Hold starts selection mode with the row selected, taps select more, the open row appears, both columns follow; three at most; clear", "UI")

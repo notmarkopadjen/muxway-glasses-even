@@ -142,6 +142,15 @@ class Core:
         """What a Claude Code hook does: muxway notify on the host, inside the pane."""
         self.cli("notify", "--dir", str(self.dir / "agent"), "--pane", self.pane_id(target), "--kind", kind, "--text", text)
 
+    def ask(self, text, choices, target="work:0.0", timeout="2m"):
+        """What a process in the pane does with muxway ask: blocks until a client answers. The Popen's
+        stdout is the answer; its exit code 0, 2 (timed out) or 3 (answered in the pane)."""
+        args = [str(self.bin), "ask", "--dir", str(self.dir / "agent"), "--pane", self.pane_id(target), "--text", text, "--timeout", timeout]
+        for c in choices:
+            args += ["--choice", c]
+        log = open(self.logs / "ask.log", "a")
+        return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=log, text=True)
+
     def keys(self, *keys, target="work:0.0"):
         self.tmux_cmd("send-keys", "-t", target, *keys)
 
@@ -213,8 +222,8 @@ class Proxy:
         self.hub = hub_url.replace("http://", "")
         self.mode = mode
         self.slowed = False
-        # The list names the program claude, so the lens is forced by it.
-        self.says_claude = False
+        # The list names this program instead of bash: claude forces the lens, codex is named in the rows.
+        self.says = None
         self.log = open(logs / "proxy.log", "a")
         self.requests = []
         self.port = free_port()
@@ -291,8 +300,14 @@ class Proxy:
                     return self.reply(502, b'{"error":"hub_unreachable"}\n', {"Content-Type": "application/json", **CORS})
                 if proxy.mode == "lie-writable" and bare == "/v1/panes":
                     data = data.replace(b'"mode":"read"', b'"mode":"write"')
-                if proxy.says_claude and bare == "/v1/panes":
-                    data = data.replace(b'"command":"bash"', b'"command":"claude"')  # the program says claude
+                if proxy.says and bare == "/v1/panes":
+                    data = data.replace(b'"command":"bash"', b'"command":"%s"' % proxy.says.encode())
+                if proxy.mode == "choices-hostile" and bare == "/v1/panes":
+                    # A question whose choices break every rule: nine of them, one too long, one with an escape, one with a bar.
+                    choices = ["c%d" % i for i in range(6)] + ["x" * 41, "a\x1bb", "a|b"]
+                    data = json.dumps({"panes": [{"address": f"{HOST}/work/0.0", "mode": "write", "command": "bash", "title": "test-pane",
+                                                 "activity": int(time.time()),
+                                                 "attention": {"kind": "question", "at": int(time.time()), "text": "pick", "choices": choices}}]}).encode()
                 if proxy.mode == "lie-title" and bare == "/v1/panes":
                     # Titles a program could choose: one that looks like a pane that needs you and may be written to,
                     # one with a tab, one far too long, and one of three-byte glyphs that reach the byte limit first.
