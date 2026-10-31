@@ -12,7 +12,7 @@ done
 core=${MUXWAY_CORE:-../muxway}
 [ -f "$core/go.mod" ] || { echo "no muxway core checkout at $core (set MUXWAY_CORE)" >&2; exit 1; }
 
-scripts/build.sh --test >/dev/null
+scripts/build.sh --test
 sim=node_modules/@evenrealities/sim-linux-x64/bin/evenhub-simulator
 [ -x "$sim" ] || { echo "no simulator binary at $sim (npm ci)" >&2; exit 1; }
 if ldd "$sim" | grep -q "not found"; then
