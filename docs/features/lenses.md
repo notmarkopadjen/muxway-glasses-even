@@ -1,4 +1,21 @@
-# The Claude Code lens
+# Lenses
+
+Every muxway client names the AI harness in a pane the same way, from
+the pane's command and its title: *Claude* (`claude`, or a spark leading
+the title), *Codex* (`codex`), *Gemini* (`gemini`), *Antigravity*
+(`agy`), *OpenCode* (`opencode`), *Copilot* (`copilot`), *aider*,
+*goose*, *Amp* (`amp`) and *Cursor* (`cursor-agent`); Gemini,
+Antigravity and Copilot also by their name in the title when the command
+is an interpreter (`node`, `bun`, `deno`, `python`, `python3`, `uv`). The
+name stands where the command would in the list's rows and the pane's
+title (`★ build · Codex · asks a question`), and the word *working*
+applies to any of them (see [notifications](notifications.md)). The
+glasses draw no mark for a harness beyond the name: a row has 63 bytes
+and the firmware font drops glyphs it lacks without a trace.
+
+Only one lens reshapes a screen, Claude Code's.
+
+## The Claude Code lens
 
 The Claude Code lens of the Java ME client, ported to the glasses: it
 reshapes the rows of a pane that runs Claude Code so that only the

@@ -5,8 +5,8 @@ Four gestures reach everything:
 | Gesture | Does |
 |---|---|
 | scroll | moves the cursor on the pane list; marks the next or previous column on the columns; moves the highlight in a list; pages the pane |
-| tap | opens the row under the cursor; on the columns, opens the marked pane; on a pane, its answers (or reads it again when it is read-only) |
-| hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that needs you |
+| tap | opens the row under the cursor (the inbox from its row); on the columns, opens the marked pane; on a pane, its answers (or reads it again when it is read-only); in the inbox, the pane of the row |
+| hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that has waited longest |
 | double tap | back one page; leaves selection mode; from the pane list, out of the app, which the OS confirms first |
 
 Every page is text from the top of the glasses down to a **hint** at the
@@ -19,6 +19,10 @@ result of an answer flashes on the pane for four.
 stateDiagram-v2
     [*] --> Loading
     Loading --> List: the first listing
+    List --> Inbox: tap the inbox row
+    Inbox --> PaneI: tap a row
+    PaneI --> Inbox: double tap
+    Inbox --> List: double tap
     List --> Pane: tap a pane row
     List --> Selecting: hold a row
     Selecting --> Selecting: tap a row (select / unselect)
@@ -31,8 +35,9 @@ stateDiagram-v2
     Split --> List: double tap
     Pane --> Answers: tap (writable)
     PaneS --> Answers: tap (writable)
-    Answers --> Confirm: tap an answer
-    Confirm --> Pane: Confirm sends, Cancel does not
+    PaneI --> Answers: tap (writable)
+    Answers --> Confirm: tap an answer or a choice
+    Confirm --> Pane: Confirm sends or answers, Cancel does not
     List --> [*]: double tap, the OS asks
 ```
 
@@ -57,34 +62,41 @@ before the hub has said so.
 ## The pane list: the main screen
 
 ```
-  [x] ★ build · claude · needs permission
+  ⚑ inbox · 2 waiting
+  [x] ★ build · Claude · needs permission
   [x] ● tests · bash · done
 > [ ] · logs · tail · active
-  [ ] · api · claude · quiet 4m
+  [ ] · api · Codex · working
   → open 2 side by side
   → clear selection
 
-▽ move · ● select · 3 at most · ×× done
+⚑ 2 · ▽ move · ● select · 3 at most · ×× done
 ```
 
 One row per pane, those that need you first, then by address: the mark
 (`★` asks a question or needs permission, `●` done, `○` idle, `·`
 nothing reported), the name, the program, a **state word**, and
-`read-only` where the token cannot write. The state word says only what
-is known:
+`read-only` where the token cannot write. The program is named as every
+muxway client names it ([lenses](lenses.md)): *Claude*, *Codex*,
+*Gemini*, *Antigravity*, *OpenCode*, *Copilot*, *aider*, *goose*, *Amp*
+or *Cursor* for an AI harness, else the command. While anything waits
+the first row is the way to the [inbox](#the-inbox), `⚑ inbox · 2
+waiting`, and the hint starts with the count, `⚑ 2`. The state word
+says only what is known:
 
 | The hub said | The row says |
 |---|---|
 | a question or a permission | `asks a question`, `needs permission` |
 | done, idle | `done`, `idle` |
+| working, in its last event, and the pane still moves | `working` |
 | nothing, and the pane wrote something in the last minute | `active` |
 | nothing, and the pane has been silent for a minute or more | `quiet 4m` |
 
 `active` and `quiet` come from the pane's last activity in the listing.
 A Claude Code at work redraws its spinner, so it is `active`; one
-waiting at its prompt is `quiet` and the age grows. Neither word claims
-that a pane is working: the hub knows a pane's state only when a hook
-reported it ([notifications](notifications.md)).
+waiting at its prompt is `quiet` and the age grows. `working` is the
+harness's own word, from its hook or the host's watcher
+([notifications](notifications.md)), and lasts while the pane moves.
 
 The list is drawn by the app, seven rows at a time spread down to the
 hint, with a **cursor**, `>`, on the brightest row; the scroll moves it
@@ -104,6 +116,25 @@ restarts.
 
 A **double tap** on the list asks the OS to leave the app, which the OS
 confirms. Nowhere else leaves the app.
+
+## The inbox
+
+```
+★ build · Claude · needs permission · 3m
+★ tests · Codex · asks a question · 40s
+● api · Claude · done · 12s
+inbox · 3 waiting · ▽ choose · ● open · ×× back
+```
+
+Every pane that waits for you, on every host the token reads, **oldest
+first**: `GET /v1/inbox`, read when the page opens and again with every
+listing while it is open. One row per pane: the mark, the name, the
+program, the attention in words and how long it has waited. It is an OS
+list of up to twenty rows; a **tap** opens the pane of the row, where a
+tap leads to the answers as from the list, and a **double tap** comes
+back to the inbox, then to the list. With nothing waiting the page says
+so. The menu's **Go to** on a pane takes the same first row: the pane
+that has waited longest, a question or a permission before the rest.
 
 ## Side by side
 
@@ -168,14 +199,25 @@ input box is not drawn; what it holds is the first answer.
 ## Answers and confirmation
 
 ```
+» yes
+» no
 » "run the tests again"
 » Say it
 Enter
 y, Enter
-n, Enter
-1 · Claude Code's first choice
 answer build · ▽ choose · ● pick · ×× back
 ```
+
+When a process in the pane asked a **question with fixed answers**
+(`muxway ask` on the host; the listing and the event carry its
+`choices`), the choices lead the list, `» yes`, `» no`. Picking one opens
+the confirmation (`answer yes to build?`); Confirm posts the choice to
+`POST /v1/panes/{address}/answer`, which hands it to the process that
+asked and types nothing into the pane. The hub refuses a choice it did
+not offer (`not one of the choices`) and a question that has been
+answered or has ended (`no question there now`); the words flash on the
+pane like every result. The choices are the ones the pane had when the
+answers opened.
 
 When Claude Code suggests what to say next, its input box holds the
 suggestion, and on a pane the hub says runs `claude` the list opens with
@@ -218,6 +260,17 @@ send this to build?
 - The glasses send only the answers above, each after a confirmation, or
   a transcript read back first; a mis-tap cannot send `Ctrl-C` to a
   running build. Keys are the protocol's names.
+- A choice is a write with the rules of input: the hub checks the write
+  grant and the pane's mark, and the host's agent checks the choice
+  against the list it gave, so the glasses can send the asking process
+  nothing it did not offer. The choices themselves are checked on
+  arrival (two to eight, each 1 to 40 characters, no control characters,
+  no `|`, distinct) and dropped as a whole otherwise, so a hostile hub
+  cannot put a row on the page that the firmware refuses or that hides
+  what it does. The glasses offer them only on a pane the hub lists as
+  writable; a proxy that lies about that earns a `403 read only`.
+- The inbox shows what the token may read, as the pane list does, and
+  is read with the same bearer header and caps.
 - The suggestion is the pane's own text sent back to the same pane, only
   when the wearer picks it and confirms it on a page that shows every
   word: what is shown is what is sent, with no cut in between, and a text
