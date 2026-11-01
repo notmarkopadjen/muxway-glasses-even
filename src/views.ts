@@ -6,13 +6,14 @@ import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
-import { paneName, type Attention, type Host, type Pane } from './protocol.ts'
+import { paneName, program, type Attention, type Host, type Pane } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, byteLength, typed, wrapRows } from './text.ts'
 
 export const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
 export const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
 export const SAY_IT = '» Say it'
+export const INBOX = '⚑ inbox'
 
 export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7 }
 
@@ -41,6 +42,8 @@ export interface Model {
   windowStart: number
   /** The column the last scroll opened, -1 for none. */
   marked: number
+  /** The hub's inbox as last read, oldest first; null before the first read. */
+  inbox: Pane[] | null
   reading: (address: string) => Reader | undefined
 }
 
@@ -125,15 +128,17 @@ function ago(seconds: number, now: number): string {
 /** What a row says about the pane's state: the attention in words, else what its output says. */
 export function stateWord(p: Pane, now: number): string {
   if (p.attention) return WORDS[p.attention]
-  if (!p.activity) return ''
-  return now - p.activity < 60 ? 'active' : `quiet ${ago(p.activity, now)}`
+  if (!p.activity) return p.working ? 'working' : ''
+  if (now - p.activity >= 60) return `quiet ${ago(p.activity, now)}`
+  return p.working ? 'working' : 'active'
 }
 
 /** A pane's row; in selection mode it starts with its box, [x] or [ ]. */
 export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none'): string {
   const name = paneName(p)
   const word = stateWord(p, now)
-  return (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + (p.command && p.command !== name ? ` · ${p.command}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  const prog = program(p)
+  return (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
 }
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
@@ -143,7 +148,12 @@ const ROW_PITCH = Math.floor((HINT_Y - TOP) / LIST_ROWS)
 export const MAX_SELECTED = 3
 const ROW_W = CANVAS_W - 4
 
-export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
+export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
+
+/** The panes that wait, oldest first: what the inbox lists. */
+export function waiting(panes: Pane[]): Pane[] {
+  return panes.filter((p) => p.attention).sort((a, b) => a.attentionAt - b.attentionAt || a.address.localeCompare(b.address))
+}
 
 /** Every row of the list and what each one is: the panes, then in selection mode its actions. */
 export function listLayout(m: Model, now: number): { items: string[]; what: ListItem[] } {
@@ -152,6 +162,12 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
   if (!m.panes.length) return { items: ['no panes exposed to this token'], what: [{ kind: 'none' }] }
   const items: string[] = []
   const what: ListItem[] = []
+  // While anything waits the first row is the way to the inbox; it has no box in selection mode.
+  const n0 = waiting(m.panes).length
+  if (n0) {
+    items.push(`${INBOX} · ${n0} waiting`)
+    what.push({ kind: 'inbox' })
+  }
   for (const p of m.panes) {
     items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none'))
     what.push({ kind: 'pane', pane: p })
@@ -200,9 +216,11 @@ export function listPage(m: Model, now: number): Page {
   // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
   const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
   const offline = m.hosts.filter((h) => !h.online).map((h) => `○ ${h.name} offline · `).join('')
+  const n = waiting(m.panes).length
+  const wait = n && m.loaded ? `⚑ ${n} · ` : ''
   const base = !m.loaded
     ? 'reading the hub ' + '·'.repeat(Math.max(1, Math.min(3, m.dots)))
-    : offline + where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
+    : wait + offline + where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
   return { kind: 'dash', ...hint(m, base), blocks, charts: [], items: [], menu: [] }
 }
 
@@ -216,7 +234,7 @@ export function splitPage(m: Model): Page {
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    const title = `${chosen ? '» ' : ''}${MARK[p.attention]} ${paneName(p)} · ${p.command}`
+    const title = `${chosen ? '» ' : ''}${MARK[p.attention]} ${paneName(p)} · ${program(p)}`
     blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
@@ -248,7 +266,7 @@ const TITLE_W = 376
 const BODY_W = CANVAS_W - 4
 
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState): Page {
-  const title = `${MARK[p.attention]} ${paneName(p)} · ${p.command || '?'}`
+  const title = `${MARK[p.attention]} ${paneName(p)} · ${program(p) || '?'}`
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
   blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })
@@ -279,21 +297,42 @@ export function pageSize(p: Pane, r: Reader | undefined, lens: boolean, reveal: 
 
 // --- answers ------------------------------------------------------------------------------
 
-/** The answers: Claude's suggestion first when there is one, then Say it, then the fixed set. */
-export function answersPage(m: Model, p: Pane, offer: Answer | null, offerVoice: boolean): Page {
-  const items = (offer ? ['» ' + offer.label] : []).concat(offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label))
+/** The answers: a question's choices first, then Claude's suggestion when there is one, then Say it, then the fixed set. */
+export function answersPage(m: Model, p: Pane, choices: Answer[], offer: Answer | null, offerVoice: boolean): Page {
+  const items = choices.map((c) => c.label).concat(offer ? ['» ' + offer.label] : [], offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label))
   return { kind: 'list', ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
   return {
     kind: 'list',
-    ...hint(m, `send ${a.short} to ${paneName(p)}? · ×× back`),
+    ...hint(m, `${a.choice !== undefined ? 'answer' : 'send'} ${a.short} to ${paneName(p)}? · ×× back`),
     blocks: [],
     charts: [],
     items: ['Cancel', 'Confirm'],
     menu: [],
   }
+}
+
+// --- the inbox ----------------------------------------------------------------------------
+
+/** How many rows the inbox lists: the OS list's most. */
+export const INBOX_ROWS = 20
+
+/** The inbox's row: the mark, the name, the program, the kind and how long it has waited. */
+export function inboxLabel(p: Pane, now: number): string {
+  const name = paneName(p)
+  const prog = program(p)
+  const word = p.attention ? WORDS[p.attention] : ''
+  return `${MARK[p.attention]} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${word}` + (p.attentionAt ? ` · ${ago(p.attentionAt, now)}` : '')
+}
+
+/** Every pane that waits, oldest first, as an OS list: a tap opens the pane. */
+export function inboxPage(m: Model, now: number): Page {
+  const rows = m.inbox
+  const items = rows === null ? ['reading the inbox…'] : rows.length ? rows.slice(0, INBOX_ROWS).map((p) => inboxLabel(p, now)) : ['nothing waits for you']
+  const n = rows?.length ?? 0
+  return { kind: 'list', ...hint(m, `inbox · ${n} waiting · ▽ choose · ● open · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 function textBox(text: string): Block {

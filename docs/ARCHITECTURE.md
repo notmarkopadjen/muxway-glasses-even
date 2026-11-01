@@ -25,10 +25,12 @@ preflight such a page needs. The glasses see only what the page draws.
 | Call | How | For |
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
-| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `attention`, `activity`; hosts online or not |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `attention` (with a question's `choices`), `activity`; hosts online or not |
+| `GET /v1/inbox` | JSON | the inbox page: every pane that waits, oldest first, read when the page opens and with every listing while it is open |
 | `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
-| `GET /v1/events` | JSON long poll: `?limit=1` for the cursor, then `?after=N&wait=25&limit=50` | notifications |
+| `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
+| `GET /v1/events` | JSON long poll: `?limit=1` for the cursor, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices` |
 | `GET /v1/transcribe` | `204` or `404` | whether **Say it** is offered |
 | `POST /v1/transcribe` | `audio/wav`, 16 kHz mono, up to 60 s | the spoken reply's text |
 
@@ -44,11 +46,11 @@ protocol (sessions, windows, files, resize, admin) is used.
 |---|---|
 | `src/main.ts` | boot: the bridge, settings, the phone pane, the app |
 | `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
-| `src/views.ts` | what every page says and draws: the pane list, the columns, the pane, the answers, the voice pages |
+| `src/views.ts` | what every page says and draws: the pane list, the inbox, the columns, the pane, the answers, the voice pages |
 | `src/glasses.ts` | the two page kinds, the hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
 | `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline and sparkline charts, a bitmap cut into image containers |
 | `src/api.ts` | the calls: listings in JSON, pane content in text mode, caps, timeouts, ETag, errors in words |
-| `src/protocol.ts` | the listings' JSON, pane names, URL and token rules |
+| `src/protocol.ts` | the listings' JSON, the harness a pane runs, a question's choices, pane names, URL and token rules |
 | `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
 | `src/answers.ts` | the fixed answers ([screens](features/screens.md)) |
 | `src/voice.ts` | the microphone: frames, meter, the WAV ([spoken replies](features/spoken-replies.md)) |
