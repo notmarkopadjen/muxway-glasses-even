@@ -1,6 +1,6 @@
 # Feature: every harness, a question's choices and the inbox on the glasses
 
-> Status: draft, awaiting the owner's review. Follows the core's
+> Status: implemented, in review. Follows the core's
 > `docs/plans/2026-10-31-agent-orchestration.md` (muxway#181, merged as
 > PR #183), whose plan left the native clients to their own repositories.
 
@@ -171,11 +171,25 @@ first), `docs/features/lenses.md` (every harness named),
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: the pane's row says *working* for any named harness while
+its last event said so and the pane still moves, and the hint carries
+`⚑ n` before the offline hosts, both as planned; the inbox row has no
+box in selection mode. The hub's CORS list did not include `/v1/inbox`,
+so a page on another origin, the glasses' WebView among them, could not
+read the inbox: the core needs `/v1/inbox` among its CORS paths
+(`internal/hub/cors.go`), a one-line change this run carried locally.
+Until it is on the core's `main`, F31 and F41 fail against a released
+hub. The guideline rows live in the core's own change.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+Run `20261101-094217-139a82d`: **passed**, 89 tests, 0 failed, recorded
+as [issue #29](https://github.com/notmarkopadjen/muxway-glasses-even/issues/29).
+Commit `c4bf35f`; core at its `main` (`50324f5`) with the `/v1/inbox`
+CORS line added locally; tmux 3.6, Node 22, simulator 0.9.5. The suite
+runs on the Even Hub simulator; the G2 glasses were not attached.
