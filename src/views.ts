@@ -4,6 +4,7 @@
 
 import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
+import { groupsOf, pullTogether, type Groups } from './groups.ts'
 import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, program, type Attention, type Host, type Pane } from './protocol.ts'
@@ -68,10 +69,24 @@ export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
 }
 
-/** Panes in the order every page uses: those that need you first, then by address. */
+/** Panes in the order every page uses: those that need you first, then by address, a group of panes that talk kept together after its first member. */
 export function sorted(panes: Pane[]): Pane[] {
   const rank = (p: Pane) => (needs(p) ? 0 : p.attention ? 1 : 2)
-  return panes.slice().sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
+  const byRank = panes.slice().sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
+  return pullTogether(byRank, groupsOf(panes))
+}
+
+/** The bar every row of a group starts with: one bar down the list, the glasses' frame. */
+export const BAR = '│ '
+
+/** What a pane says about its mail, after its name: a word, since the font is not known to have the envelope. */
+export function mailWord(p: Pane): string {
+  return p.mail ? ` · mail ${p.mail}` : ''
+}
+
+/** The pane's title line: the bar when it is in a group, the mark, the name, its mail, the program. */
+export function titleOf(p: Pane, groups: Groups): string {
+  return `${groups.has(p.address) ? BAR : ''}${MARK[p.attention]} ${paneName(p)}${mailWord(p)} · ${program(p) || '?'}`
 }
 
 function hint(m: Model, base: string): Pick<Page, 'hint' | 'hintLevel' | 'hintBorder'> {
@@ -133,12 +148,12 @@ export function stateWord(p: Pane, now: number): string {
   return p.working ? 'working' : 'active'
 }
 
-/** A pane's row; in selection mode it starts with its box, [x] or [ ]. */
-export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none'): string {
+/** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]. */
+export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none', grouped = false): string {
   const name = paneName(p)
   const word = stateWord(p, now)
   const prog = program(p)
-  return (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  return (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + mailWord(p) + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
 }
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
@@ -168,8 +183,9 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
     items.push(`${INBOX} · ${n0} waiting`)
     what.push({ kind: 'inbox' })
   }
+  const groups = groupsOf(m.panes)
   for (const p of m.panes) {
-    items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none'))
+    items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none', groups.has(p.address)))
     what.push({ kind: 'pane', pane: p })
   }
   const n = selectedPanes(m).length
@@ -231,10 +247,11 @@ export function splitPage(m: Model): Page {
   const columns = Math.max(2, shown.length)
   const colW = Math.floor((CANVAS_W - COL_GAP * (columns - 1)) / columns)
   const blocks: Block[] = []
+  const groups = groupsOf(m.panes)
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    const title = `${chosen ? '» ' : ''}${MARK[p.attention]} ${paneName(p)} · ${program(p)}`
+    const title = `${chosen ? '» ' : ''}${titleOf(p, groups)}`
     blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
@@ -266,7 +283,7 @@ const TITLE_W = 376
 const BODY_W = CANVAS_W - 4
 
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState): Page {
-  const title = `${MARK[p.attention]} ${paneName(p)} · ${program(p) || '?'}`
+  const title = titleOf(p, groupsOf(m.panes))
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
   blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })

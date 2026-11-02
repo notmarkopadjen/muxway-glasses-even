@@ -31,6 +31,10 @@ export interface Pane {
   activity: number
   /** The harness said working in its last event. */
   working: boolean
+  /** The panes this one talked with in the last ten minutes, by address; empty otherwise. */
+  talk: string[]
+  /** Unread mail held for the pane's process; 0 for none. */
+  mail: number
 }
 
 export interface Host {
@@ -56,6 +60,8 @@ const MAX_LIST = 500
 const MIN_CHOICES = 2
 const MAX_CHOICES = 8
 const MAX_CHOICE = 40
+const MAX_TALK = 32
+const MAX_MAIL = 999
 
 // The harnesses every client names, by command, and under an interpreter by their name in the title.
 const AGENTS: [Agent, string, RegExp | null][] = [
@@ -104,6 +110,24 @@ export function parseChoices(v: unknown): string[] {
     out.push(s)
   }
   return out
+}
+
+/** The partners of a pane as the listing names them: distinct addresses, at most 32; anything else is no talk. */
+export function parseTalk(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const out: string[] = []
+  for (const item of v.slice(0, MAX_TALK)) {
+    const a = item && typeof item === 'object' ? (item as Record<string, unknown>).address : undefined
+    if (address(a) && !out.includes(a as string)) out.push(a as string)
+  }
+  return out
+}
+
+/** The unread mail a pane holds: a positive count, at most 999; anything else is none. */
+export function parseMail(v: unknown): number {
+  const n = v && typeof v === 'object' ? (v as Record<string, unknown>).unread : undefined
+  if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) return 0
+  return Math.min(n, MAX_MAIL)
 }
 
 function attention(s: unknown): Attention | '' {
@@ -157,6 +181,8 @@ function parsePane(item: unknown, now: number): Pane | null {
     choices: kind === 'question' ? parseChoices(att?.choices) : [],
     activity: when(o.activity, now),
     working: false,
+    talk: parseTalk(o.talk),
+    mail: parseMail(o.mail),
   }
 }
 
