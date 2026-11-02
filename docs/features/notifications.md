@@ -38,6 +38,10 @@ sequenceDiagram
   [inbox](screens.md#the-inbox) lists them all in that order.
 - Attention and its choices also come with every pane list, so the marks
   are right after a restart, before any event.
+- A message between panes, typed or mailed, is **not** a notification:
+  no toast, no row in the inbox, no count in the hint. The list shows the
+  panes that talk as one group and the unread mail after a pane's name
+  ([screens](screens.md#the-pane-list-the-main-screen)).
 
 Out of scope, each its own feature later: notifications while the app is
 not open (an Even Hub app runs only while open), and sounds.

@@ -24,7 +24,9 @@ same app.
 
 - **The pane list**, panes that wait for you first, each with its word:
   *asks a question*, *needs permission*, *done*. Scroll moves, tap opens,
-  hold selects two for side by side.
+  hold selects two for side by side. Panes whose agents talk to each
+  other are kept together behind one bar, and a pane with unread mail
+  says *mail 2* after its name.
 - **A pane**, following its tail, or two panes in columns.
 - **The Claude Code lens** reshapes Claude Code's screen for eight short
   lines: the conversation stays, the chrome goes, and whatever Claude
