@@ -40,7 +40,12 @@ class Run:
         self.secrets = []
         self.shots = {}
         self.cleanups = []
-        self.display = f":{90 + os.getpid() % 900}"
+        # A display nobody holds: Xvfb fails quietly on a taken one, and every
+        # simulator then times out.
+        n = 90 + os.getpid() % 900
+        while os.path.exists(f"/tmp/.X{n}-lock"):
+            n += 1
+        self.display = f":{n}"
         self.xvfb = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "1400x900x24", "-nolisten", "tcp"],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
