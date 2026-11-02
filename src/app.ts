@@ -3,10 +3,10 @@
 // and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
-import { ANSWERS, type Answer } from './answers.ts'
+import { ANSWERS, choiceAnswer, type Answer } from './answers.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneName, parseEvents, parseHosts, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
+import { paneName, parseEvents, parseHosts, parseInbox, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -14,9 +14,10 @@ import { GRACE_SECONDS, MIN_SECONDS, Recorder, toneFrame } from './voice.ts'
 
 type View =
   | { kind: 'list' }
+  | { kind: 'inbox' }
   | { kind: 'split' }
   | { kind: 'pane'; pane: Pane; fromSplit: boolean }
-  | { kind: 'answers'; pane: Pane; offer: Answer | null }
+  | { kind: 'answers'; pane: Pane; choices: Answer[]; offer: Answer | null }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
   | { kind: 'offer'; pane: Pane; answer: Answer }
   | { kind: 'listen'; pane: Pane }
@@ -33,6 +34,7 @@ interface Attn {
   kind: Attention
   text: string
   at: number
+  choices: string[]
 }
 
 const LIST_EVERY_MS = 10_000
@@ -50,6 +52,10 @@ export class App {
   private panes: Pane[] = []
   private hosts: Host[] = []
   private attention = new Map<string, Attn>()
+  /** The panes whose last event said working, by address. */
+  private working = new Set<string>()
+  /** The hub's inbox while its page is open; null before it is read. */
+  private inbox: Pane[] | null = null
   private listError: string | null = null
   private listBusy = false
   private listTimer: ReturnType<typeof setTimeout> | null = null
@@ -201,11 +207,15 @@ export class App {
       for (const p of this.panes) {
         const have = this.attention.get(p.address)
         if (p.attention) {
-          if (!have || have.kind !== p.attention) this.attention.set(p.address, { kind: p.attention, text: p.attentionText, at: p.attentionAt * 1000 || have?.at || 0 })
+          if (!have || have.kind !== p.attention) this.attention.set(p.address, { kind: p.attention, text: p.attentionText, at: p.attentionAt * 1000 || have?.at || 0, choices: p.choices })
+          else if (p.choices.length) have.choices = p.choices
+          this.working.delete(p.address)
         } else if (have && have.at < t0 - 2000) {
           this.attention.delete(p.address)
         }
+        p.working = this.working.has(p.address)
       }
+      if (this.stack.some((v) => v.kind === 'inbox')) await this.readInbox()
       this.listError = null
       this.loaded = true
       this.stopDots()
@@ -315,7 +325,7 @@ export class App {
           if (gen !== this.eventsGen) return
           const r = parseEvents(a.body)
           this.backoff = 5_000
-          if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text)
+          if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
           this.cursor = r.next
         } catch (e) {
           if (gen !== this.eventsGen) return
@@ -335,18 +345,26 @@ export class App {
     })
   }
 
-  private onNotify(address: string, kind: Attention | 'working', text: string) {
+  private onNotify(address: string, kind: Attention | 'working', text: string, choices: string[] = []) {
     const pane = this.panes.find((p) => p.address === address)
     const name = pane ? paneName(pane) : address.slice(address.indexOf('/') + 1)
     if (kind === 'working') {
       this.attention.delete(address)
-      if (pane) pane.attention = ''
+      this.working.add(address)
+      if (pane) {
+        pane.attention = ''
+        pane.choices = []
+        pane.working = true
+      }
     } else {
-      this.attention.set(address, { kind, text, at: Date.now() })
+      this.attention.set(address, { kind, text, at: Date.now(), choices })
+      this.working.delete(address)
       if (pane) {
         pane.attention = kind
         pane.attentionAt = Math.floor(Date.now() / 1000)
         pane.attentionText = text
+        pane.choices = choices
+        pane.working = false
       }
       this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
       this.later(TOAST_MS)
@@ -403,7 +421,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
+          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm' && this.top.kind !== 'inbox') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -518,6 +536,9 @@ export class App {
           if (this.selecting) await this.toggle(row.pane)
           else await this.openPane(row.pane, false)
           break
+        case 'inbox':
+          await this.openInbox()
+          break
         case 'open':
           this.marked = -1
           await this.push({ kind: 'split' })
@@ -541,15 +562,53 @@ export class App {
     else await this.readPanes(true)
   }
 
-  /** The answers, with Claude's suggestion as it stands now: the confirmation sends this, not a later reading. */
+  /** The answers, with a question's choices and Claude's suggestion as they stand now: the confirmation sends these, not a later reading. */
   private async openAnswers(pane: Pane) {
     const offer = V.offerOf(pane, this.readers.get(pane.address)?.raw ?? [], getSettings().lens)
-    await this.push({ kind: 'answers', pane, offer })
+    const choices = this.choicesOf(pane).map(choiceAnswer)
+    await this.push({ kind: 'answers', pane, choices, offer })
+  }
+
+  /** The choices of the question on the pane, from the listing or the event that brought it. */
+  private choicesOf(pane: Pane): string[] {
+    const a = this.attention.get(pane.address)
+    if (a?.kind === 'question' && a.choices.length) return a.choices
+    const p = this.panes.find((x) => x.address === pane.address)
+    return p?.attention === 'question' ? p.choices : []
+  }
+
+  /** The inbox page over the list, read from the hub. */
+  private async openInbox() {
+    this.inbox = null
+    await this.push({ kind: 'inbox' })
+    await this.readInbox()
+  }
+
+  private async readInbox() {
+    try {
+      const a = await api.inbox()
+      this.inbox = parseInbox(a.body)
+      this.log(`GET inbox ${a.status} ${this.inbox.length} waiting`)
+    } catch (e) {
+      this.listError = await this.failed(e, 'GET inbox')
+    }
+    await this.redraw()
   }
 
   private async onSelect(idx: number) {
     const v = this.top
+    if (v.kind === 'inbox') {
+      const p = this.inbox?.[idx]
+      if (p) await this.openPane(p, false)
+      return
+    }
     if (v.kind === 'answers') {
+      const c = v.choices[idx]
+      if (c) {
+        await this.push({ kind: 'confirm', pane: v.pane, answer: c })
+        return
+      }
+      idx -= v.choices.length
       if (v.offer) {
         if (idx === 0) {
           await this.push({ kind: 'offer', pane: v.pane, answer: v.offer })
@@ -658,6 +717,10 @@ export class App {
   }
 
   private async send(pane: Pane, answer: Answer) {
+    if (answer.choice !== undefined) {
+      await this.answer(pane, answer.choice)
+      return
+    }
     let words = 'sent ' + answer.short
     try {
       for (const p of answer.pieces) {
@@ -674,6 +737,26 @@ export class App {
     this.later(FLASH_MS)
     this.offset = 0
     await this.redraw()
+    await this.readPanes(true)
+  }
+
+  /** A question's choice to the process that asked; the hub refuses one that is not on offer or no longer asked. */
+  private async answer(pane: Pane, choice: string) {
+    let words = 'answered ' + choice
+    try {
+      await api.answer(pane.address, choice)
+      this.attention.delete(pane.address)
+      pane.attention = ''
+      pane.choices = []
+      this.log(`answered ${paneName(pane)}`, 'ok')
+    } catch (e) {
+      words = e instanceof ApiError && e.status === 400 ? 'not one of the choices' : await this.failed(e, 'POST answer')
+    }
+    this.flash = { text: words, until: Date.now() + FLASH_MS }
+    this.later(FLASH_MS)
+    this.offset = 0
+    await this.redraw()
+    this.scheduleList(0)
     await this.readPanes(true)
   }
 
@@ -807,14 +890,15 @@ export class App {
   }
 
   // ------------------------------------------------------------------- pages
+  /** The pane to go to: the one that has waited longest, a question or a permission before the rest. */
   private needsYou(): Pane | null {
     let best: Pane | null = null
-    let bestAt = -1
+    let bestAt = Infinity
     for (const p of this.sorted) {
       const a = this.attention.get(p.address)
       if (!a) continue
-      const at = (V.needs(p) ? 1e13 : 0) + a.at
-      if (at > bestAt) {
+      const at = (V.needs(p) ? 0 : 1e13) + a.at
+      if (at < bestAt) {
         best = p
         bestAt = at
       }
@@ -841,6 +925,7 @@ export class App {
       cursor: this.row,
       windowStart: this.winStart,
       marked: this.marked,
+      inbox: this.inbox,
       reading: (address) => this.readers.get(address),
     }
   }
@@ -856,6 +941,8 @@ export class App {
     switch (v.kind) {
       case 'list':
         return V.listPage(m, now)
+      case 'inbox':
+        return V.inboxPage(m, now)
       case 'split':
         return V.splitPage(m)
       case 'pane': {
@@ -870,7 +957,7 @@ export class App {
         return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state })
       }
       case 'answers':
-        return V.answersPage(m, v.pane, v.offer, this.offersVoice(v.pane))
+        return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane))
       case 'confirm':
         return V.confirmPage(m, v.pane, v.answer)
       case 'offer':
