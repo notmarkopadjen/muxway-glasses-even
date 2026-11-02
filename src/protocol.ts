@@ -8,6 +8,7 @@ export const PROTOCOL = 'v1'
 
 export type Attention = 'question' | 'permission' | 'idle' | 'done'
 export type EventKind = Attention | 'working'
+export type Agent = 'claude' | 'codex' | 'gemini' | 'antigravity' | 'opencode' | 'copilot' | 'aider' | 'goose' | 'amp' | 'cursor'
 
 export interface Pane {
   address: string
@@ -18,12 +19,18 @@ export interface Pane {
   command: string
   title: string
   alias: string
+  /** The AI harness in the pane, from its command or its title; '' for any other program. */
+  agent: Agent | ''
   attention: Attention | ''
   /** When the attention arrived, seconds since the epoch; 0 when unknown. */
   attentionAt: number
   attentionText: string
+  /** The fixed answers of a question (muxway ask); empty otherwise. */
+  choices: string[]
   /** The pane's last activity, seconds since the epoch; 0 when unknown. */
   activity: number
+  /** The harness said working in its last event. */
+  working: boolean
 }
 
 export interface Host {
@@ -37,6 +44,7 @@ export interface Event {
   address: string
   kind: EventKind
   text: string
+  choices: string[]
 }
 
 const ATTENTION = ['question', 'permission', 'idle', 'done'] as const
@@ -45,6 +53,58 @@ const ALIAS = /^@[a-z0-9-]{1,32}$/
 const NAME = /^[A-Za-z0-9._-]{1,64}$/
 const INDEX = /^[0-9]{1,4}$/
 const MAX_LIST = 500
+const MIN_CHOICES = 2
+const MAX_CHOICES = 8
+const MAX_CHOICE = 40
+
+// The harnesses every client names, by command, and under an interpreter by their name in the title.
+const AGENTS: [Agent, string, RegExp | null][] = [
+  ['codex', 'Codex', null],
+  ['gemini', 'Gemini', /\bgemini\b/i],
+  ['antigravity', 'Antigravity', /\bantigravity\b/i],
+  ['opencode', 'OpenCode', null],
+  ['copilot', 'Copilot', /\bcopilot\b/i],
+  ['aider', 'aider', null],
+  ['goose', 'goose', null],
+  ['amp', 'Amp', null],
+  ['cursor', 'Cursor', null],
+]
+const COMMANDS: Record<string, Agent> = { codex: 'codex', gemini: 'gemini', agy: 'antigravity', opencode: 'opencode', copilot: 'copilot', aider: 'aider', goose: 'goose', amp: 'amp', 'cursor-agent': 'cursor' }
+const INTERPRETERS = new Set(['node', 'bun', 'deno', 'python', 'python3', 'uv'])
+const SPARK = /^[✳✶✻✽✢]\s*/u
+
+/** The AI harness a pane runs, as the web names it: Claude by its command or its spark, the rest by command or title. */
+export function agentOf(command: string, title: string): Agent | '' {
+  if (command === 'claude' || SPARK.test(title)) return 'claude'
+  const byCommand = COMMANDS[command]
+  for (const [agent, , inTitle] of AGENTS) {
+    if (byCommand === agent || (inTitle && INTERPRETERS.has(command) && inTitle.test(title))) return agent
+  }
+  return ''
+}
+
+export function agentName(agent: Agent): string {
+  if (agent === 'claude') return 'Claude'
+  return AGENTS.find((a) => a[0] === agent)?.[1] ?? agent
+}
+
+/** The program named for a person: the harness, else the command. */
+export function program(p: Pick<Pane, 'agent' | 'command'>): string {
+  return p.agent ? agentName(p.agent) : p.command
+}
+
+/** A question's choices as the hub carries them: two to eight distinct short clean lines without a bar; anything else is no choices. */
+export function parseChoices(v: unknown): string[] {
+  if (!Array.isArray(v) || v.length < MIN_CHOICES || v.length > MAX_CHOICES) return []
+  const out: string[] = []
+  for (const c of v) {
+    if (typeof c !== 'string') return []
+    const s = clean(c).trim()
+    if (!s || s !== c || s.length > MAX_CHOICE || s.includes('|') || out.includes(s)) return []
+    out.push(s)
+  }
+  return out
+}
 
 function attention(s: unknown): Attention | '' {
   return typeof s === 'string' && (ATTENTION as readonly string[]).includes(s) ? (s as Attention) : ''
@@ -73,38 +133,58 @@ function when(v: unknown, now: number): number {
   return Math.min(Math.floor(v), now)
 }
 
-/** The hub's JSON listing of panes; an entry that is not a pane is skipped, and at most 500 are read. */
-export function parsePanes(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
+function parsePane(item: unknown, now: number): Pane | null {
+  if (!item || typeof item !== 'object') return null
+  const o = item as Record<string, unknown>
+  const a = address(o.address)
+  if (!a) return null
+  const att = o.attention && typeof o.attention === 'object' ? (o.attention as Record<string, unknown>) : null
+  const kind = attention(att?.kind)
+  const command = str(o.command, 32)
+  const title = str(o.title, 64)
+  return {
+    address: o.address as string,
+    host: a.host,
+    path: a.path,
+    writable: o.mode === 'write',
+    command,
+    title,
+    alias: str(o.alias, 32),
+    agent: agentOf(command, title),
+    attention: kind,
+    attentionAt: att ? when(att.at, now) : 0,
+    attentionText: att ? str(att.text, 200) : '',
+    choices: kind === 'question' ? parseChoices(att?.choices) : [],
+    activity: when(o.activity, now),
+    working: false,
+  }
+}
+
+function parseList(body: string, key: string, now: number): Pane[] {
   let raw: unknown
   try {
     raw = JSON.parse(body)
   } catch {
     return []
   }
-  const list = (raw as { panes?: unknown })?.panes
+  const list = (raw as Record<string, unknown>)?.[key]
   if (!Array.isArray(list)) return []
   const out: Pane[] = []
   for (const item of list.slice(0, MAX_LIST)) {
-    if (!item || typeof item !== 'object') continue
-    const o = item as Record<string, unknown>
-    const a = address(o.address)
-    if (!a) continue
-    const att = o.attention && typeof o.attention === 'object' ? (o.attention as Record<string, unknown>) : null
-    out.push({
-      address: o.address as string,
-      host: a.host,
-      path: a.path,
-      writable: o.mode === 'write',
-      command: str(o.command, 32),
-      title: str(o.title, 64),
-      alias: str(o.alias, 32),
-      attention: attention(att?.kind),
-      attentionAt: att ? when(att.at, now) : 0,
-      attentionText: att ? str(att.text, 200) : '',
-      activity: when(o.activity, now),
-    })
+    const p = parsePane(item, now)
+    if (p) out.push(p)
   }
   return out
+}
+
+/** The hub's JSON listing of panes; an entry that is not a pane is skipped, and at most 500 are read. */
+export function parsePanes(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
+  return parseList(body, 'panes', now)
+}
+
+/** The hub's inbox: the panes that wait, oldest first as the hub sorts them; a pane without attention is not one of them. */
+export function parseInbox(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
+  return parseList(body, 'inbox', now).filter((p) => p.attention)
 }
 
 /** The hub's JSON listing of hosts. */
@@ -152,7 +232,8 @@ export function parseEvents(body: string): { events: Event[]; next: number | nul
       const kind = e.kind
       if (typeof e.seq !== 'number' || !address(e.address) || typeof kind !== 'string') continue
       if (!(ATTENTION as readonly string[]).includes(kind) && kind !== 'working') continue
-      events.push({ seq: e.seq, at: typeof e.at === 'number' ? e.at : 0, address: e.address as string, kind: kind as EventKind, text: str(e.text, 200) })
+      const choices = kind === 'question' ? parseChoices(e.choices) : []
+      events.push({ seq: e.seq, at: typeof e.at === 'number' ? e.at : 0, address: e.address as string, kind: kind as EventKind, text: str(e.text, 200), choices })
     }
   }
   return { events, next }
@@ -206,6 +287,8 @@ export function errorWords(status: number): string {
       return 'read only'
     case 404:
       return 'not found'
+    case 409:
+      return 'no question there now'
     case 413:
       return 'too large'
     case 429:

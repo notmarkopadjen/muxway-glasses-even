@@ -29,14 +29,21 @@ same app.
 - **The Claude Code lens** reshapes Claude Code's screen for eight short
   lines: the conversation stays, the chrome goes, and whatever Claude
   suggests in its input box is offered as the first answer.
-- **Answers**: Enter, `y`, `n`, numbered choices, a few keys; or **say
-  it**, read the transcript back on the glasses, and send.
+- **Answers**: a question's own choices first (`muxway ask`), then
+  Enter, `y`, `n`, numbered choices, a few keys; or **say it**, read the
+  transcript back on the glasses, and send.
+- **The inbox**: every pane that waits, on every host, oldest first, one
+  row away from the list.
 - **A banner** at the foot of whatever you are reading when a pane needs
   you, and *go to* from the menu.
 
-Only Claude Code has been tested so far; another AI coding agent needs
-its own hooks calling `muxway notify` on the host, and a lens for its
-screen.
+Every AI coding CLI muxway knows (Claude Code, Codex, Gemini,
+Antigravity, OpenCode, Copilot and the rest) is named in the list and
+reports its state through its hooks or the host's watcher; a question it
+asks with fixed answers (`muxway ask`) is answered from the glasses with
+a tap, and the **inbox** lists what waits across hosts, oldest first.
+Only the Claude Code lens reshapes a screen; Claude Code is the harness
+tested on the device.
 
 <p>
 <img src="store/shots/01-list.png" alt="The pane list, panes waiting first" width="288">
@@ -49,7 +56,7 @@ screen.
 
 - [Screens and gestures](docs/features/screens.md)
 - [Notifications](docs/features/notifications.md)
-- [The Claude Code lens](docs/features/lenses.md)
+- [Lenses: every harness named, the Claude Code lens](docs/features/lenses.md)
 - [The phone pane](docs/features/phone-pane.md)
 - [Spoken replies](docs/features/spoken-replies.md)
 - [Install](docs/features/install.md)

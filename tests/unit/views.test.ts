@@ -2,14 +2,16 @@
 // about a pane is only what the hub said or what its output shows.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Pane } from '../../src/protocol.ts'
+import { agentOf, type Pane } from '../../src/protocol.ts'
 import { HINT_Y, LINE_H } from '../../src/glasses.ts'
-import { LIST_ROWS, OFFER_BYTES, answersPage, listLayout, listPage, listWindow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, type Model } from '../../src/views.ts'
+import { choiceAnswer } from '../../src/answers.ts'
+import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, waiting, type Model } from '../../src/views.ts'
 
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  return { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', attention: '', attentionAt: 0, attentionText: '', activity: NOW - 10, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, ...extra }
+  return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
 function model(panes: Pane[], extra: Partial<Model> = {}): Model {
@@ -30,6 +32,7 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
     cursor: 0,
     windowStart: 0,
     marked: -1,
+    inbox: null,
     reading: () => undefined,
     ...extra,
   }
@@ -43,15 +46,69 @@ test('the state word says only what is known', () => {
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 60 }), NOW), 'quiet 1m')
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 4 * 3600 }), NOW), 'quiet 4h')
   assert.equal(stateWord(pane('a/0.0', { activity: 0 }), NOW), '')
+  // The harness said working: the word, while the pane still moves.
+  assert.equal(stateWord(pane('a/0.0', { working: true }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'quiet 1m')
+  assert.equal(stateWord(pane('a/0.0', { working: true, attention: 'done' }), NOW), 'done')
   // A time ahead of now is clamped by the parser; here it must not go negative either.
   assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'active')
 })
 
 test('a row: mark, name, program, state, read-only, and the selection prefix', () => {
-  assert.equal(rowLabel(pane('work/0.0', { title: 'build', attention: 'question' }), NOW), '★ build · claude · asks a question')
-  assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, 'on'), '[x] · build · claude · quiet 4m')
-  assert.equal(rowLabel(pane('work/0.0', { title: 'build' }), NOW, 'off'), '[ ] · build · claude · active')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build', attention: 'question' }), NOW), '★ build · Claude · asks a question')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, 'on'), '[x] · build · Claude · quiet 4m')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build' }), NOW, 'off'), '[ ] · build · Claude · active')
   assert.equal(rowLabel(pane('work/0.0', { command: 'bash', writable: false }), NOW), '· work/0.0 · bash · active · read-only')
+  // Every harness is named; the name stands where the command would.
+  assert.equal(rowLabel(pane('work/0.0', { command: 'codex', title: 'codex', working: true }), NOW), '· work/0.0 · Codex · working')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'agy', title: 'notes' }), NOW), '· notes · Antigravity · active')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'gemini' }), NOW), '· gemini · Gemini · active')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'server' }), NOW), '· server · node · active')
+  // The title of a pane named after the program says nothing: the row has the program once.
+  assert.equal(rowLabel(pane('work/0.0', { command: 'opencode', title: 'OpenCode' }), NOW), '· OpenCode · active')
+})
+
+test('the inbox: the first row of the list while anything waits, the count in the hint, the page oldest first', () => {
+  const quiet = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' })]
+  let l = listLayout(model(quiet), NOW)
+  assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane'])
+  assert.ok(!listPage(model(quiet), NOW).hint.includes('⚑'))
+  const panes = [
+    pane('w/1.0', { title: 'one', attention: 'done', attentionAt: NOW - 30 }),
+    pane('w/2.0', { title: 'two', attention: 'question', attentionAt: NOW - 200, choices: ['yes', 'no'] }),
+    pane('w/3.0', { title: 'three' }),
+    pane('w/4.0', { title: 'four', command: 'codex', attention: 'permission', attentionAt: NOW - 100 }),
+  ]
+  l = listLayout(model(panes), NOW)
+  assert.deepEqual(l.what.map((w) => w.kind), ['inbox', 'pane', 'pane', 'pane', 'pane'])
+  assert.equal(l.items[0], '⚑ inbox · 3 waiting')
+  assert.ok(listPage(model(panes), NOW).hint.startsWith('⚑ 3 · '), listPage(model(panes), NOW).hint)
+  // In selection mode the inbox row has no box and is not an action.
+  l = listLayout(model(panes, { selecting: true }), NOW)
+  assert.equal(l.items[0], '⚑ inbox · 3 waiting')
+  assert.equal(l.items[1], '[ ] ★ two · Claude · asks a question')
+  assert.deepEqual(waiting(panes).map((p) => p.path), ['w/2.0', 'w/4.0', 'w/1.0'])
+  assert.equal(inboxLabel(panes[3], NOW), '★ four · Codex · needs permission · 1m')
+  assert.equal(inboxLabel(pane('w/5.0', { title: 'five', attention: 'idle', attentionAt: 0 }), NOW), '○ five · Claude · idle')
+  let page = inboxPage(model(panes, { inbox: waiting(panes) }), NOW)
+  assert.equal(page.kind, 'list')
+  assert.deepEqual(page.items, ['★ two · Claude · asks a question · 3m', '★ four · Codex · needs permission · 1m', '● one · Claude · done · 30s'])
+  assert.ok(page.hint.startsWith('inbox · 3 waiting · '), page.hint)
+  assert.deepEqual(inboxPage(model(panes, { inbox: [] }), NOW).items, ['nothing waits for you'])
+  assert.deepEqual(inboxPage(model(panes), NOW).items, ['reading the inbox…'])
+  const many = Array.from({ length: 30 }, (_, i) => pane(`w/${i}.0`, { attention: 'done', attentionAt: NOW - i }))
+  page = inboxPage(model(many, { inbox: waiting(many) }), NOW)
+  assert.equal(page.items.length, INBOX_ROWS)
+})
+
+test('a question with choices: its rows lead the answers, the confirmation says answer', () => {
+  const p = pane('w/0.0', { title: 'build', attention: 'question', choices: ['yes', 'no'] })
+  const choices = p.choices.map(choiceAnswer)
+  assert.deepEqual(answersPage(model([p]), p, choices, null, true).items.slice(0, 4), ['» yes', '» no', '» Say it', 'Enter'])
+  assert.deepEqual(answersPage(model([p]), p, [], null, false).items.slice(0, 1), ['Enter'])
+  assert.deepEqual(choiceAnswer('deploy'), { label: '» deploy', short: 'deploy', pieces: [], choice: 'deploy' })
+  assert.ok(confirmPage(model([p]), p, choices[0]).hint.startsWith('answer yes to build?'), confirmPage(model([p]), p, choices[0]).hint)
+  assert.ok(confirmPage(model([p]), p, { label: 'Enter', short: 'Enter', pieces: [{ key: 'Enter' }] }).hint.startsWith('send Enter to build?'))
 })
 
 test('the layout: panes, then in selection mode the actions', () => {
@@ -62,8 +119,8 @@ test('the layout: panes, then in selection mode the actions', () => {
   assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane'], 'actions outside selection mode')
   l = listLayout(model(panes, { selected: ['alice-laptop/w/2.0'], selecting: true }), NOW)
   assert.deepEqual(l.what.map((w) => w.kind), ['pane', 'pane', 'pane', 'clear'])
-  assert.equal(l.items[1], '[x] · two · claude · active')
-  assert.equal(l.items[0], '[ ] · one · claude · active')
+  assert.equal(l.items[1], '[x] · two · Claude · active')
+  assert.equal(l.items[0], '[ ] · one · Claude · active')
   l = listLayout(model(panes, { selecting: true }), NOW)
   assert.deepEqual(l.items.slice(3), ['→ leave selection'])
   l = listLayout(model(panes, { selected: ['alice-laptop/w/3.0', 'alice-laptop/w/1.0'], selecting: true }), NOW)
@@ -124,7 +181,7 @@ test('the suggestion: not drawn, offered first, its text and Enter', () => {
   assert.equal(page.charts.length, 0, 'the title is text')
   const offer = offerOf(p, CLAUDE, true)!
   assert.deepEqual(offer.pieces, [{ text: 'run the tests again' }, { key: 'Enter' }])
-  assert.deepEqual(answersPage(model([p]), p, offer, true).items.slice(0, 3), ['» "run the tests again"', '» Say it', 'Enter'])
+  assert.deepEqual(answersPage(model([p]), p, [], offer, true).items.slice(0, 3), ['» "run the tests again"', '» Say it', 'Enter'])
   assert.equal(offerOf(p, ['a', '────────', '❯ ', '────────'], true), null)
   assert.equal(offerOf(p, ['a', '────────', '❯ Try "fix the bug"', '────────'], true), null)
   assert.equal(offerOf(pane('w/1.0', { writable: false }), CLAUDE, true), null)
@@ -160,10 +217,10 @@ test('the columns: text titles, the mark, eight lines', () => {
   const sel = ['alice-laptop/w/1.0', 'alice-laptop/w/2.0']
   let page = splitPage(model(panes, { selected: sel, reading: () => reading }))
   assert.equal(page.charts.length, 0)
-  assert.deepEqual(page.blocks.filter((b) => b.name?.startsWith('title')).map((b) => b.lines[0]), ['· one · claude', '· two · claude'])
+  assert.deepEqual(page.blocks.filter((b) => b.name?.startsWith('title')).map((b) => b.lines[0]), ['· one · Claude', '· two · Claude'])
   assert.equal(page.blocks.find((b) => b.name === 'col0')!.lines.length, 8)
   assert.equal(page.hint, '▽ pick a pane · ● refresh · ×× the list')
   page = splitPage(model(panes, { selected: sel, marked: 1, reading: () => reading }))
-  assert.equal(page.blocks.find((b) => b.name === 'title1')!.lines[0], '» · two · claude')
+  assert.equal(page.blocks.find((b) => b.name === 'title1')!.lines[0], '» · two · Claude')
   assert.equal(page.hint, '▽ next pane · ● open two · ×× the list')
 })

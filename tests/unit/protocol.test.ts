@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkHubUrl, checkToken, errorWords, paneName, parseEvents, parseHosts, parsePanes } from '../../src/protocol.ts'
+import { agentOf, agentName, checkHubUrl, checkToken, errorWords, paneName, parseChoices, parseEvents, parseHosts, parseInbox, parsePanes } from '../../src/protocol.ts'
 
 const NOW = 1_800_000_000
 const pane = (o: Record<string, unknown>) => ({ address: 'alice-laptop/work/0.0', mode: 'write', command: 'bash', title: 'test-pane', activity: NOW - 60, ...o })
@@ -31,6 +31,49 @@ test('parsePanes: fields, skipped entries, cleaned and cut names, times clamped'
   ])
   assert.equal(panes[0].attentionText, 'Claude needs [1myou')
   assert.deepEqual(panes.map(paneName), ['build', 'logs', 'x'.repeat(64), 'ab'])
+})
+
+test('agentOf: every harness by its command, three by their name in the title under an interpreter, Claude by its spark', () => {
+  assert.deepEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'copilot', 'aider', 'goose', 'amp', 'cursor-agent'].map((c) => agentOf(c, 'x')),
+    ['claude', 'codex', 'gemini', 'antigravity', 'opencode', 'copilot', 'aider', 'goose', 'amp', 'cursor'])
+  assert.equal(agentOf('bash', '✳ build'), 'claude')
+  assert.equal(agentOf('bash', '✳'), 'claude')
+  // The hub spells the spark as * only in text mode; a listing is JSON, so a * in a title is any program's.
+  assert.equal(agentOf('bash', '* build'), '')
+  assert.equal(agentOf('node', 'gemini'), 'gemini')
+  assert.equal(agentOf('python3', 'Antigravity · notes'), 'antigravity')
+  assert.equal(agentOf('bun', 'GitHub Copilot'), 'copilot')
+  assert.deepEqual([agentOf('node', 'server'), agentOf('bash', 'gemini'), agentOf('vim', 'codex.md'), agentOf('', '')], ['', '', '', ''])
+  assert.deepEqual(['claude', 'codex', 'antigravity', 'opencode', 'aider'].map((a) => agentName(a as never)), ['Claude', 'Codex', 'Antigravity', 'OpenCode', 'aider'])
+  const p = parsePanes(JSON.stringify({ panes: [pane({ command: 'codex', title: 'codex' }), pane({ command: 'node', title: 'copilot' })] }), NOW)
+  assert.deepEqual(p.map((x) => x.agent), ['codex', 'copilot'])
+})
+
+test('parseChoices: two to eight distinct clean lines of 1 to 40 characters without a bar, else none', () => {
+  assert.deepEqual(parseChoices(['yes', 'no']), ['yes', 'no'])
+  assert.deepEqual(parseChoices(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']), ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+  for (const bad of [['yes'], Array.from({ length: 9 }, (_, i) => 'c' + i), ['yes', 'x'.repeat(41)], ['yes', 'a|b'], ['yes', 'a\x1bb'], ['yes', ' no'], ['yes', 'yes'], ['yes', 7], 'yes', null, ['yes', '']]) {
+    assert.deepEqual(parseChoices(bad), [], JSON.stringify(bad))
+  }
+  const body = JSON.stringify({ panes: [
+    pane({ attention: { kind: 'question', at: NOW - 1, text: 'deploy?', choices: ['yes', 'no'] } }),
+    pane({ address: 'alice-laptop/work/1.0', attention: { kind: 'permission', at: NOW - 1, text: 'run it?', choices: ['yes', 'no'] } }),
+    pane({ address: 'alice-laptop/work/2.0', attention: { kind: 'question', at: NOW - 1, text: 'x', choices: ['only'] } }),
+  ] })
+  assert.deepEqual(parsePanes(body, NOW).map((p) => p.choices), [['yes', 'no'], [], []])
+})
+
+test('parseInbox: the waiting panes as the hub orders them, nothing without attention', () => {
+  const body = JSON.stringify({ inbox: [
+    pane({ address: 'alice-laptop/work/1.0', command: 'codex', title: 'codex', attention: { kind: 'done', at: NOW - 100, text: 'finished' } }),
+    pane({ attention: { kind: 'question', at: NOW - 50, text: 'deploy?', choices: ['yes', 'no'] } }),
+    pane({ address: 'alice-laptop/work/2.0' }),
+    'junk',
+  ], count: 2 })
+  const inbox = parseInbox(body, NOW)
+  assert.deepEqual(inbox.map((p) => [p.path, p.agent, p.attention, p.choices]), [['work/1.0', 'codex', 'done', []], ['work/0.0', '', 'question', ['yes', 'no']]])
+  assert.deepEqual(parseInbox('{"panes":[]}'), [])
+  assert.deepEqual(parseInbox('nope'), [])
 })
 
 test('parsePanes: junk, no list, and 2000 panes', () => {
@@ -71,12 +114,16 @@ test('parseEvents: events and the cursor, hostile text, bad cursors', () => {
         { seq: 14, address: 'h/x/0.0', kind: 'nonsense', text: 't' },
         { seq: 15, at: 2, address: 'h/@x', kind: 'done', text: 'y'.repeat(10000) },
         { seq: 16, at: 2, address: 'h/x', kind: 'done', text: 'not an address' },
+        { seq: 17, at: 3, address: 'h/work/0.0', kind: 'question', text: 'deploy?', choices: ['yes', 'no'] },
+        { seq: 18, at: 3, address: 'h/work/0.0', kind: 'question', text: 'deploy?', choices: ['yes', 'a|b'] },
+        { seq: 19, at: 3, address: 'h/work/0.0', kind: 'done', text: 'x', choices: ['yes', 'no'] },
       ],
       next: 15,
     }),
   )
   assert.equal(r.next, 15)
-  assert.deepEqual(r.events.map((e) => [e.seq, e.kind, e.text.length]), [[12, 'permission', 19], [13, 'working', 0], [15, 'done', 200]])
+  assert.deepEqual(r.events.map((e) => [e.seq, e.kind, e.text.length]), [[12, 'permission', 19], [13, 'working', 0], [15, 'done', 200], [17, 'question', 7], [18, 'question', 7], [19, 'done', 1]])
+  assert.deepEqual(r.events.slice(3).map((e) => e.choices), [['yes', 'no'], [], []])
   assert.equal(parseEvents('{"next":"abc"}').next, null)
   assert.equal(parseEvents('{"next":-1}').next, null)
   assert.deepEqual(parseEvents('garbage'), { events: [], next: null })
@@ -99,6 +146,7 @@ test('checkToken', () => {
 test('errorWords', () => {
   assert.equal(errorWords(401), 'token refused')
   assert.equal(errorWords(503), 'host offline')
+  assert.equal(errorWords(409), 'no question there now')
   assert.equal(errorWords(0), 'no connection')
   assert.equal(errorWords(418), 'error 418')
 })
