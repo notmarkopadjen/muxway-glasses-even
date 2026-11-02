@@ -74,6 +74,14 @@ class Core:
             raise RuntimeError(f"muxway {' '.join(args[:3])}: {out.stderr.strip()}")
         return out.stdout.strip()
 
+    def client(self, token, *args):
+        """What an agent in a pane does with muxway client: the hub and the token from the environment."""
+        env = {**os.environ, "MUXWAY_HUB": self.url, "MUXWAY_TOKEN": token}
+        out = subprocess.run([str(self.bin), "client", *args], capture_output=True, text=True, timeout=30, env=env)
+        if out.returncode != 0:
+            raise RuntimeError(f"muxway client {' '.join(args[:2])}: {out.stderr.strip()}")
+        return out.stdout.strip()
+
     def spawn(self, name, *args):
         log = open(self.logs / f"{name}.log", "a")
         self.procs[name] = subprocess.Popen([str(self.bin), *args], stdout=log, stderr=log)
@@ -329,6 +337,17 @@ class Proxy:
                     data = json.dumps({"panes": [{"address": f"{HOST}/work/0.0", "mode": "write", "command": "bash", "title": "j" * (1 << 20),
                                                  "attention": {"kind": {"deep": [1, 2]}, "at": "x"}, "activity": [1]}, None, 7, {"address": 5}],
                                        "extra": {"a": {"b": {"c": list(range(1000))}}}}).encode()
+                if proxy.mode == "talk-hostile" and bare == "/v1/panes":
+                    # Talk and mail that break every rule: 600 partners, one of 300 characters, a partner that is not
+                    # listed, a count of a billion, a negative one and one that is a string.
+                    now = int(time.time())
+                    many = [{"address": f"{HOST}/work/{i}.0", "pane_id": f"%{i}", "at": now, "way": "to"} for i in range(3, 603)]
+                    pane = lambda path, **kw: {"address": f"{HOST}/work/{path}", "mode": "write", "command": "bash", "activity": now, **kw}
+                    data = json.dumps({"panes": [
+                        pane("0.0", title="test-pane", talk=many + [{"address": "x" * 300}, {"address": f"{HOST}/work/1.0", "way": "both"}], mail={"unread": 10 ** 9, "at": now}),
+                        pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}),
+                        pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}),
+                    ]}).encode()
                 keep = ("etag", "content-type", "access-control-allow-origin", "access-control-allow-methods",
                         "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age")
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})

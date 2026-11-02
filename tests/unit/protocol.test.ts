@@ -150,3 +150,27 @@ test('errorWords', () => {
   assert.equal(errorWords(0), 'no connection')
   assert.equal(errorWords(418), 'error 418')
 })
+
+test('parsePanes: talk partners and unread mail within their caps, junk ignored', () => {
+  const partners = Array.from({ length: 40 }, (_, i) => ({ address: `alice-laptop/work/${i}.0`, pane_id: `%${i}`, at: NOW, way: 'to' }))
+  const body = JSON.stringify({
+    panes: [
+      pane({ talk: [{ address: 'alice-laptop/work/1.0', pane_id: '%1', at: NOW, way: 'to' }, { address: 'alice-laptop/work/1.0' }, { address: 'bob-desktop/work/0.0', way: 'from' }], mail: { unread: 2, at: NOW } }),
+      pane({ address: 'alice-laptop/work/1.0', talk: partners, mail: { unread: 1e9, at: NOW } }),
+      pane({ address: 'alice-laptop/work/2.0', talk: [{ address: 'x'.repeat(300) }, { address: 'UPPER/x' }, 'alice-laptop/work/0.0', null], mail: { unread: -1 } }),
+      pane({ address: 'alice-laptop/work/3.0', talk: 'alice-laptop/work/0.0', mail: { unread: '3' } }),
+      pane({ address: 'alice-laptop/work/4.0', talk: { address: 'alice-laptop/work/0.0' }, mail: 5 }),
+      pane({ address: 'alice-laptop/work/5.0', mail: { unread: 2.5 } }),
+    ],
+  })
+  const panes = parsePanes(body, NOW)
+  assert.equal(panes.length, 6)
+  assert.deepEqual(panes[0].talk, ['alice-laptop/work/1.0', 'bob-desktop/work/0.0'])
+  assert.equal(panes[0].mail, 2)
+  assert.equal(panes[1].talk.length, 32)
+  assert.equal(panes[1].mail, 999)
+  assert.deepEqual(panes.slice(2).map((p) => [p.talk, p.mail]), [[[], 0], [[], 0], [[], 0], [[], 0]])
+  // A pane without the fields is a pane without talk or mail.
+  const plain = parsePanes(JSON.stringify({ panes: [pane({})] }), NOW)[0]
+  assert.deepEqual([plain.talk, plain.mail], [[], 0])
+})

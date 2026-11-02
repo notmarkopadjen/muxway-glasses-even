@@ -5,12 +5,13 @@ import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
 import { HINT_Y, LINE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, waiting, type Model } from '../../src/views.ts'
+import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, ...extra }
   return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
@@ -223,4 +224,32 @@ test('the columns: text titles, the mark, eight lines', () => {
   page = splitPage(model(panes, { selected: sel, marked: 1, reading: () => reading }))
   assert.equal(page.blocks.find((b) => b.name === 'title1')!.lines[0], '» · two · Claude')
   assert.equal(page.hint, '▽ next pane · ● open two · ×× the list')
+})
+
+test('a group is kept together after its first member, waiting panes still first', () => {
+  const panes = [pane('work/0.0', { attention: 'question' }), pane('work/1.0', { talk: ['alice-laptop/work/3.0'] }), pane('work/2.0'), pane('work/3.0', { talk: ['alice-laptop/work/1.0'] }), pane('work/4.0', { attention: 'done' })]
+  assert.deepEqual(sorted(panes).map((p) => p.path), ['work/0.0', 'work/4.0', 'work/1.0', 'work/3.0', 'work/2.0'])
+  // A waiting member pulls its partner up to it.
+  const up = [pane('work/0.0'), pane('work/1.0', { talk: ['alice-laptop/work/3.0'] }), pane('work/3.0', { attention: 'permission' })]
+  assert.deepEqual(sorted(up).map((p) => p.path), ['work/3.0', 'work/1.0', 'work/0.0'])
+})
+
+test('rows of a group start with the bar and a pane with mail says so after its name', () => {
+  const a = pane('work/1.0', { title: 'build', command: 'codex', talk: ['alice-laptop/work/2.0'], mail: 1 })
+  const b = pane('work/2.0', { title: 'tests', command: 'claude', talk: ['alice-laptop/work/1.0'] })
+  const lone = pane('work/0.0', { title: 'test-pane', command: 'bash', talk: ['alice-laptop/work/9.0'], mail: 3 })
+  const m = model([lone, a, b])
+  assert.deepEqual(listLayout(m, NOW).items, ['· test-pane · mail 3 · bash · active', '│ · build · mail 1 · Codex · active', '│ · tests · Claude · active'])
+  // In selection mode the bar comes before the box.
+  assert.equal(listLayout(model([lone, a, b], { selecting: true, selected: [a.address] }), NOW).items[1], '│ [x] · build · mail 1 · Codex · active')
+  assert.equal(rowLabel(a, NOW), '· build · mail 1 · Codex · active')
+  // The titles carry the same.
+  const groups = groupsOf(m.panes)
+  assert.equal(titleOf(a, groups), '│ · build · mail 1 · Codex')
+  assert.equal(titleOf(lone, groups), '· test-pane · mail 3 · bash')
+  const title = panePage(m, b, undefined, { offset: 0, reveal: false, state: 'following' }).blocks.find((bl) => bl.name === 'title')
+  assert.equal(title?.lines[0], '│ · tests · Claude')
+  // Nothing of it in the hint: no count, no toast.
+  const page = listPage(m, NOW)
+  assert.ok(!page.hint.includes('mail'), page.hint)
 })

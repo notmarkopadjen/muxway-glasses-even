@@ -25,7 +25,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | Call | How | For |
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
-| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `attention` (with a question's `choices`), `activity`; hosts online or not |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `attention` (with a question's `choices`), `activity`, `talk` (the partners of the last ten minutes, for the group's bar), `mail` (the unread count after the name); hosts online or not |
 | `GET /v1/inbox` | JSON | the inbox page: every pane that waits, oldest first, read when the page opens and with every listing while it is open |
 | `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |

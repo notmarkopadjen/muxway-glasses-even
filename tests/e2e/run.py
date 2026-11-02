@@ -40,7 +40,12 @@ class Run:
         self.secrets = []
         self.shots = {}
         self.cleanups = []
-        self.display = f":{90 + os.getpid() % 900}"
+        # A display nobody holds: Xvfb fails quietly on a taken one, and every
+        # simulator then times out.
+        n = 90 + os.getpid() % 900
+        while os.path.exists(f"/tmp/.X{n}-lock"):
+            n += 1
+        self.display = f":{n}"
         self.xvfb = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "1400x900x24", "-nolisten", "tcp"],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
@@ -453,6 +458,19 @@ def s42(run, name):
     sim.choose(1)
     sim.head("no question there now", "the words", 10)
     sim.shot("no-question")
+
+
+@test("S50", "Hostile talk and mail from the proxy: 600 partners, one of 300 characters, a lone pane's unlisted partner, counts of a billion, minus one and a string: rows within the budget, the bar only where both panes are listed, the page accepted", "e2e-security")
+def s50(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="talk-hostile")
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3, "three rows", 20)
+    check(rows(page)[0].startswith("│ · test-pane · mail 999 · bash · "), rows(page))
+    check(rows(page)[1].startswith("│ · build · bash · "), rows(page))
+    check(rows(page)[2].startswith("· lone · bash · "), rows(page))
+    check(all(len(r.encode()) <= 63 for r in rows(page)), [len(r.encode()) for r in rows(page)])
+    check("mail" not in page["hint"] and not page.get("hintBorder"), page["hint"])
+    sim.shot("talk-hostile")
+    check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
 
 
 @test("S25", "No transcriber: no Say it row; a hub that offers one and then fails: an error line, nothing sent", "e2e-security")
@@ -879,6 +897,30 @@ def f42(run, name):
     sim.tap()
     page = sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "· test-pane · Codex" for b in p["blocks"]), "the pane names Codex", 10)
     sim.shot("pane-codex")
+
+
+@test("F50", "A write and a mail from one pane to another, each naming its origin: the two rows kept together behind the bar, mail 1 after the name, the third pane without a bar, the title the same, no toast", "UI")
+def f50(run, name):
+    def before(core):
+        core.new_window("build")
+        core.new_window("tests")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3, "three rows", 20)
+    check(rows(page) == ["· test-pane · bash · active", "· build · bash · active", "· tests · bash · active"], rows(page))
+    sim.shot("list-before")
+    origin = f"{HOST}/{core.pane_id('work:0.0')}"
+    core.client(tok, "send", f"{HOST}/work/tests.0", "echo hi", "--from", origin)
+    core.client(tok, "mail", f"{HOST}/work/tests.0", "run the tests and tell me", "--from", origin)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3 and rows(p)[1].startswith("│ · tests · mail 1 · bash · "), "the group and the mail", 15)
+    check(rows(page)[0].startswith("│ · test-pane · bash · "), rows(page))
+    check(rows(page)[2].startswith("· build · bash · "), rows(page))
+    check("mail" not in page["hint"] and not page.get("hintBorder"), page["hint"])
+    sim.shot("talk-list")
+    sim.pick(1)
+    sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "│ · tests · mail 1 · bash" for b in p["blocks"]), "the title with the bar and the mail", 10)
+    wait_for("following", lambda: "following" in sim.state(), 10)
+    sim.shot("talk-pane")
+    check(not any(r["path"] == "/v1/talk" or r["path"].endswith("/mail") for r in proxy.requests if r["headers"].get("Origin") is not None), "the app read the feed or mailed")
 
 
 @test("F32", "Hold starts selection mode with the row selected, taps select more, the open row appears, both columns follow; three at most; clear", "UI")

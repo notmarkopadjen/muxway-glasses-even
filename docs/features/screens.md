@@ -65,8 +65,8 @@ before the hub has said so.
   ⚑ inbox · 2 waiting
   [x] ★ build · Claude · needs permission
   [x] ● tests · bash · done
-> [ ] · logs · tail · active
-  [ ] · api · Codex · working
+> │ [ ] · logs · mail 1 · tail · active
+  │ [ ] · api · Codex · working
   → open 2 side by side
   → clear selection
 
@@ -104,6 +104,19 @@ and the rows slide under it. With more panes than rows the hint starts
 with where the window sits, `4–10 of 200`; a host that is offline is
 named there first, `○ alice-laptop offline`. A **tap** opens the pane
 under the cursor.
+
+Panes that **talked** to each other in the last ten minutes (a write or
+a mail that named the pane it came from, partners of partners included,
+from the listing's `talk`) form a **group**: their rows are kept
+together after the group's first row, and each starts with a bar, `│`,
+one bar down the stretch where the web draws a frame in the talk hue.
+A pane whose process holds unread **mail** says so right after its
+name, `· mail 1`, from the listing's `mail`; the word stands where the
+web puts `✉ n`, because the firmware font drops glyphs it lacks and
+the envelope has not been seen on the glasses. Nothing is announced
+for a message: no toast, no count in the hint. The messages themselves
+(`GET /v1/talk`), mailing the open pane and laying the partner beside
+are follow-ups.
 
 A **hold** starts **selection mode** with that pane selected: every pane
 row gets a box, `[x]` or `[ ]`, a tap on a row selects or unselects it,
@@ -174,8 +187,8 @@ to the list with the selection kept.
 ▽ page · ● answer · ≡ menu · ×× back
 ```
 
-The **title** (mark, name, program) with the pane's **state** beside
-it: the attention in words (`asks a question`, `needs permission`,
+The **title** (the bar when the pane is in a group, mark, name, its
+mail, program) with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
 the error (`host offline`, `no connection`, `not found`); after an
 answer the state flashes what happened for a few seconds (`sent y,
