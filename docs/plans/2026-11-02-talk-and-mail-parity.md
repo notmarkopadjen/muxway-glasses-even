@@ -190,5 +190,4 @@ function.
 
 ## Test run
 
-Owed: the box the change was made on had no disk for a run; the pull
-request's CI runs the suite against the core's `main`.
+Run 20261102-133914-b6f60fe, recorded as [issue #34](https://github.com/notmarkopadjen/muxway-glasses-even/issues/34): 98 tests passed, none failed, against the core's `text-columns` branch (main plus the text listing's mail and talk columns, which the glasses do not read). The branch's first CI run failed in S07 (a repeated address lost its rows to the grouping) and F50 (its first check read the program as the name); both fixed in b6f60fe. A full local run before the recorded one lost every simulator to a taken X display; the suite now picks a free one.
