@@ -40,21 +40,22 @@ export function groupsOf(panes: Pane[]): Groups {
   return groups
 }
 
-/** The members of a group right after its first member in the rows' order; everything else keeps its place. */
+/** The members of a group right after its first member in the rows' order; everything else keeps its place. Rows are moved by position, so two rows at one address both stay. */
 export function pullTogether<T extends { address: string }>(rows: T[], groups: Groups): T[] {
   const out: T[] = []
-  const done = new Set<string>()
-  for (const r of rows) {
-    if (done.has(r.address)) continue
+  const done = new Set<number>()
+  rows.forEach((r, i) => {
+    if (done.has(i)) return
     out.push(r)
-    done.add(r.address)
+    done.add(i)
     const g = groups.get(r.address)
-    if (g === undefined) continue
-    for (const s of rows)
-      if (!done.has(s.address) && groups.get(s.address) === g) {
+    if (g === undefined) return
+    rows.forEach((s, j) => {
+      if (!done.has(j) && groups.get(s.address) === g) {
         out.push(s)
-        done.add(s.address)
+        done.add(j)
       }
-  }
+    })
+  })
   return out
 }

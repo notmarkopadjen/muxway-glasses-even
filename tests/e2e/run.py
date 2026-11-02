@@ -901,7 +901,7 @@ def f50(run, name):
         core.new_window("tests")
     core, proxy, sim, tok = setup(run, name, before=before)
     page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3, "three rows", 20)
-    check([r.split(" · ")[1] for r in rows(page)] == ["test-pane", "build", "tests"], rows(page))
+    check(rows(page) == ["· test-pane · bash · active", "· build · bash · active", "· tests · bash · active"], rows(page))
     sim.shot("list-before")
     origin = f"{HOST}/{core.pane_id('work:0.0')}"
     core.client(tok, "send", f"{HOST}/work/tests.0", "echo hi", "--from", origin)

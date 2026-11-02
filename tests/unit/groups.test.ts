@@ -35,3 +35,12 @@ test('pullTogether puts a group after its first member and leaves the rest in pl
   // Without groups nothing moves.
   assert.deepEqual(pullTogether(panes, new Map()).map((p) => p.path), panes.map((p) => p.path))
 })
+
+test('pullTogether keeps every row of a repeated address, grouped or not', () => {
+  // A hostile listing may name one address five times; every row stays.
+  const same = [pane('work/0.0'), pane('work/0.0'), pane('work/0.0')]
+  assert.equal(pullTogether(same, new Map()).length, 3)
+  const panes = [pane('work/0.0', ['work/2.0']), pane('work/1.0'), pane('work/2.0'), pane('work/0.0')]
+  const rows = pullTogether(panes, groupsOf(panes))
+  assert.deepEqual(rows.map((p) => p.path), ['work/0.0', 'work/2.0', 'work/0.0', 'work/1.0'])
+})
