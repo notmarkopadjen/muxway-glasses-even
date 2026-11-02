@@ -43,6 +43,8 @@ export const MAX_BLOCKS = 7
 export const MAX_CHARTS = 4
 /** Inner padding of a bordered block; a plain block has none, so whole lines fit. */
 export const BORDER_PAD = 6
+/** The banner's padding: the hint line grows upward by twice this, so its one row fits without a scrollbar. */
+export const BANNER_PAD = 3
 
 const ID_HINT = 2
 const ID_LIST = 3
@@ -137,7 +139,7 @@ export class Glasses {
     this.trace = trace
   }
 
-  private text(id: number, name: string, x: number, y: number, w: number, h: number, content: string, lvl: number, capture: number, z: number, border = false) {
+  private text(id: number, name: string, x: number, y: number, w: number, h: number, content: string, lvl: number, capture: number, z: number, border = false, pad = BORDER_PAD) {
     return new TextContainerProperty({
       zOrderIndex: z,
       xPosition: x,
@@ -147,7 +149,7 @@ export class Glasses {
       borderWidth: border ? 1 : 0,
       borderColor: border ? 4 : 0,
       borderRadius: 0,
-      paddingLength: border ? BORDER_PAD : 0,
+      paddingLength: border ? pad : 0,
       containerID: id,
       containerName: name,
       isEventCapture: capture,
@@ -157,8 +159,10 @@ export class Glasses {
   }
 
   private payload(p: Page) {
-    // On a dash page the hint takes the gestures; on a list page the list does.
-    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y, CANVAS_W, HINT_H, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, 2, !!p.hintBorder)]
+    // On a dash page the hint takes the gestures; on a list page the list does. A banner is
+    // taller by its padding and above the blocks, so its border is whole.
+    const grow = p.hintBorder ? 2 * BANNER_PAD : 0
+    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y - grow, CANVAS_W, HINT_H + grow, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, p.hintBorder ? 10 : 2, !!p.hintBorder, BANNER_PAD)]
     p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
