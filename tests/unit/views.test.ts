@@ -3,9 +3,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
-import { HINT_Y, LINE_H } from '../../src/glasses.ts'
+import { BANNER_Y, LINE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
@@ -47,9 +47,11 @@ test('the state word says only what is known', () => {
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 60 }), NOW), 'quiet 1m')
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 4 * 3600 }), NOW), 'quiet 4h')
   assert.equal(stateWord(pane('a/0.0', { activity: 0 }), NOW), '')
-  // The harness said working: the word, while the pane still moves.
+  // The harness said working: the word until its next event, however still the screen.
   assert.equal(stateWord(pane('a/0.0', { working: true }), NOW), 'working')
-  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'quiet 1m')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 4 * 3600 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: 0 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, attention: 'done' }), NOW), 'done')
   // A time ahead of now is clamped by the parser; here it must not go negative either.
   assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'active')
@@ -64,8 +66,8 @@ test('the marks: the attention\'s, the half circle turned by the second while wo
   assert.equal(markOf(pane('a/0.0', { activity: NOW - 400 }), NOW), '◌')
   assert.equal(markOf(pane('a/0.0', { working: true }), NOW), '◐')
   assert.equal(markOf(pane('a/0.0', { working: true }), NOW + 1), '◑')
-  // Working with the screen still for a minute is quiet; the attention wins over working.
-  assert.equal(markOf(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), '◌')
+  // The harness's word wins over the screen's age; the attention wins over working.
+  assert.equal(markOf(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), '◐')
   assert.equal(markOf(pane('a/0.0', { working: true, attention: 'done' }), NOW), '√')
 })
 
@@ -195,6 +197,31 @@ test('before the first listing: one row and the dots in the hint', () => {
   assert.deepEqual(listLayout(model([]), NOW).items, ['no panes exposed to this token'])
 })
 
+test('every page ends above the banner: a toast grows the hint upward and the glasses refuse an overlap', () => {
+  const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' })]
+  const reading = { raw: Array.from({ length: 40 }, (_, i) => 'line ' + i), error: null }
+  const m = model(panes, { toast: 'done: one', selected: ['alice-laptop/w/1.0', 'alice-laptop/w/2.0'], reading: () => reading })
+  const p = panes[0]
+  const voice = { phase: 'recording' as const, seconds: 12, text: 'W'.repeat(OFFER_BYTES), error: '', levels: [1, 2, 3] }
+  const pages = {
+    list: listPage(model(Array.from({ length: 10 }, (_, i) => pane(`w/${i}.0`)), { toast: 'x' }), NOW),
+    columns: splitPage(m),
+    pane: panePage(m, p, reading, { offset: 0, reveal: false, state: 'following' }),
+    offer: offerPage(m, p, { label: '"x"', short: '"x"', pieces: [{ text: 'W'.repeat(OFFER_BYTES) }, { key: 'Enter' }] }),
+    listening: listenPage(m, p, voice),
+    transcribing: listenPage(m, p, { ...voice, phase: 'working' }),
+    failed: listenPage(m, p, { ...voice, phase: 'error', error: 'too short' }),
+    heard: heardPage(m, p, { ...voice, phase: 'review' }),
+  }
+  for (const [name, page] of Object.entries(pages)) {
+    assert.ok(page.blocks.length > 0, `${name} draws blocks`)
+    for (const b of page.blocks) assert.ok(b.y + b.h <= BANNER_Y, `${name}: ${b.name} ends at ${b.y + b.h}, under the banner at ${BANNER_Y}`)
+  }
+  // The pane keeps its eight lines and the title its one row.
+  assert.equal(pages.pane.blocks.find((b) => b.name === 'body')!.lines.length, 8)
+  assert.equal(pages.pane.blocks.find((b) => b.name === 'title')!.h, LINE_H)
+})
+
 test('the list: seven rows from the top down to the hint, no head', () => {
   const panes = Array.from({ length: 10 }, (_, i) => pane(`w/${i}.0`))
   const page = listPage(model(panes), NOW)
@@ -202,7 +229,7 @@ test('the list: seven rows from the top down to the hint, no head', () => {
   assert.equal(page.blocks.length, 7)
   assert.equal(page.blocks[0].y, 0)
   const last = page.blocks[6]
-  assert.ok(last.y + last.h <= HINT_Y && HINT_Y - (last.y + last.h) < LINE_H, `the last row ends at ${last.y + last.h}`)
+  assert.ok(last.y + last.h <= BANNER_Y && BANNER_Y - (last.y + last.h) < LINE_H, `the last row ends at ${last.y + last.h}`)
   assert.equal('head' in page, false)
 })
 
@@ -214,7 +241,7 @@ test('the suggestion: not drawn, offered first, its text and Enter', () => {
   const page = panePage(model([p], { reading: () => reading }), p, reading, { offset: 0, reveal: false, state: 'following' }, NOW)
   const body = page.blocks.find((b) => b.name === 'body')!
   assert.ok(!body.lines.some((l) => l.includes('run the tests')), 'the suggestion is on the pane')
-  assert.equal(body.lines.length, Math.floor((HINT_Y - 30) / LINE_H))
+  assert.equal(body.lines.length, 8)
   assert.equal(page.blocks.filter((b) => b.name === 'pinned').length, 0)
   assert.equal(page.charts.length, 0, 'the title is text')
   const offer = offerOf(p, CLAUDE, true)!
@@ -246,7 +273,7 @@ test('the suggestion needs the hub to name claude, and fits its confirmation who
   const page = offerPage(model([p]), p, offerOf(p, ['a', '────────', '❯ ' + 'W'.repeat(OFFER_BYTES), '────────'], true)!)
   const box = page.blocks.find((b) => b.name === 'text')!
   assert.equal(box.lines.join(''), 'W'.repeat(OFFER_BYTES), 'the box shows every character')
-  assert.ok(box.y + box.h <= HINT_Y, 'the box ends above the hint')
+  assert.ok(box.y + box.h <= BANNER_Y, 'the box ends above the banner')
 })
 
 test('the columns: text titles, the mark, eight lines', () => {

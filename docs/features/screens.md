@@ -89,7 +89,7 @@ says only what is known:
 |---|---|
 | a question or a permission | `asks a question`, `needs permission` |
 | done, idle | `done`, `idle` |
-| working, in its last event, and the pane still moves | `working` |
+| working, in its last event | `working` |
 | nothing, and the pane wrote something in the last minute | `active` |
 | nothing, and the pane has been silent for a minute or more | `quiet 4m` |
 
@@ -97,7 +97,8 @@ says only what is known:
 A Claude Code at work redraws its spinner, so it is `active`; one
 waiting at its prompt is `quiet` and the age grows. `working` is the
 harness's own word, from its hook or the host's watcher
-([notifications](notifications.md)), and lasts while the pane moves.
+([notifications](notifications.md)), and lasts until its next event,
+however still the screen: a long tool call draws nothing for minutes.
 
 The mark and the word are the whole of a state on the glasses: the
 display has no paint for one. A working pane's row and title are drawn

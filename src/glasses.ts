@@ -45,6 +45,8 @@ export const MAX_CHARTS = 4
 export const BORDER_PAD = 6
 /** The banner's padding: the hint line grows upward by twice this, so its one row fits without a scrollbar. */
 export const BANNER_PAD = 3
+/** The banner's top: no block of any page reaches under it, or the glasses refuse the page. */
+export const BANNER_Y = HINT_Y - 2 * BANNER_PAD
 
 const ID_HINT = 2
 const ID_LIST = 3
