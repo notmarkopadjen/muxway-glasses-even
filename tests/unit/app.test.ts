@@ -8,6 +8,8 @@ import { App } from '../../src/app.ts'
 import { saveSettings } from '../../src/settings.ts'
 
 const LIST = JSON.stringify({ panes: [{ address: 'alice-laptop/work/0.0', mode: 'write', command: 'bash', title: 'test-pane', activity: 1 }] })
+/** The same pane, just written to, so a working event makes it work. */
+const LIVE = () => JSON.stringify({ panes: [{ address: 'alice-laptop/work/0.0', mode: 'write', command: 'codex', title: 'build', activity: Math.floor(Date.now() / 1000) }] })
 const HOSTS = JSON.stringify({ hosts: [{ name: 'alice-laptop', online: true }] })
 
 function fakeBridge() {
@@ -21,7 +23,8 @@ function fakeBridge() {
     createStartUpPageContainer: async (p: unknown) => (b.pages.push(p), 0),
     rebuildPageContainer: async (p: unknown) => (b.pages.push(p), true),
     updateImageRawData: async () => 0,
-    textContainerUpgrade: async () => true,
+    upgrades: [] as string[],
+    textContainerUpgrade: async (u: { content?: string }) => (b.upgrades.push(u.content ?? ''), true),
     shutDownPageContainer: async () => true,
     setLocalStorage: async () => true,
     getLocalStorage: async () => '',
@@ -31,8 +34,9 @@ function fakeBridge() {
   return b
 }
 
-function fakeHub(stt = false) {
+function fakeHub(stt = false, working = false) {
   const calls: string[] = []
+  let told = false
   const bodies: unknown[] = []
   const fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
     const u = String(url)
@@ -45,6 +49,10 @@ function fakeHub(stt = false) {
     }
     if (u.includes('/v1/events')) {
       if (u.includes('wait=')) await new Promise((r) => setTimeout(r, 300))
+      if (working && u.includes('wait=') && !told) {
+        told = true
+        return new Response(JSON.stringify({ events: [{ seq: 1, at: 1, address: 'alice-laptop/work/0.0', kind: 'working', text: '' }], next: 2 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
       return new Response('{"events":[],"next":1}', { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
     if (u.includes('/v1/hosts')) return new Response(HOSTS, { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -52,7 +60,7 @@ function fakeHub(stt = false) {
       if ((init?.headers as Record<string, string>)?.['If-None-Match'] === '"v1"') return new Response(null, { status: 304 })
       return new Response('$ make\nok\n$ \n', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', ETag: '"v1"' } })
     }
-    if (u.includes('/v1/panes')) return new Response(LIST, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    if (u.includes('/v1/panes')) return new Response(working ? LIVE() : LIST, { status: 200, headers: { 'Content-Type': 'application/json' } })
     return new Response(null, { status: 204 })
   }
   return { calls, bodies, fetch }
@@ -148,4 +156,27 @@ test('without a transcriber the answers offer no Say it', async () => {
   assert.equal(answers.listObject?.[0].itemContainer.itemName[0], 'Enter')
   app.stop()
   await sleep(300)
+})
+
+test('a working mark turns once a second, in place, and stops with the foreground', async () => {
+  const hub = fakeHub(false, true)
+  globalThis.fetch = hub.fetch as typeof fetch
+  await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'a'.repeat(43), every: 1 })
+  const bridge = fakeBridge()
+  const app = new App(bridge as never, () => {}, null)
+  await app.start()
+  await sleep(600)
+  const marks = () => bridge.upgrades.filter((c) => c.includes('◐ build') || c.includes('◑ build'))
+  await sleep(2300)
+  const seen = marks()
+  assert.ok(seen.length >= 2, `the mark turned: ${seen.length} upgrades`)
+  assert.ok(seen.some((c) => c.includes('◐')) && seen.some((c) => c.includes('◑')), 'both halves were drawn')
+  assert.equal(bridge.pages.length, 1, 'the turn is an upgrade, not a rebuild')
+  bridge.cb!(sys(OsEventTypeList.FOREGROUND_EXIT_EVENT))
+  await sleep(300)
+  const frozen = marks().length
+  await sleep(2200)
+  assert.equal(marks().length, frozen, 'the mark went on turning in the background')
+  app.stop()
+  await sleep(400)
 })

@@ -83,6 +83,8 @@ export class App {
   private clearTimer: ReturnType<typeof setTimeout> | null = null
   /** Redraws now and then, so a row's "quiet 4m" grows older. */
   private tickTimer: ReturnType<typeof setInterval> | null = null
+  /** Turns a working mark once a second while one is on the screen. */
+  private spinTimer: ReturnType<typeof setInterval> | null = null
   private cursor: number | null = null
   private eventsRunning = false
   private eventsGen = 0
@@ -160,6 +162,7 @@ export class App {
     if (this.tickTimer) clearInterval(this.tickTimer)
     this.listTimer = this.readTimer = null
     this.tickTimer = null
+    this.spin(false)
     this.stopDots()
     this.eventsGen++
     this.eventsRunning = false
@@ -931,7 +934,17 @@ export class App {
   }
 
   private async redraw() {
-    await this.view.show(this.page())
+    const page = this.page()
+    await this.view.show(page)
+    this.spin(this.foreground && V.turning(page))
+  }
+
+  private spin(on: boolean) {
+    if (on && !this.spinTimer) this.spinTimer = setInterval(() => void this.redraw(), 1000)
+    if (!on && this.spinTimer) {
+      clearInterval(this.spinTimer)
+      this.spinTimer = null
+    }
   }
 
   private page(): Page {
