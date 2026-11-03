@@ -142,12 +142,13 @@ function ago(seconds: number, now: number): string {
 
 // --- the list: the main screen ---------------------------------------------------------
 
-/** What a row says about the pane's state: the attention in words, else what its output says. */
+/** What a row says about the pane's state: the attention in words, else the harness's word, else what its output says. */
 export function stateWord(p: Pane, now: number): string {
   if (p.attention) return WORDS[p.attention]
-  if (!p.activity) return p.working ? 'working' : ''
-  if (now - p.activity >= 60) return `quiet ${ago(p.activity, now)}`
-  return p.working ? 'working' : 'active'
+  // A harness is working from its last working event until its next event, however still its screen.
+  if (p.working) return 'working'
+  if (!p.activity) return ''
+  return now - p.activity >= 60 ? `quiet ${ago(p.activity, now)}` : 'active'
 }
 
 /** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]. */
