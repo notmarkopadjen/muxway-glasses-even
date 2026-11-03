@@ -68,9 +68,17 @@ const FOOT_H = BANNER_Y - FOOT_Y
 const BOX_W = LINE_PX - 16
 const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
 
-/** A rule across the page: a bordered block with nothing in it, as high as its line. */
+/** A rule across the page: a bordered block with nothing in it, as high as its line. It takes the gestures. */
 function rule(name: string, y: number): Block {
-  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
+  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0, capture: true }
+}
+
+/** The catcher's side: an unseen square in the top right corner that takes the gestures where no rule does. */
+const CATCH = 16
+/** Width left to a title row beside the catcher. */
+const BESIDE_W = CANVAS_W - CATCH - 4
+function catcher(): Block {
+  return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: CATCH, lines: [''], level: 0, capture: true }
 }
 
 export function needs(p: Pane): boolean {
@@ -165,11 +173,11 @@ export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'non
 }
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
-export const LIST_ROWS = 7
-/** The rows spread down to the banner, so no band is left dark under them. */
-const ROW_PITCH = Math.floor((BANNER_Y - TOP) / LIST_ROWS)
+/** Rows on the list at once: one block of lines at the font's pitch, down to the hint's box. */
+export const LIST_ROWS = Math.floor((BANNER_Y - TOP) / LINE_H)
 export const MAX_SELECTED = 3
-const ROW_W = CANVAS_W - 4
+/** The rows' block leaves the corner to the catcher; a row's text is at most 490 px anyway. */
+const ROW_W = CANVAS_W - CATCH - 6
 
 export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
@@ -230,13 +238,14 @@ export function listPage(m: Model, now: number): Page {
   const { items } = listLayout(m, now)
   const cursor = Math.max(0, Math.min(items.length - 1, m.cursor))
   const start = listWindow(items.length, cursor, m.windowStart)
-  const blocks: Block[] = []
+  // One block of rows, named by where its window starts; the cursor is the mark, since one block has
+  // one brightness. The corner catcher beside it takes the gestures.
+  const lines: string[] = []
   for (let i = 0; i < LIST_ROWS; i++) {
     const at = start + i
-    // The cursor is a mark, not only a brightness: on the glasses the brightest row alone was missed.
-    const text = items[at] === undefined ? ' ' : (at === cursor && m.loaded ? '> ' : '  ') + items[at]
-    blocks.push({ name: 'row' + at, x: 2, y: TOP + i * ROW_PITCH, w: ROW_W, h: ROW_PITCH, lines: [text], level: at === cursor && m.loaded ? 4 : 3 })
+    lines.push(items[at] === undefined ? ' ' : (at === cursor && m.loaded ? '> ' : '  ') + items[at])
   }
+  const blocks: Block[] = [{ name: 'rows' + start, x: 2, y: TOP, w: ROW_W, h: LIST_ROWS * LINE_H, lines, level: 3 }, catcher()]
   // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
   const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
   const offline = m.hosts.filter((h) => !h.online).map((h) => `○ ${h.name} offline · `).join('')
@@ -370,7 +379,7 @@ function textBox(text: string): Block {
 /** The suggestion's confirmation: every word that will be sent, in a box; a tap sends it. */
 export function offerPage(m: Model, p: Pane, a: Answer): Page {
   const text = a.pieces[0]?.text ?? ''
-  const blocks: Block[] = [{ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`send this to ${paneName(p)}?`], level: 4 }, textBox(text)]
+  const blocks: Block[] = [{ name: 'title', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`send this to ${paneName(p)}?`], level: 4 }, textBox(text), catcher()]
   return { kind: 'dash', ...hint(m, '● send + Enter · ×× back'), blocks, charts: [], items: [], menu: [] }
 }
 
@@ -392,25 +401,25 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
   const charts: Chart[] = []
   const name = paneName(p)
   if (v.phase === 'recording') {
-    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
+    blocks.push(catcher(), { name: 'state', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
     const graph = sparkline(v.levels, GRAPH_W, GRAPH_H)
     charts.push(...tiles(graph, 8, BODY_Y, `levels:${v.levels.length}:${v.levels.slice(-6).map((l) => Math.round(l * 20)).join(',')}`))
     blocks.push({ name: 'note', x: 8, y: BODY_Y + GRAPH_H + 24, w: CANVAS_W - 16, h: LINE_H * 2, lines: [`${Math.round(v.seconds)} of 60 s · tap when done`, 'what you say goes to your hub, then to its transcriber'], level: 2 })
     return { kind: 'dash', ...hint(m, '● stop · ×× cancel'), blocks, charts, items: [], menu: [] }
   }
   if (v.phase === 'working') {
-    blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`transcribing ${v.seconds.toFixed(1)} s of audio…`], level: 4 })
+    blocks.push(catcher(), { name: 'state', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`transcribing ${v.seconds.toFixed(1)} s of audio…`], level: 4 })
     blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H * 2 + 12, lines: ['the hub is listening to it', 'a few seconds on a small server'], level: 2, border: true })
     return { kind: 'dash', ...hint(m, '×× cancel'), blocks, charts, items: [], menu: [] }
   }
-  blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [v.error || 'nothing recorded'], level: 4 })
+  blocks.push(catcher(), { name: 'state', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [v.error || 'nothing recorded'], level: 4 })
   blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H + 12, lines: ['tap to say it again'], level: 2, border: true })
   return { kind: 'dash', ...hint(m, '● say it again · ×× cancel'), blocks, charts, items: [], menu: [] }
 }
 
 export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
   const blocks: Block[] = []
-  blocks.push({ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
+  blocks.push(catcher(), { name: 'title', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
   blocks.push(textBox(v.text))
   const menu: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }]
   return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts: [], items: [], menu }

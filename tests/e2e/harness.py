@@ -631,11 +631,13 @@ class Sim:
         self.tap(wait)
 
     def cursor(self, page=None):
-        """The pane list's cursor: the index of its brightest row."""
+        """The pane list's cursor: the index of the row with the mark, in the rows block named by its window start."""
         page = page or self.last()
         for b in page["blocks"]:
-            if b.get("name", "").startswith("row") and b["level"] == 4:
-                return int(b["name"][3:])
+            if b.get("name", "").startswith("rows"):
+                for i, line in enumerate(b["lines"]):
+                    if line.startswith("> "):
+                        return int(b["name"][4:]) + i
         return 0
 
     def move(self, index):

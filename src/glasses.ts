@@ -69,6 +69,8 @@ export interface Block {
   border?: boolean
   /** The border's padding when it is not the default: a rule has none. */
   pad?: number
+  /** The block that takes the gestures: one with nothing to show, so the firmware's scroll of it moves nothing. */
+  capture?: boolean
 }
 
 export interface MenuSpec {
@@ -116,7 +118,7 @@ function geometry(p: Page): string {
   return JSON.stringify([
     p.kind,
     p.items,
-    p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border, b.pad]),
+    p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border, b.pad, !!b.capture]),
     p.charts.map((c) => [c.x, c.y, c.w, c.h]),
     p.menu,
   ])
@@ -164,12 +166,15 @@ export class Glasses {
   }
 
   private payload(p: Page) {
-    // On a dash page the hint takes the gestures; on a list page the list does. The container that
-    // takes them scrolls its text by whatever room it has, so the hint is a box with exactly one
-    // line inside, the banner's shape; its top edge is the rule above the footer on every page, and
-    // a banner is the same box, brighter, so a toast is an upgrade and not a rebuild.
-    const textObject = [this.text(ID_HINT, 'hint', 0, BANNER_Y, CANVAS_W, HINT_H + 2 * BANNER_PAD, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, 2, true, BANNER_PAD)]
-    p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
+    // On a list page the list takes the gestures; on a dash page the block marked for it, one with
+    // nothing to show, since the firmware scrolls the text of the container that takes them (the
+    // hint moved with every scroll while it did). The hint is a box with exactly one line inside,
+    // the banner's shape; its top edge is the rule above the footer on every page, and a banner is
+    // the same box, brighter, so a toast is an upgrade and not a rebuild.
+    const blocks = p.blocks.slice(0, MAX_BLOCKS)
+    const caught = p.kind === 'list' || blocks.some((b) => b.capture)
+    const textObject = [this.text(ID_HINT, 'hint', 0, BANNER_Y, CANVAS_W, HINT_H + 2 * BANNER_PAD, hintText(p.hint), p.hintLevel, caught ? 0 : 1, 2, true, BANNER_PAD)]
+    blocks.forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, b.capture ? 1 : 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
     )
