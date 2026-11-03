@@ -98,6 +98,14 @@ waiting at its prompt is `quiet` and the age grows. `working` is the
 harness's own word, from its hook or the host's watcher
 ([notifications](notifications.md)), and lasts while the pane moves.
 
+The word is the whole of a state on the glasses: the display has no
+paint for one. A working pane's row and title are drawn like a quiet
+pane's, with the plain `·`, and only the word says it is working, as
+the core's guideline (§1.2) has it for every client since 2026-11-02:
+the ring and the word carry the state, and the glasses, which draw no
+ring, keep the word. A waiting pane is marked (`★`, `●`, `○`) and
+listed first.
+
 The list is drawn by the app, seven rows at a time spread down to the
 hint, with a **cursor**, `>`, on the brightest row; the scroll moves it
 and the rows slide under it. With more panes than rows the hint starts

@@ -9,9 +9,11 @@ Antigravity and Copilot also by their name in the title when the command
 is an interpreter (`node`, `bun`, `deno`, `python`, `python3`, `uv`). The
 name stands where the command would in the list's rows and the pane's
 title (`★ build · Codex · asks a question`), and the word *working*
-applies to any of them (see [notifications](notifications.md)). The
-glasses draw no mark for a harness beyond the name: a row has 63 bytes
-and the firmware font drops glyphs it lacks without a trace.
+applies to any of them (see [notifications](notifications.md)); a
+working pane is plain, the word alone says it, as on every client since
+2026-11-02. The glasses draw no mark for a harness beyond the name, and
+no ring for working: a row has 63 bytes and the firmware font drops
+glyphs it lacks without a trace.
 
 Only one lens reshapes a screen, Claude Code's.
 

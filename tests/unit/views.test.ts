@@ -55,6 +55,24 @@ test('the state word says only what is known', () => {
   assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'active')
 })
 
+test('a working pane is plain: its row and title are a quiet pane\'s but for the word, and the inbox has no place for it', () => {
+  const quiet = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 5 })
+  const busy = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 5, working: true })
+  assert.equal(rowLabel(quiet, NOW), '· build · Codex · active')
+  assert.equal(rowLabel(busy, NOW), '· build · Codex · working')
+  assert.equal(rowLabel(busy, NOW).replace(' · working', ''), rowLabel(quiet, NOW).replace(' · active', ''))
+  assert.equal(titleOf(busy, groupsOf([busy])), titleOf(quiet, groupsOf([quiet])))
+  assert.equal(titleOf(busy, groupsOf([busy])), '· build · Codex')
+  // The rows share one strength, the cursor's brighter; the title is at full strength either way.
+  for (const p of [quiet, busy]) {
+    const row = listPage(model([p]), NOW).blocks.find((b) => b.name === 'row0')
+    assert.equal(row?.level, 4)
+    const title = panePage(model([p]), p, undefined, { offset: 0, reveal: false, state: 'following' }).blocks.find((b) => b.name === 'title')
+    assert.equal(title?.level, 4)
+  }
+  assert.deepEqual(waiting([busy]), [])
+})
+
 test('a row: mark, name, program, state, read-only, and the selection prefix', () => {
   assert.equal(rowLabel(pane('work/0.0', { title: 'build', attention: 'question' }), NOW), '★ build · Claude · asks a question')
   assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, 'on'), '[x] · build · Claude · quiet 4m')
