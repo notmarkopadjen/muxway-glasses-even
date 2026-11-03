@@ -105,4 +105,9 @@ with the unit tests (20261103-183829-d73693d) before the pull request's run.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+Run 20261103-184224-988ac01, the pull request's own e2e check, recorded
+as [issue #48](https://github.com/notmarkopadjen/muxway-glasses-even/issues/48):
+100 tests passed, none failed, against the core's main; the logs,
+screenshots and traces are the workflow run's artifact. The owner
+checked the build on the device the same day: a tap shows the pane at
+once, the answers return to it, a spoken reply returns to it.

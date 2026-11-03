@@ -47,9 +47,11 @@ test('the state word says only what is known', () => {
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 60 }), NOW), 'quiet 1m')
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 4 * 3600 }), NOW), 'quiet 4h')
   assert.equal(stateWord(pane('a/0.0', { activity: 0 }), NOW), '')
-  // The harness said working: the word, while the pane still moves.
+  // The harness said working: the word until its next event, however still the screen.
   assert.equal(stateWord(pane('a/0.0', { working: true }), NOW), 'working')
-  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'quiet 1m')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 4 * 3600 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { working: true, activity: 0 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, attention: 'done' }), NOW), 'done')
   // A time ahead of now is clamped by the parser; here it must not go negative either.
   assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'active')
