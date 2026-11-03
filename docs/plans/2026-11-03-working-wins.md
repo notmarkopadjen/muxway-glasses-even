@@ -78,4 +78,7 @@ Deviations: none. F42 and F15 passed locally with the unit tests
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+Run 20261103-194450-3120362, the pull request's own e2e check, recorded
+as [issue #54](https://github.com/notmarkopadjen/muxway-glasses-even/issues/54):
+every test passed, none failed, against the core's main; the logs,
+screenshots and traces are the workflow run's artifact.
