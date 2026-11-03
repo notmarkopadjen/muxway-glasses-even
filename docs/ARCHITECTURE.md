@@ -87,6 +87,11 @@ the whole design:
 - a text change is a flicker-free in-place upgrade; a layout change is a
   rebuild during which input is dropped, so each page kind keeps one
   geometry;
+- two containers that overlap reject the page the same silent way, and
+  the simulator does not mind, so a page that is fine there can be
+  refused on the glasses; a toast grows the hint upward by its padding,
+  so every block of every page ends at the banner's top (`BANNER_Y`),
+  not at the hint's;
 - pictures go over Bluetooth in tiles and are slow next to text, so
   titles are text and the only picture left is the loudness graph;
 - the font drops glyphs it lacks silently, so pane text is asked from the
