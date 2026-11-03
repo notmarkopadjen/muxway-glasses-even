@@ -92,10 +92,16 @@ plan. `docs/features/screens.md` says eight lines and stays right.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: none. The list's row pitch and the footer are counted down
+to the banner too, which changes nothing today (they ended at 252) and
+keeps them there. The confirmation page is an OS list without blocks,
+so the geometry test leaves it out. F11, F13, F15 and F20 passed locally
+with the unit tests (20261103-183829-d73693d) before the pull request's run.
 
 ## Test run
 
