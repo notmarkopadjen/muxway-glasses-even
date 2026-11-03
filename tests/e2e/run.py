@@ -894,8 +894,11 @@ def f42(run, name):
     core.notify("working", "", "work:0.0")
     page = sim.expect(lambda p: listed(p) and rows(p)[0] == "· test-pane · Codex · working", "working", 8)
     sim.shot("list-codex")
+    # A working row is plain: the same strength as the quiet one before the event.
+    check(next(b["level"] for b in page["blocks"] if b.get("name") == "row0") == 4, page["blocks"])
     sim.tap()
     page = sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "· test-pane · Codex" for b in p["blocks"]), "the pane names Codex", 10)
+    check(next(b["level"] for b in page["blocks"] if b.get("name") == "title") == 4, page["blocks"])
     sim.shot("pane-codex")
 
 
