@@ -94,10 +94,15 @@ secret.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: none. The plan first said a list row has no grey; the rows
+are blocks at one level with the cursor's brighter, so the unit test and
+F42 hold the row to that level too. A local run of F42 with the unit
+tests passed (20261103-114524-b797565) before the pull request's run.
 
 ## Test run
 
