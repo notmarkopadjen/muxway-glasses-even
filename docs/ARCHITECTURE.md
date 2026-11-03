@@ -92,10 +92,15 @@ the whole design:
   refused on the glasses; a toast grows the hint upward by its padding,
   so every block of every page ends at the banner's top (`BANNER_Y`),
   not at the hint's;
+- the container that takes the gestures scrolls its text on a scroll
+  by whatever room it has, so the hint is a box with exactly one line
+  inside, the banner's shape (a hint with two pixels of room moved with
+  every scroll on the device, 2026-11-03); its top edge is the rule
+  above the footer on every page;
 - a bordered text container two pixels high draws as a rule, and a
   title row 26 px high shows its text whole (both seen on the device on
   2026-11-03), which is how the pane view has a line under its title
-  and one above its hint without losing a line of the pane;
+  without losing a line of the pane;
 - pictures go over Bluetooth in tiles and are slow next to text, so
   titles are text and the only picture left is the loudness graph;
 - the font drops glyphs it lacks silently, so pane text is asked from the

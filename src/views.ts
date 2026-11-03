@@ -73,11 +73,6 @@ function rule(name: string, y: number): Block {
   return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
 }
 
-/** The rule above the hint sits in the pixels a banner takes, so it goes while a toast is up. */
-function lowerRule(m: Model): Block[] {
-  return m.toast ? [] : [rule('rule2', BANNER_Y + 1)]
-}
-
 export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
 }
@@ -250,8 +245,7 @@ export function listPage(m: Model, now: number): Page {
   const base = !m.loaded
     ? 'reading the hub ' + '·'.repeat(Math.max(1, Math.min(3, m.dots)))
     : wait + offline + where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
-  // Seven rows and the hint are the page's eight containers: the rule above the footer is the hint's own edge.
-  return { kind: 'dash', ...hint(m, base), hintRule: !m.toast, blocks, charts: [], items: [], menu: [] }
+  return { kind: 'dash', ...hint(m, base), blocks, charts: [], items: [], menu: [] }
 }
 
 // --- side by side -------------------------------------------------------------------------
@@ -277,11 +271,8 @@ export function splitPage(m: Model): Page {
     }
     blocks.push({ name: 'col' + i, x, y: BODY_Y, w: colW, h: BODY_LINES * LINE_H, lines: text, level: chosen ? 4 : 2 })
   })
-  if (shown.length) {
-    // A page holds eight text containers with the hint: three columns leave room for one rule.
-    blocks.push(rule('rule1', TOP + TITLE_H))
-    if (shown.length < 3) blocks.push(...lowerRule(m))
-  } else blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
+  if (shown.length) blocks.push(rule('rule1', TOP + TITLE_H))
+  else blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
   const sel = m.marked >= 0 ? shown[m.marked] : undefined
   const base = sel ? `▽ next pane · ● open ${paneName(sel)} · ×× the list` : '▽ pick a pane · ● refresh · ×× the list'
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
@@ -311,7 +302,6 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   while (lines.length < BODY_LINES) lines.unshift('')
   blocks.push(rule('rule1', TOP + TITLE_H))
   blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
-  blocks.push(...lowerRule(m))
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
   menu.push({ id: MENU.bottom, label: 'Bottom' })
@@ -337,14 +327,14 @@ export function pageSize(p: Pane, r: Reader | undefined, lens: boolean, reveal: 
 /** The answers: a question's choices first, then Claude's suggestion when there is one, then Say it, then the fixed set. */
 export function answersPage(m: Model, p: Pane, choices: Answer[], offer: Answer | null, offerVoice: boolean): Page {
   const items = choices.map((c) => c.label).concat(offer ? ['» ' + offer.label] : [], offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label))
-  return { kind: 'list', ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: lowerRule(m), charts: [], items, menu: [] }
+  return { kind: 'list', ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
   return {
     kind: 'list',
     ...hint(m, `${a.choice !== undefined ? 'answer' : 'send'} ${a.short} to ${paneName(p)}? · ×× back`),
-    blocks: lowerRule(m),
+    blocks: [],
     charts: [],
     items: ['Cancel', 'Confirm'],
     menu: [],
@@ -369,7 +359,7 @@ export function inboxPage(m: Model, now: number): Page {
   const rows = m.inbox
   const items = rows === null ? ['reading the inbox…'] : rows.length ? rows.slice(0, INBOX_ROWS).map((p) => inboxLabel(p, now)) : ['nothing waits for you']
   const n = rows?.length ?? 0
-  return { kind: 'list', ...hint(m, `inbox · ${n} waiting · ▽ choose · ● open · ×× back`), blocks: lowerRule(m), charts: [], items, menu: [] }
+  return { kind: 'list', ...hint(m, `inbox · ${n} waiting · ▽ choose · ● open · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 function textBox(text: string): Block {
@@ -381,7 +371,7 @@ function textBox(text: string): Block {
 export function offerPage(m: Model, p: Pane, a: Answer): Page {
   const text = a.pieces[0]?.text ?? ''
   const blocks: Block[] = [{ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`send this to ${paneName(p)}?`], level: 4 }, textBox(text)]
-  return { kind: 'dash', ...hint(m, '● send + Enter · ×× back'), blocks: [...blocks, ...lowerRule(m)], charts: [], items: [], menu: [] }
+  return { kind: 'dash', ...hint(m, '● send + Enter · ×× back'), blocks, charts: [], items: [], menu: [] }
 }
 
 // --- spoken replies -------------------------------------------------------------------------
@@ -406,16 +396,16 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
     const graph = sparkline(v.levels, GRAPH_W, GRAPH_H)
     charts.push(...tiles(graph, 8, BODY_Y, `levels:${v.levels.length}:${v.levels.slice(-6).map((l) => Math.round(l * 20)).join(',')}`))
     blocks.push({ name: 'note', x: 8, y: BODY_Y + GRAPH_H + 24, w: CANVAS_W - 16, h: LINE_H * 2, lines: [`${Math.round(v.seconds)} of 60 s · tap when done`, 'what you say goes to your hub, then to its transcriber'], level: 2 })
-    return { kind: 'dash', ...hint(m, '● stop · ×× cancel'), blocks: [...blocks, ...lowerRule(m)], charts, items: [], menu: [] }
+    return { kind: 'dash', ...hint(m, '● stop · ×× cancel'), blocks, charts, items: [], menu: [] }
   }
   if (v.phase === 'working') {
     blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`transcribing ${v.seconds.toFixed(1)} s of audio…`], level: 4 })
     blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H * 2 + 12, lines: ['the hub is listening to it', 'a few seconds on a small server'], level: 2, border: true })
-    return { kind: 'dash', ...hint(m, '×× cancel'), blocks: [...blocks, ...lowerRule(m)], charts, items: [], menu: [] }
+    return { kind: 'dash', ...hint(m, '×× cancel'), blocks, charts, items: [], menu: [] }
   }
   blocks.push({ name: 'state', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [v.error || 'nothing recorded'], level: 4 })
   blocks.push({ name: 'note', x: 8, y: BODY_Y, w: CANVAS_W - 16, h: LINE_H + 12, lines: ['tap to say it again'], level: 2, border: true })
-  return { kind: 'dash', ...hint(m, '● say it again · ×× cancel'), blocks: [...blocks, ...lowerRule(m)], charts, items: [], menu: [] }
+  return { kind: 'dash', ...hint(m, '● say it again · ×× cancel'), blocks, charts, items: [], menu: [] }
 }
 
 export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
@@ -423,5 +413,5 @@ export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
   blocks.push({ name: 'title', x: 0, y: TOP, w: CANVAS_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
   blocks.push(textBox(v.text))
   const menu: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }]
-  return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks: [...blocks, ...lowerRule(m)], charts: [], items: [], menu }
+  return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts: [], items: [], menu }
 }

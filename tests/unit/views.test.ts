@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
-import { BANNER_Y, HINT_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
+import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
 import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
@@ -201,49 +201,23 @@ test('every page ends above the banner: a toast grows the hint upward and the gl
   assert.equal(pages.pane.blocks.find((b) => b.name === 'title')!.h, LINE_H - RULE_H)
 })
 
-test('the rules: under the title, and above the hint while no banner takes its place', () => {
+test('the rule under the title: a bordered block with nothing in it, the body right under', () => {
   const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' }), pane('w/3.0', { title: 'three' })]
   const reading = { raw: ['a', 'b'], error: null }
-  const quiet = model(panes, { reading: () => reading })
-  const toasted = model(panes, { toast: '√ one: done', reading: () => reading })
+  const m = model(panes, { reading: () => reading })
   const at = (page: { blocks: { name?: string; y: number; h: number; border?: boolean; pad?: number }[] }, name: string) => page.blocks.find((b) => b.name === name)
-  const st = { offset: 0, reveal: false, state: 'following' }
-  let page = panePage(quiet, panes[0], reading, st)
+  const page = panePage(m, panes[0], reading, { offset: 0, reveal: false, state: 'following' })
   const upper = at(page, 'rule1')!
   assert.deepEqual([upper.y, upper.h, upper.border, upper.pad], [LINE_H - RULE_H, RULE_H, true, 0])
   assert.equal(at(page, 'body')!.y, LINE_H, 'the body starts under the rule')
-  const lower = at(page, 'rule2')!
-  assert.equal(lower.y, BANNER_Y + 1)
-  assert.ok(lower.y + lower.h <= HINT_Y, 'the lower rule ends above the hint')
-  assert.equal(at(panePage(toasted, panes[0], reading, st), 'rule2'), undefined, 'no lower rule under a banner')
-  // Two columns: both rules; three: the upper only, and the page's blocks within its eight containers.
-  page = splitPage(model(panes, { selected: ['alice-laptop/w/1.0', 'alice-laptop/w/2.0'], reading: () => reading }))
-  assert.ok(at(page, 'rule1') && at(page, 'rule2'))
-  page = splitPage(model(panes, { selected: panes.map((p) => p.address), reading: () => reading }))
-  assert.ok(at(page, 'rule1') && !at(page, 'rule2'))
-  assert.ok(page.blocks.length <= MAX_BLOCKS, `${page.blocks.length} blocks`)
-  assert.equal(at(page, 'col0')!.lines.length, 8)
-  assert.equal(at(splitPage(model(panes, { selected: ['alice-laptop/w/1.0', 'alice-laptop/w/2.0'], toast: 'x', reading: () => reading })), 'rule2'), undefined)
-  // Every other screen with a footer: the lower rule, gone under a banner. The list has no container
-  // to spare, so its hint is boxed instead.
-  const voice = { phase: 'recording' as const, seconds: 3, text: 'hi', error: '', levels: [1] }
-  const answer = { label: 'y', short: 'y', pieces: [{ text: 'y' }, { key: 'Enter' }] }
-  for (const m of [quiet, toasted]) {
-    const others = {
-      answers: answersPage(m, panes[0], [], null, false),
-      confirm: confirmPage(m, panes[0], answer),
-      inbox: inboxPage({ ...m, inbox: [] }, NOW),
-      offer: offerPage(m, panes[0], answer),
-      listening: listenPage(m, panes[0], voice),
-      transcribing: listenPage(m, panes[0], { ...voice, phase: 'working' }),
-      failed: listenPage(m, panes[0], { ...voice, phase: 'error', error: 'too short' }),
-      heard: heardPage(m, panes[0], { ...voice, phase: 'review' }),
-    }
-    for (const [name, page] of Object.entries(others)) assert.equal(!!at(page, 'rule2'), m === quiet, `${name} ${m === quiet ? 'has' : 'drops'} the rule`)
-    const list = listPage(m, NOW)
-    assert.equal(!!list.hintRule, m === quiet, 'the list boxes its hint')
-    assert.equal(!!list.hintBorder, m !== quiet)
-  }
+  // The columns too, three of them within the page's containers, eight lines each.
+  const cols = splitPage(model(panes, { selected: panes.map((p) => p.address), reading: () => reading }))
+  assert.ok(at(cols, 'rule1'))
+  assert.ok(cols.blocks.length <= MAX_BLOCKS, `${cols.blocks.length} blocks`)
+  assert.equal(at(cols, 'col0')!.lines.length, 8)
+  // No page carries a lower rule: the hint's own box edge is that line, on every screen alike.
+  assert.equal(at(page, 'rule2'), undefined)
+  assert.equal(listPage(m, NOW).blocks.length, LIST_ROWS)
 })
 
 test('the list: seven rows from the top down to the hint, no head', () => {

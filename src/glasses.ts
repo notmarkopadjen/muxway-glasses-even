@@ -45,7 +45,7 @@ export const MAX_CHARTS = 4
 export const BORDER_PAD = 6
 /** The banner's padding: the hint line grows upward by twice this, so its one row fits without a scrollbar. */
 export const BANNER_PAD = 3
-/** The banner's top: no block of any page reaches under it, or the glasses refuse the page. */
+/** The hint's box top, the banner's too: no block of any page reaches under it, or the glasses refuse the page. */
 export const BANNER_Y = HINT_Y - 2 * BANNER_PAD
 /** A rule: a bordered container this high draws as a line on the glasses (seen on the device, 2026-11-03). */
 export const RULE_H = 2
@@ -82,8 +82,6 @@ export interface Page {
   hintLevel: number
   /** The hint drawn as a banner, bordered and bright: a toast. */
   hintBorder?: boolean
-  /** The hint boxed without padding: the rule above the footer on a page with no container to spare. */
-  hintRule?: boolean
   blocks: Block[]
   charts: Chart[]
   items: string[]
@@ -118,8 +116,6 @@ function geometry(p: Page): string {
   return JSON.stringify([
     p.kind,
     p.items,
-    !!p.hintBorder,
-    !!p.hintRule,
     p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border, b.pad]),
     p.charts.map((c) => [c.x, c.y, c.w, c.h]),
     p.menu,
@@ -168,10 +164,11 @@ export class Glasses {
   }
 
   private payload(p: Page) {
-    // On a dash page the hint takes the gestures; on a list page the list does. A banner is
-    // taller by its padding and above the blocks, so its border is whole.
-    const grow = p.hintBorder ? 2 * BANNER_PAD : 0
-    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y - grow, CANVAS_W, HINT_H + grow, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, p.hintBorder ? 10 : 2, !!p.hintBorder || !!p.hintRule, p.hintBorder ? BANNER_PAD : 0)]
+    // On a dash page the hint takes the gestures; on a list page the list does. The container that
+    // takes them scrolls its text by whatever room it has, so the hint is a box with exactly one
+    // line inside, the banner's shape; its top edge is the rule above the footer on every page, and
+    // a banner is the same box, brighter, so a toast is an upgrade and not a rebuild.
+    const textObject = [this.text(ID_HINT, 'hint', 0, BANNER_Y, CANVAS_W, HINT_H + 2 * BANNER_PAD, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, 2, true, BANNER_PAD)]
     p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
