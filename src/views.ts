@@ -5,7 +5,7 @@
 import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
-import { HINT_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
+import { BANNER_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, program, type Attention, type Host, type Pane } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
@@ -54,16 +54,18 @@ export interface Reader {
 }
 
 // --- geometry ------------------------------------------------------------------------------
-const TITLE_H = 30
+// Everything ends at the banner's top: a toast grows the hint upward, and the glasses refuse a page
+// whose containers overlap, without a word.
+const TITLE_H = LINE_H
 const BODY_Y = TOP + TITLE_H
-/** Lines of a pane under its title, down to the hint. */
-const BODY_LINES = Math.floor((HINT_Y - BODY_Y) / LINE_H)
+/** Lines of a pane under its title, down to the banner. */
+const BODY_LINES = Math.floor((BANNER_Y - BODY_Y) / LINE_H)
 const COL_GAP = 8
 const FOOT_Y = TOP + 140 + 6
-const FOOT_H = HINT_Y - 6 - FOOT_Y
-/** A bordered box of text from under the title down to the hint: the spoken reply, the suggestion. */
+const FOOT_H = BANNER_Y - FOOT_Y
+/** A bordered box of text from under the title down to the banner: the spoken reply, the suggestion. */
 const BOX_W = LINE_PX - 16
-const BOX_ROWS = Math.floor((HINT_Y - 4 - BODY_Y - 12) / LINE_H)
+const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
 
 export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
@@ -158,8 +160,8 @@ export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'non
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
 export const LIST_ROWS = 7
-/** The rows spread down to the hint, so no band is left dark under them. */
-const ROW_PITCH = Math.floor((HINT_Y - TOP) / LIST_ROWS)
+/** The rows spread down to the banner, so no band is left dark under them. */
+const ROW_PITCH = Math.floor((BANNER_Y - TOP) / LIST_ROWS)
 export const MAX_SELECTED = 3
 const ROW_W = CANVAS_W - 4
 
