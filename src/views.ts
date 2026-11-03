@@ -5,7 +5,7 @@
 import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
-import { BANNER_Y, LINE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
+import { BANNER_Y, LINE_H, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { paneName, program, type Attention, type Host, type Pane } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
@@ -56,8 +56,9 @@ export interface Reader {
 // --- geometry ------------------------------------------------------------------------------
 // Everything ends at the banner's top: a toast grows the hint upward, and the glasses refuse a page
 // whose containers overlap, without a word.
-const TITLE_H = LINE_H
-const BODY_Y = TOP + TITLE_H
+// The title gives two pixels of its row to the rule under it; the device shows it whole at 26 px.
+const TITLE_H = LINE_H - RULE_H
+const BODY_Y = TOP + TITLE_H + RULE_H
 /** Lines of a pane under its title, down to the banner. */
 const BODY_LINES = Math.floor((BANNER_Y - BODY_Y) / LINE_H)
 const COL_GAP = 8
@@ -66,6 +67,16 @@ const FOOT_H = BANNER_Y - FOOT_Y
 /** A bordered box of text from under the title down to the banner: the spoken reply, the suggestion. */
 const BOX_W = LINE_PX - 16
 const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
+
+/** A rule across the page: a bordered block with nothing in it, as high as its line. */
+function rule(name: string, y: number): Block {
+  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
+}
+
+/** The rule above the hint sits in the pixels a banner takes, so it goes while a toast is up. */
+function lowerRule(m: Model): Block[] {
+  return m.toast ? [] : [rule('rule2', BANNER_Y + 1)]
+}
 
 export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
@@ -265,7 +276,11 @@ export function splitPage(m: Model): Page {
     }
     blocks.push({ name: 'col' + i, x, y: BODY_Y, w: colW, h: BODY_LINES * LINE_H, lines: text, level: chosen ? 4 : 2 })
   })
-  if (!shown.length) blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
+  if (shown.length) {
+    // A page holds eight text containers with the hint: three columns leave room for one rule.
+    blocks.push(rule('rule1', TOP + TITLE_H))
+    if (shown.length < 3) blocks.push(...lowerRule(m))
+  } else blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
   const sel = m.marked >= 0 ? shown[m.marked] : undefined
   const base = sel ? `▽ next pane · ● open ${paneName(sel)} · ×× the list` : '▽ pick a pane · ● refresh · ×× the list'
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
@@ -293,7 +308,9 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   const end = body.length - st.offset * BODY_LINES
   const lines = body.slice(Math.max(0, end - BODY_LINES), Math.max(0, end))
   while (lines.length < BODY_LINES) lines.unshift('')
+  blocks.push(rule('rule1', TOP + TITLE_H))
   blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
+  blocks.push(...lowerRule(m))
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
   menu.push({ id: MENU.bottom, label: 'Bottom' })

@@ -47,6 +47,8 @@ export const BORDER_PAD = 6
 export const BANNER_PAD = 3
 /** The banner's top: no block of any page reaches under it, or the glasses refuse the page. */
 export const BANNER_Y = HINT_Y - 2 * BANNER_PAD
+/** A rule: a bordered container this high draws as a line on the glasses (seen on the device, 2026-11-03). */
+export const RULE_H = 2
 
 const ID_HINT = 2
 const ID_LIST = 3
@@ -65,6 +67,8 @@ export interface Block {
   lines: string[]
   level: number
   border?: boolean
+  /** The border's padding when it is not the default: a rule has none. */
+  pad?: number
 }
 
 export interface MenuSpec {
@@ -113,7 +117,7 @@ function geometry(p: Page): string {
     p.kind,
     p.items,
     !!p.hintBorder,
-    p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border]),
+    p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border, b.pad]),
     p.charts.map((c) => [c.x, c.y, c.w, c.h]),
     p.menu,
   ])
@@ -165,7 +169,7 @@ export class Glasses {
     // taller by its padding and above the blocks, so its border is whole.
     const grow = p.hintBorder ? 2 * BANNER_PAD : 0
     const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y - grow, CANVAS_W, HINT_H + grow, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, p.hintBorder ? 10 : 2, !!p.hintBorder, BANNER_PAD)]
-    p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border)))
+    p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
     )

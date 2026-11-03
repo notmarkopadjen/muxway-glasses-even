@@ -170,7 +170,9 @@ that has waited longest, a question or a permission before the rest.
 The selected panes in the list's order, two or three columns, each a
 title line with its mark, name and program, and the last eight lines
 through the lens wrapped to the column. All of them follow, each with
-its own ETag. Titles are text, so the page carries no pictures.
+its own ETag. Titles are text, so the page carries no pictures. A rule
+runs under the titles and, with two columns, another above the hint
+(three columns fill the page's containers, so they get the upper one).
 
 The **scroll marks a column** and opens nothing: forward marks the next
 one, or the first when none is marked; back the previous one, or the
@@ -196,14 +198,15 @@ to the list with the selection kept.
 ```
 
 The **title** (the bar when the pane is in a group, mark, name, its
-mail, program) with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
+mail, program), a rule under it, with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
 the error (`host offline`, `no connection`, `not found`); after an
 answer the state flashes what happened for a few seconds (`sent y,
 Enter`, `read only`). The body is the last lines of the pane,
 `GET /v1/panes/{address}` in text mode with `lines` (setting, default
 200) and `width=400`, wrapped by the app to the body's width, through
-the [lens](lenses.md): eight lines, down to the hint. Claude Code's
+the [lens](lenses.md): eight lines, down to a rule above the hint (the
+rule gives way to a banner while one is up). Claude Code's
 input box is not drawn; what it holds is the first answer.
 
 - **Following**: at the bottom, the pane is read every *follow* seconds
