@@ -3,7 +3,7 @@
 > Status: proposed. The owner's wish of 2026-11-03: the list's `·` for a
 > pane with nothing reported is too small beside `★ ● ○`; every mark the
 > same size, a turning one for working, a check for done, a hollow
-> circle for idle. muxway-glasses-even#42.
+> circle for idle. muxway-glasses-even#43.
 
 ## 1. Goal
 
