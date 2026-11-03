@@ -944,7 +944,7 @@ export class App {
       case 'inbox':
         return V.inboxPage(m, now)
       case 'split':
-        return V.splitPage(m)
+        return V.splitPage(m, now)
       case 'pane': {
         const r = this.readers.get(v.pane.address)
         const a = this.attention.get(v.pane.address)
@@ -954,7 +954,7 @@ export class App {
         else if (a) state = V.WORDS[a.kind]
         else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
         else state = r?.raw.length ? 'following' : 'reading…'
-        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state })
+        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state }, now)
       }
       case 'answers':
         return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane))
