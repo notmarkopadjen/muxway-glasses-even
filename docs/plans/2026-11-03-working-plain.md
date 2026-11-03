@@ -13,9 +13,8 @@ change in muxway#210 and the native clients were to follow in their own
 issues; #36 is the glasses' one.
 
 The glasses never painted a working pane dim. The display gives a block
-of text one of four greys and a list row none at all, and the app spends
-the greys on the cursor, the selection and the hint, never on a pane's
-state: a working pane's row is `· build · Codex · working`, its title
+of text one of four greys, and the app spends them on the cursor, the
+selection and the hint, never on a pane's state: a working pane's row is `· build · Codex · working`, its title
 `· build · Codex`, both at the same strength as a quiet pane's, and only
 the word says what the pane is doing. So nothing on the lens has to
 change its paint. What this plan does is make the rule the glasses'
@@ -44,9 +43,9 @@ No change to the app. The docs say the rule and the tests hold it:
 - `tests/unit/views.test.ts`: a working pane's row and column title
   differ from a quiet pane's only by the word, with the plain mark; the
   inbox never lists a working pane.
-- `tests/e2e/run.py` F42: after the working event the pane's title block
-  is at full strength, level 4, the same as it was before, and its mark
-  the plain `·`; the pictures it takes (`list-codex`, `pane-codex`) show
+- `tests/e2e/run.py` F42: after the working event the row under the
+  cursor and the pane's title block are at full strength, level 4, the
+  same as before, and the mark the plain `·`; the pictures it takes (`list-codex`, `pane-codex`) show
   the plain working row and title.
 
 ```mermaid
@@ -77,7 +76,7 @@ secret.
 |---|------|---------------------------------------|----------|
 | 1 | security | — | none new: nothing crosses a boundary; S01–S50 run as they are |
 | 2 | a working pane's row and column title against a quiet pane's | unit | the same text but for the word; the mark `·`; the inbox empty |
-| 3 | F42: a Codex pane working, from its event | UI | the row `· test-pane · Codex · working`; the title block `· test-pane · Codex` at level 4 before and after the event; screenshots `list-codex`, `pane-codex` |
+| 3 | F42: a Codex pane working, from its event | UI | the row `· test-pane · Codex · working` at level 4 under the cursor; the title block `· test-pane · Codex` at level 4; screenshots `list-codex`, `pane-codex` |
 
 ## 7. Documentation
 
