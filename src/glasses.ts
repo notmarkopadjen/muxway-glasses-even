@@ -82,6 +82,8 @@ export interface Page {
   hintLevel: number
   /** The hint drawn as a banner, bordered and bright: a toast. */
   hintBorder?: boolean
+  /** The hint boxed without padding: the rule above the footer on a page with no container to spare. */
+  hintRule?: boolean
   blocks: Block[]
   charts: Chart[]
   items: string[]
@@ -117,6 +119,7 @@ function geometry(p: Page): string {
     p.kind,
     p.items,
     !!p.hintBorder,
+    !!p.hintRule,
     p.blocks.map((b) => [b.x, b.y, b.w, b.h, !!b.border, b.pad]),
     p.charts.map((c) => [c.x, c.y, c.w, c.h]),
     p.menu,
@@ -168,7 +171,7 @@ export class Glasses {
     // On a dash page the hint takes the gestures; on a list page the list does. A banner is
     // taller by its padding and above the blocks, so its border is whole.
     const grow = p.hintBorder ? 2 * BANNER_PAD : 0
-    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y - grow, CANVAS_W, HINT_H + grow, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, p.hintBorder ? 10 : 2, !!p.hintBorder, BANNER_PAD)]
+    const textObject = [this.text(ID_HINT, 'hint', 0, HINT_Y - grow, CANVAS_W, HINT_H + grow, hintText(p.hint), p.hintLevel, p.kind === 'list' ? 0 : 1, p.hintBorder ? 10 : 2, !!p.hintBorder || !!p.hintRule, p.hintBorder ? BANNER_PAD : 0)]
     p.blocks.slice(0, MAX_BLOCKS).forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),

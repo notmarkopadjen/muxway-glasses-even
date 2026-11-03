@@ -224,6 +224,26 @@ test('the rules: under the title, and above the hint while no banner takes its p
   assert.ok(page.blocks.length <= MAX_BLOCKS, `${page.blocks.length} blocks`)
   assert.equal(at(page, 'col0')!.lines.length, 8)
   assert.equal(at(splitPage(model(panes, { selected: ['alice-laptop/w/1.0', 'alice-laptop/w/2.0'], toast: 'x', reading: () => reading })), 'rule2'), undefined)
+  // Every other screen with a footer: the lower rule, gone under a banner. The list has no container
+  // to spare, so its hint is boxed instead.
+  const voice = { phase: 'recording' as const, seconds: 3, text: 'hi', error: '', levels: [1] }
+  const answer = { label: 'y', short: 'y', pieces: [{ text: 'y' }, { key: 'Enter' }] }
+  for (const m of [quiet, toasted]) {
+    const others = {
+      answers: answersPage(m, panes[0], [], null, false),
+      confirm: confirmPage(m, panes[0], answer),
+      inbox: inboxPage({ ...m, inbox: [] }, NOW),
+      offer: offerPage(m, panes[0], answer),
+      listening: listenPage(m, panes[0], voice),
+      transcribing: listenPage(m, panes[0], { ...voice, phase: 'working' }),
+      failed: listenPage(m, panes[0], { ...voice, phase: 'error', error: 'too short' }),
+      heard: heardPage(m, panes[0], { ...voice, phase: 'review' }),
+    }
+    for (const [name, page] of Object.entries(others)) assert.equal(!!at(page, 'rule2'), m === quiet, `${name} ${m === quiet ? 'has' : 'drops'} the rule`)
+    const list = listPage(m, NOW)
+    assert.equal(!!list.hintRule, m === quiet, 'the list boxes its hint')
+    assert.equal(!!list.hintBorder, m !== quiet)
+  }
 })
 
 test('the list: seven rows from the top down to the hint, no head', () => {

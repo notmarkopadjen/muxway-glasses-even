@@ -174,6 +174,12 @@ its own ETag. Titles are text, so the page carries no pictures. A rule
 runs under the titles and, with two columns, another above the hint
 (three columns fill the page's containers, so they get the upper one).
 
+Every screen ends the same way: a rule above its hint, two pixels in
+the gap a banner takes, so it gives way while one is up. The pane list
+is the exception in how, not in what: its seven rows and the hint are
+all the containers a page holds, so there the hint carries the line as
+its own top edge.
+
 The **scroll marks a column** and opens nothing: forward marks the next
 one, or the first when none is marked; back the previous one, or the
 last. At either end it stays. The marked column's title starts with `»`
