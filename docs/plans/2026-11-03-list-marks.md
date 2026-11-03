@@ -114,10 +114,18 @@ its own pull request, this plan.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: none. The turn is decided from the page itself (a row or a
+title carrying a half circle), so a pane whose name carries one turns
+its list for as long as it is listed; the redraws change nothing, so
+nothing is sent to the glasses for it. The columns page and the pane
+page now take the clock, as the list did, for their titles' marks. A
+local run of the sixteen tests that read rows passed before the full
+suite and the pull request's run.
 
 ## Test run
 

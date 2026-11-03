@@ -154,7 +154,7 @@ export function stateWord(p: Pane, now: number): string {
 /** A pane's mark: its attention's, the half circle turned by the second while it works, else the dotted ring. */
 export function markOf(p: Pane, now: number): string {
   if (p.attention) return MARK[p.attention]
-  if (stateWord(p, now) === 'working') return TURN[Math.abs(now) % 2]
+  if (stateWord(p, now) === 'working') return TURN[now % 2]
   return NONE
 }
 
