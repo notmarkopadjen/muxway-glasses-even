@@ -129,4 +129,8 @@ suite and the pull request's run.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+Run 20261103-185247-a3a5430, the pull request's own e2e check, recorded
+as [issue #49](https://github.com/notmarkopadjen/muxway-glasses-even/issues/49):
+101 tests passed, none failed, against the core's main; the logs,
+screenshots and traces are the workflow run's artifact. A full local
+run before it (20261103-185052-14e6ade) passed the same 101.
