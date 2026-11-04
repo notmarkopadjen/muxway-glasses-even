@@ -5,13 +5,13 @@ import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, later: false, laterAt: 0, ...extra }
   return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
@@ -19,7 +19,7 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
   return {
     configured: true,
     panes: sorted(panes),
-    hosts: [{ name: 'alice-laptop', online: true }],
+    hosts: [{ name: 'alice-laptop', online: true, later: true }],
     listError: null,
     needsYou: null,
     flash: null,
@@ -170,6 +170,40 @@ test('the inbox: the first row of the list while anything waits, the count in th
   assert.equal(page.items.length, INBOX_ROWS)
 })
 
+test('a parked pane: last in the order, zz and later with what waits underneath, counted after the awake ones, Wake in the menu', () => {
+  const panes = [
+    pane('w/1.0', { title: 'one', attention: 'permission', attentionAt: NOW - 30, later: true, laterAt: NOW - 20 }),
+    pane('w/2.0', { title: 'two' }),
+    pane('w/3.0', { title: 'three', attention: 'done', attentionAt: NOW - 100 }),
+    pane('w/4.0', { title: 'four', later: true, laterAt: NOW - 50 }),
+  ]
+  assert.deepEqual(sorted(panes).map((p) => p.path), ['w/3.0', 'w/2.0', 'w/1.0', 'w/4.0'])
+  assert.equal(markOf(panes[0], NOW), 'zz')
+  assert.equal(stateWord(panes[0], NOW), 'later · needs permission')
+  assert.equal(stateWord(panes[3], NOW), 'later')
+  assert.equal(rowLabel(panes[0], NOW), 'zz one · Claude · later · needs permission')
+  assert.equal(rowLabel(panes[3], NOW), 'zz four · Claude · later')
+  assert.equal(titleOf(panes[0], groupsOf(panes), NOW), 'zz one · Claude')
+  // The awake pane first, then the parked ones by their parking, whatever waits underneath.
+  assert.deepEqual(waiting(panes).map((p) => p.path), ['w/3.0', 'w/4.0', 'w/1.0'])
+  assert.equal(listLayout(model(panes), NOW).items[0], '◆ inbox · 3 waiting')
+  assert.equal(inboxLabel(panes[0], NOW), 'zz one · Claude · later · needs permission · 30s')
+  assert.equal(inboxLabel(panes[3], NOW), 'zz four · Claude · later · 50s')
+  // A group holds a parked pane too.
+  const talk = [pane('w/5.0', { title: 'a', talk: ['alice-laptop/w/6.0'] }), pane('w/6.0', { title: 'b', talk: ['alice-laptop/w/5.0'], later: true }), pane('w/7.0', { title: 'c' })]
+  assert.deepEqual(sorted(talk).map((p) => p.path), ['w/5.0', 'w/6.0', 'w/7.0'])
+  // The menu: Later on an awake writable pane, Wake on a parked one, nothing for a reader or an older host.
+  const menuOf = (m: Model, p: Pane) => panePage(m, p, undefined, { offset: 0, reveal: false, state: 'following' }, NOW).menu.map((e) => e.label)
+  assert.deepEqual(menuOf(model(panes), panes[1]), ['Refresh', 'Reveal all', 'Bottom', 'Later'])
+  assert.deepEqual(menuOf(model(panes), panes[0]), ['Refresh', 'Reveal all', 'Bottom', 'Wake'])
+  assert.ok(panePage(model(panes), panes[0], undefined, { offset: 0, reveal: false, state: 'following' }, NOW).menu.some((e) => e.id === MENU.later))
+  assert.deepEqual(menuOf(model(panes), pane('w/8.0', { writable: false })), ['Refresh', 'Reveal all', 'Bottom'])
+  const older = model(panes, { hosts: [{ name: 'alice-laptop', online: true, later: false }] })
+  assert.deepEqual(menuOf(older, panes[1]), ['Refresh', 'Reveal all', 'Bottom'])
+  assert.equal(canPark(older, panes[1]), false)
+  assert.equal(canPark(model(panes), pane('w/9.0', { host: 'bob', address: 'bob/w/9.0' })), false)
+})
+
 test('a question with choices: its rows lead the answers, the confirmation says answer', () => {
   const p = pane('w/0.0', { title: 'build', attention: 'question', choices: ['yes', 'no'] })
   const choices = p.choices.map(choiceAnswer)
@@ -220,7 +254,7 @@ test('before the first listing: one row and the dots in the hint', () => {
   assert.deepEqual(listLayout(m, NOW).items, ['reading the hub…'])
   assert.equal(listLayout(m, NOW).what[0].kind, 'none')
   assert.equal(listPage(m, NOW).hint, 'reading the hub ··')
-  const offline = model([pane('w/0.0')], { hosts: [{ name: 'alice-laptop', online: false }] })
+  const offline = model([pane('w/0.0')], { hosts: [{ name: 'alice-laptop', online: false, later: true }] })
   assert.ok(listPage(offline, NOW).hint.startsWith('○ alice-laptop offline · '), listPage(offline, NOW).hint)
   assert.deepEqual(listLayout(model([], { configured: false }), NOW).items, ['set the hub and token on the phone'])
   assert.deepEqual(listLayout(model([]), NOW).items, ['no panes exposed to this token'])

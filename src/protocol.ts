@@ -37,11 +37,17 @@ export interface Pane {
   talk: string[]
   /** Unread mail held for the pane's process; 0 for none. */
   mail: number
+  /** The owner parked the pane for later. */
+  later: boolean
+  /** When it was parked, seconds since the epoch; 0 when awake or unknown. */
+  laterAt: number
 }
 
 export interface Host {
   name: string
   online: boolean
+  /** The host's agent parks panes for later. */
+  later: boolean
 }
 
 export interface Event {
@@ -188,6 +194,8 @@ function parsePane(item: unknown, now: number): Pane | null {
     working: false,
     talk: parseTalk(o.talk),
     mail: parseMail(o.mail),
+    later: o.later === true,
+    laterAt: o.later === true ? when(o.later_at, now) : 0,
   }
 }
 
@@ -213,9 +221,9 @@ export function parsePanes(body: string, now = Math.floor(Date.now() / 1000)): P
   return parseList(body, 'panes', now)
 }
 
-/** The hub's inbox: the panes that wait, oldest first as the hub sorts them; a pane without attention is not one of them. */
+/** The hub's inbox: the panes that wait, oldest first as the hub sorts them, then the parked ones; a pane with neither is not one of them. */
 export function parseInbox(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
-  return parseList(body, 'inbox', now).filter((p) => p.attention)
+  return parseList(body, 'inbox', now).filter((p) => p.attention || p.later)
 }
 
 /** The hub's JSON listing of hosts. */
@@ -231,7 +239,7 @@ export function parseHosts(body: string): Host[] {
   return list
     .slice(0, MAX_LIST)
     .filter((h): h is Record<string, unknown> => !!h && typeof h === 'object' && typeof (h as Record<string, unknown>).name === 'string' && HOST.test((h as Record<string, unknown>).name as string))
-    .map((h) => ({ name: h.name as string, online: h.online === true }))
+    .map((h) => ({ name: h.name as string, online: h.online === true, later: h.later === true }))
 }
 
 /** What the program says about itself: its title without Claude's mark, or nothing when it only repeats the command or the host. */

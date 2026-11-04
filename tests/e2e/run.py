@@ -496,6 +496,55 @@ def s51(run, name):
     sim.shot("pane-reader")
 
 
+@test("S52", "A read-only token on a parked pane: the mark and the word, no Later or Wake in the menu, no wake sent when it opens, a direct wake refused", "e2e-security")
+def s52(run, name):
+    def before(core):
+        core.new_window("build")
+        core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+        # Parked by a writer through the hub; the glasses' token only reads.
+        writer = core.token(name="writer")
+        status, body = direct(core.url, writer, "POST", f"/v1/panes/{HOST}/work/1.0/later", '{"later":true}')
+        check(status == 204, f"parking as a writer got {status} {body[:100]!r}")
+    core, proxy, sim, tok = setup(run, name, write=None, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3 and rows(p)[2].startswith("zz"), "three rows", 20)
+    check(rows(page) == ["◆ inbox · 1 waiting", "◌ test-pane · bash · active · read-only", "zz build · bash · later · needs permission · read-only"], rows(page))
+    sim.shot("list-reader")
+    sim.pick(2)
+    sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "zz build · bash" for b in p["blocks"]), "the parked pane", 10)
+    wait_for("the state", lambda: sim.state() == "later · permission", 10)
+    page = sim.last()
+    check(not any(m["label"] in ("Later", "Wake") for m in page["menu"]), page["menu"])
+    sim.shot("pane-reader")
+    check(not any(r["method"] == "POST" and r["path"].endswith("/later") for r in proxy.requests), "a wake was sent for a reader")
+    status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/1.0/later", '{"later":false}')
+    check(status == 403, f"a reader's wake got {status} {body[:100]!r}")
+    status, body = direct(proxy.url, tok, "GET", "/v1/panes", accept="application/json")
+    build = next(p for p in json.loads(body)["panes"] if p["address"] == f"{HOST}/work/1.0")
+    check(build.get("later") is True, f"the pane after the refused wake: {build}")
+
+
+@test("S53", "Hostile later from the proxy: a flag of yes and of 1, a later_at of a string, minus one and 10^18, a parked pane with nothing pending, 200 parked panes: only true parks, the ages clamped, rows within the budget, the page accepted", "e2e-security")
+def s53(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="later-hostile")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("◆ inbox"), "the inbox row", 20)
+    check(rows(page)[0] == "◆ inbox · 203 waiting", rows(page))
+    check(page["hint"].startswith("◆ 203 · "), page["hint"])
+    check(rows(page)[1].startswith("◌ test-pane · bash · ") and rows(page)[2].startswith("◌ build · bash · "), rows(page))
+    check(all(r.startswith("zz ") and " · later" in r for r in rows(page)[3:]), rows(page))
+    check(all(len(r.encode()) <= 63 for r in rows(page)), [len(r.encode()) for r in rows(page)])
+    check(not page.get("hintBorder"), page["hint"])
+    sim.shot("list-hostile")
+    sim.tap()
+    page = sim.expect(lambda p: p["kind"] == "list" and p["hint"].startswith("inbox · 203 waiting"), "the inbox page", 10)
+    items = page["items"]
+    check(len(items) == 20, len(items))
+    check(items[0] == "zz lone · bash · later", items[:3])
+    check(re.fullmatch(r"zz old · bash · later · needs permission · \d+s", items[1]), items[:3])
+    check(re.fullmatch(r"zz far · bash · later · \d+s", items[2]), items[:3])
+    sim.shot("inbox-hostile")
+    check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
+
+
 @test("S25", "No transcriber: no Say it row; a hub that offers one and then fails: an error line, nothing sent", "e2e-security")
 def s25(run, name):
     core, proxy, sim, tok = setup(run, name)
@@ -949,6 +998,79 @@ def f43(run, name):
     sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "◌ notes · /src · bash · notes.md" for b in p["blocks"]), "the title with the folder", 10)
     wait_for("following", lambda: "following" in sim.state(), 10)
     sim.shot("pane-named")
+
+
+@test("F44", "Later from the pane's menu: the row last with zz and the word, a new kind underneath without a toast, Go to gone, the inbox lists it; opening it wakes it and the row is back; Wake and Later toggle from the menu", "UI")
+def f44(run, name):
+    def before(core):
+        core.new_window("build")
+        core.new_window("tests")
+        core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+    core, proxy, sim, tok = setup(run, name, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 4, "the list", 20)
+    check(rows(page)[:2] == ["◆ inbox · 1 waiting", "★ build · bash · needs permission"], rows(page))
+    title = lambda text: (lambda p: any(b.get("name") == "title" and b["lines"][0] == text for b in p["blocks"]))
+    menu = lambda: [m["label"] for m in sim.last()["menu"]]
+
+    def pick_menu(label):
+        labels = menu()
+        check(label in labels, labels)
+        sim.menu(labels.index(label))
+
+    sim.pick(1)
+    sim.expect(title("★ build · bash"), "the pane", 10)
+    wait_for("needs permission", lambda: sim.state() == "needs permission", 10)
+    pick_menu("Later")
+    wait_for("the flash", lambda: sim.state() == "parked", 10)
+    sim.expect(title("zz build · bash"), "the parked title", 10)
+    wait_for("the parked state", lambda: sim.state() == "later · permission", 10)
+    check("Wake" in menu() and not any(l.startswith("Go to") for l in menu()), menu())
+    sim.shot("pane-parked")
+    # A new kind on the parked pane: the words change, no toast.
+    seen = len(sim.trace())
+    core.notify("question", "Which file?", "work:build.0")
+    wait_for("the question underneath", lambda: sim.state() == "later · question", 10)
+    check(not any(p.get("hintBorder") for p in sim.trace()[seen:]), "a toast for a parked pane")
+    sim.back()
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 4 and rows(p)[3].startswith("zz"), "build last", 10)
+    check(rows(page)[0] == "◆ inbox · 1 waiting" and rows(page)[3] == "zz build · bash · later · asks a question", rows(page))
+    check(rows(page)[1].startswith("◌ test-pane · bash · ") and rows(page)[2].startswith("◌ tests · bash · "), rows(page))
+    check(page["hint"].startswith("◆ 1 · "), page["hint"])
+    sim.shot("list-parked")
+    # Another pane's menu: no Go to, since only the parked pane waits.
+    sim.pick(1)
+    sim.expect(title("◌ test-pane · bash"), "test-pane", 10)
+    wait_for("following", lambda: "following" in sim.state(), 10)
+    check(not any(l.startswith("Go to") for l in menu()), menu())
+    sim.back()
+    home(sim)
+    sim.pick(0)
+    page = sim.expect(lambda p: p["kind"] == "list" and p["hint"].startswith("inbox · 1 waiting"), "the inbox page", 10)
+    check(re.fullmatch(r"zz build · bash · later · asks a question · \d+s", page["items"][0]), page["items"])
+    sim.shot("inbox-parked")
+    sim.back()
+    home(sim)
+    # Opening the parked pane from the list wakes it.
+    sim.pick(3)
+    sim.expect(title("★ build · bash"), "the woken pane", 10)
+    wait_for("asks a question", lambda: sim.state() == "asks a question", 10)
+    laters = [r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/later")]
+    check([json.loads(r["body"]) for r in laters] == [{"later": True}, {"later": False}], [(r["path"], r["body"]) for r in laters])
+    sim.back()
+    page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("★ build"), "build back in its place", 10)
+    check(rows(page)[0] == "◆ inbox · 1 waiting" and rows(page)[1] == "★ build · bash · asks a question" and len(rows(page)) == 4, rows(page))
+    sim.shot("list-woken")
+    # Later and Wake toggle from the pane's menu.
+    sim.pick(1)
+    sim.expect(title("★ build · bash"), "the pane again", 10)
+    wait_for("asks a question", lambda: sim.state() == "asks a question", 10)
+    pick_menu("Later")
+    wait_for("the parked state", lambda: sim.state() == "later · question", 15)
+    pick_menu("Wake")
+    wait_for("the flash", lambda: sim.state() == "woken", 10)
+    wait_for("awake", lambda: sim.state() == "asks a question", 15)
+    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    sim.shot("pane-woken")
 
 
 @test("F50", "A write and a mail from one pane to another, each naming its origin: the two rows kept together behind the bar, mail 1 after the name, the third pane without a bar, the title the same, no toast", "UI")

@@ -352,6 +352,18 @@ class Proxy:
                         pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}, cwd=123),
                         pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}, cwd="////", alias="a" * 300),
                     ]}).encode()
+                if proxy.mode == "later-hostile" and bare in ("/v1/panes", "/v1/inbox"):
+                    # Later that breaks every rule: a string and a number for the flag, a later_at of a string, minus
+                    # one and 10^18, a parked pane with nothing pending, and 200 parked panes.
+                    now = int(time.time())
+                    pane = lambda path, **kw: {"address": f"{HOST}/work/{path}", "mode": "write", "command": "bash", "activity": now, **kw}
+                    parked = [
+                        pane("2.0", title="lone", later=True, later_at="soon"),
+                        pane("3.0", title="old", later=True, later_at=-1, attention={"kind": "permission", "at": now - 30, "text": "Claude needs your permission to use Bash"}),
+                        pane("4.0", title="far", later=True, later_at=10 ** 18),
+                    ] + [pane(f"{i}.0", title=f"p{i}", later=True, later_at=now - i) for i in range(5, 205)]
+                    awake = [pane("0.0", title="test-pane", later="yes", later_at=now), pane("1.0", title="build", later=1)]
+                    data = json.dumps({"panes": awake + parked} if bare == "/v1/panes" else {"inbox": parked, "count": len(parked)}).encode()
                 keep = ("etag", "content-type", "access-control-allow-origin", "access-control-allow-methods",
                         "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age")
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})

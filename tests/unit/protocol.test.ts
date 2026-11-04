@@ -124,10 +124,30 @@ test('parsePanes: a forged mark or mode in the title changes nothing', () => {
 
 test('parseHosts', () => {
   assert.deepEqual(parseHosts('{"hosts":[{"name":"alice-laptop","online":true},{"name":"BAD HOST","online":true},{"name":"bob","online":"yes"}]}'), [
-    { name: 'alice-laptop', online: true },
-    { name: 'bob', online: false },
+    { name: 'alice-laptop', online: true, later: false },
+    { name: 'bob', online: false, later: false },
   ])
   assert.deepEqual(parseHosts('nope'), [])
+  assert.equal(parseHosts('{"hosts":[{"name":"alice-laptop","online":true,"later":true},{"name":"bob","later":"yes"}]}').map((h) => h.later).join(), 'true,false')
+})
+
+test('parsePanes: later only when true, its time clamped; parseInbox keeps a parked entry with nothing pending', () => {
+  const panes = parsePanes(JSON.stringify({ panes: [
+    pane({ later: true, later_at: NOW - 40 }),
+    pane({ address: 'alice-laptop/work/1.0', later: 'yes', later_at: NOW - 40 }),
+    pane({ address: 'alice-laptop/work/2.0', later: 1 }),
+    pane({ address: 'alice-laptop/work/3.0', later: true, later_at: 'soon' }),
+    pane({ address: 'alice-laptop/work/4.0', later: true, later_at: NOW + 1e9 }),
+    pane({ address: 'alice-laptop/work/5.0', later: true, later_at: -1 }),
+    pane({ address: 'alice-laptop/work/6.0', later: false, later_at: NOW - 40 }),
+  ] }), NOW)
+  assert.deepEqual(panes.map((p) => [p.later, p.laterAt]), [[true, NOW - 40], [false, 0], [false, 0], [true, 0], [true, NOW], [true, 0], [false, 0]])
+  const inbox = parseInbox(JSON.stringify({ inbox: [
+    pane({ attention: { kind: 'done', at: NOW - 10 } }),
+    pane({ address: 'alice-laptop/work/1.0', later: true, later_at: NOW - 5 }),
+    pane({ address: 'alice-laptop/work/2.0' }),
+  ] }), NOW)
+  assert.deepEqual(inbox.map((p) => p.path), ['work/0.0', 'work/1.0'])
 })
 
 test('parseEvents: events and the cursor, hostile text, bad cursors', () => {

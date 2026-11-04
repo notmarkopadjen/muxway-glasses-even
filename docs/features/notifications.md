@@ -46,6 +46,45 @@ sequenceDiagram
 Out of scope, each its own feature later: notifications while the app is
 not open (an Even Hub app runs only while open), and sounds.
 
+## Later
+
+**Later** is the owner's own mark on a pane, kept by the host's agent
+and seen by every muxway client (the core's notifications feature): the
+owner has looked, decided not now, and wants the pane out of the way
+without losing it. The listing carries `"later": true` and `later_at`
+on a parked pane, with whatever attention it has underneath.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Awake
+    Awake --> Parked: Later in the pane's menu (a writer)
+    Parked --> Awake: Wake in the menu
+    Parked --> Awake: opened from the list, the inbox or the columns
+    Parked --> Awake: an answer, text or a spoken reply (the host wakes it)
+    Parked --> Parked: a notification arrives: the mark and the words, no toast
+```
+
+- A parked pane's mark is `zz` (the glasses' font has no moon) and its
+  state word `later`, with the attention after it where there is one:
+  `zz build · Claude · later · needs permission` (the pane page's state,
+  with room for a few words, says `later · permission`). It sorts after every
+  other pane in the list, and the [inbox](screens.md#the-inbox) lists
+  it after every awake pane, counted with the rest in the `◆ inbox · n
+  waiting` row.
+- A notification on a parked pane sets the mark and the words and reads
+  the list again, but draws **no toast**: the owner said later.
+- The pane's menu offers **Later** on an awake pane and **Wake** on a
+  parked one, `POST /v1/panes/{address}/later`, for a writable pane on
+  a host whose agent parks (`hosts[].later`); a read-only pane and an
+  older host have no entry. The state flashes `parked` or `woken`, or
+  the hub's refusal in words.
+- Opening a parked pane from the list, the inbox or the columns is the
+  owner coming back: the app wakes it first, when it may. *Go to* skips
+  parked panes.
+- The name is not slanted: the Even Hub text container takes text and a
+  grey, no font style, so, as the clients' guideline allows where the
+  font has no italics, the mark alone says it.
+
 ## Security considerations
 
 - The hub delivers only events for panes the token may read; the app

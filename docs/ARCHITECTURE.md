@@ -25,11 +25,12 @@ preflight such a page needs. The glasses see only what the page draws.
 | Call | How | For |
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
-| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices`), `activity`, `talk` (the partners of the last ten minutes, for the group's bar), `mail` (the unread count after the name); hosts online or not |
-| `GET /v1/inbox` | JSON | the inbox page: every pane that waits, oldest first, read when the page opens and with every listing while it is open |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices`), `activity`, `talk` (the partners of the last ten minutes, for the group's bar), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list); hosts online or not, and `later` where the host's agent parks |
+| `GET /v1/inbox` | JSON | the inbox page: every pane that waits, oldest first, then the parked ones, read when the page opens and with every listing while it is open |
 | `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
 | `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
+| `POST /v1/panes/{address}/later` | JSON `{"later": true}` or `false` | the menu's Later and Wake; the wake when a parked pane is opened |
 | `GET /v1/events` | JSON long poll: `?limit=1` for the cursor, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices` |
 | `GET /v1/transcribe` | `204` or `404` | whether **Say it** is offered |
 | `POST /v1/transcribe` | `audio/wav`, 16 kHz mono, up to 60 s | the spoken reply's text |

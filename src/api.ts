@@ -126,6 +126,8 @@ export const api = {
   key: (address: string, key: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ key }) }),
   /** A question's choice back to the process that asked; nothing is typed into the pane. */
   answer: (address: string, choice: string) => call('POST', `/v1/panes/${at(address)}/answer`, { body: JSON.stringify({ choice }) }),
+  /** Parks the pane for later, or wakes it: the owner's own mark on the host. */
+  later: (address: string, on: boolean) => call('POST', `/v1/panes/${at(address)}/later`, { body: JSON.stringify({ later: on }) }),
   /** Every pane that waits, oldest first. */
   inbox: () => call('GET', '/v1/inbox', { json: true }),
   /** Whether the hub has a transcriber: 204, or 404 which the caller reads as no. */
