@@ -596,15 +596,21 @@ class Sim:
 
     def scroll(self, direction, wait=1.0):
         """One scroll on a page without a list. The simulator reports one scroll per two ticks there,
-        but which tick is the second depends on what came before, so a tick that drew nothing within
-        a moment is followed by another."""
-        self.mark = len(self.trace())
+        but which tick is the second depends on what came before, so a tick that drew nothing new
+        within a moment is followed by another. The app draws the page again after every read of the
+        panes, the same page when nothing moved, so only a page unlike the last counts as drawn."""
+        trace = self.trace()
+        self.mark = len(trace)
+        before = trace[-1] if trace else None
+
+        def drawn():
+            return any(p != before for p in self.trace()[self.mark:])
         for _ in range(3):
             self.api("POST", "/api/input", {"action": direction})
             end = time.time() + 1.0
-            while time.time() < end and len(self.trace()) == self.mark:
+            while time.time() < end and not drawn():
                 time.sleep(0.1)
-            if len(self.trace()) > self.mark:
+            if drawn():
                 break
         time.sleep(wait)
 
@@ -631,11 +637,13 @@ class Sim:
         self.tap(wait)
 
     def cursor(self, page=None):
-        """The pane list's cursor: the index of its brightest row."""
+        """The pane list's cursor: the index of the row with the mark, in the rows block named by its window start."""
         page = page or self.last()
         for b in page["blocks"]:
-            if b.get("name", "").startswith("row") and b["level"] == 4:
-                return int(b["name"][3:])
+            if b.get("name", "").startswith("rows"):
+                for i, line in enumerate(b["lines"]):
+                    if line.startswith("> "):
+                        return int(b["name"][4:]) + i
         return 0
 
     def move(self, index):

@@ -101,7 +101,7 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
 
 def rows(p):
     """The pane list's rows on screen, in order, without the cursor mark and the blank ones."""
-    return [b["lines"][0][2:] for b in p["blocks"] if b.get("name", "").startswith("row") and b["lines"][0].strip()]
+    return [line[2:] for b in p["blocks"] if b.get("name", "").startswith("rows") for line in b["lines"] if line.strip()]
 
 
 def listed(p):
@@ -355,15 +355,15 @@ def s30(run, name):
     core, proxy, sim, tok = setup(run, name, mode="list-hostile")
     # Every one of the 200 claims attention, so the inbox row leads them: 201 rows.
     page = sim.expect(lambda p: listed(p) and total(p) == 201, "the 200 panes", 20)
-    check(len(rows(page)) == 7, f"{len(rows(page))} rows")
+    check(len(rows(page)) == 9, f"{len(rows(page))} rows")
     for row in rows(page):
         check("-" not in row.split("·")[-1], f"a negative age: {row}")
     check(rows(page)[0] == "◆ inbox · 200 waiting", rows(page)[0])
-    check(page["charts"] == [] and page["hint"].startswith("◆ 200 · 1–7 of 201 · "), f"the list page: {page['charts']} {page['hint']}")
+    check(page["charts"] == [] and page["hint"].startswith("◆ 200 · 1–9 of 201 · "), f"the list page: {page['charts']} {page['hint']}")
     sim.shot("hostile-list")
     sim.move(9)
-    page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "row3", "the window slid")
-    check(page["hint"].startswith("◆ 200 · 4–10 of 201 · "), page["hint"])
+    page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 9 and p["blocks"][0]["name"] == "rows1", "the window slid")
+    check(page["hint"].startswith("◆ 200 · 2–10 of 201 · "), page["hint"])
     sim.shot("hostile-list-slid")
     time.sleep(1)
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
@@ -600,13 +600,13 @@ def f10(run, name):
     sim.shot("list")
     for i in range(10):
         core.new_window(f"w{i:02d}")
-    page = sim.expect(lambda p: listed(p) and total(p) == 13 and len(rows(p)) == 7, "a full window", 25)
-    check(page["blocks"][0]["name"] == "row0" and sim.cursor(page) == 0, "the window moved without the cursor")
+    page = sim.expect(lambda p: listed(p) and total(p) == 13 and len(rows(p)) == 9, "a full window", 25)
+    check(page["blocks"][0]["name"] == "rows0" and sim.cursor(page) == 0, "the window moved without the cursor")
     sim.shot("list-full")
     sim.move(12)
     page = sim.expect(lambda p: listed(p) and sim.cursor(p) == 12, "the cursor at the end")
     # Addresses sort as text, so work/10.0 and work/11.0 come before work/2.0 and w07 is last.
-    check(page["blocks"][0]["name"] == "row6" and rows(page)[-1].startswith("◌ w07"), f"the window did not slide: {rows(page)}")
+    check(page["blocks"][0]["name"] == "rows4" and rows(page)[-1].startswith("◌ w07"), f"the window did not slide: {rows(page)}")
     sim.shot("list-end")
     sim.tap()
     sim.expect(lambda p: any("w07" in t for t in titles(p)), "the last pane opened")
@@ -895,7 +895,7 @@ def f42(run, name):
     page = sim.expect(lambda p: listed(p) and rows(p)[0] in ("◐ test-pane · Codex · working", "◑ test-pane · Codex · working"), "working", 8)
     sim.shot("list-codex")
     # A working row is plain: the same strength as the quiet one before the event. Its mark turns within a second.
-    check(next(b["level"] for b in page["blocks"] if b.get("name") == "row0") == 4, page["blocks"])
+    check(next(b["level"] for b in page["blocks"] if b.get("name", "").startswith("rows")) == 3, page["blocks"])
     other = "◑" if rows(page)[0][0] == "◐" else "◐"
     page = sim.expect(lambda p: listed(p) and rows(p)[0] == f"{other} test-pane · Codex · working", "the mark's other half", 3)
     sim.shot("list-codex-turned")

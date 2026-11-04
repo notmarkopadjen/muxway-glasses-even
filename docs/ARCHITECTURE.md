@@ -73,8 +73,8 @@ the whole design:
   the pane is a text page the app pages itself, and the answers are the
   OS's lists;
 - a page holds at most eight text containers, the hint among them:
-  seven blocks, so the pane list shows seven rows at a time, and there
-  is no head line;
+  seven blocks, so the pane list is one block of nine rows at the
+  font's pitch with the cursor as a mark, and there is no head line;
 - the glasses refused a page with an 8 px wide picture that the
   simulator took, so no picture thinner than 16 px is sent; where the
   window sits is said in words;
@@ -92,11 +92,13 @@ the whole design:
   refused on the glasses; a toast grows the hint upward by its padding,
   so every block of every page ends at the banner's top (`BANNER_Y`),
   not at the hint's;
-- the container that takes the gestures scrolls its text on a scroll
-  by whatever room it has, so the hint is a box with exactly one line
-  inside, the banner's shape (a hint with two pixels of room moved with
-  every scroll on the device, 2026-11-03); its top edge is the rule
-  above the footer on every page;
+- the container that takes the gestures scrolls its text on a scroll,
+  however little room it has (the hint moved with every scroll on the
+  device, 2026-11-03, boxed to one line or not), so on a page without
+  an OS list a block with nothing to show takes them: the rule under a
+  title, or an unseen 16 px square in the top right corner; the hint is
+  a box with exactly one line inside, the banner's shape, and its top
+  edge is the rule above the footer on every page;
 - a bordered text container two pixels high draws as a rule, and a
   title row 26 px high shows its text whole (both seen on the device on
   2026-11-03), which is how the pane view has a line under its title
@@ -109,8 +111,8 @@ the whole design:
   Up and Down).
 
 Every page is a **body** from the top of the glasses down to a **hint**
-line (dimmest) naming the gestures that work there; on a dash page the
-hint is the container that takes the gestures. Pictures, four greys in
+line (dimmest) naming the gestures that work there; on a dash page a
+block with nothing to show takes the gestures. Pictures, four greys in
 image containers of at most 288 x 144, carry what text cannot: the
 loudness graph while listening. A picture is pushed once and skipped
 while its key is unchanged; a page the wearer has left stops its pushes.

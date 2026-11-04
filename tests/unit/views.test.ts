@@ -79,10 +79,10 @@ test('a working pane is plain: its row and title are a quiet pane\'s but for the
   assert.equal(rowLabel(busy, NOW + 1), '◑ build · Codex · working')
   assert.equal(titleOf(busy, groupsOf([busy]), NOW), '◐ build · Codex')
   assert.equal(titleOf(quiet, groupsOf([quiet]), NOW), '◌ build · Codex')
-  // The rows share one strength, the cursor's brighter; the title is at full strength either way.
+  // The rows share one strength; the title is at full strength either way.
   for (const p of [quiet, busy]) {
-    const row = listPage(model([p]), NOW).blocks.find((b) => b.name === 'row0')
-    assert.equal(row?.level, 4)
+    const row = listPage(model([p]), NOW).blocks.find((b) => b.name?.startsWith('rows'))
+    assert.equal(row?.level, 3)
     const title = panePage(model([p]), p, undefined, { offset: 0, reveal: false, state: 'following' }, NOW).blocks.find((b) => b.name === 'title')
     assert.equal(title?.level, 4)
   }
@@ -238,18 +238,52 @@ test('the rule under the title: a bordered block with nothing in it, the body ri
   assert.equal(at(cols, 'col0')!.lines.length, 8)
   // No page carries a lower rule: the hint's own box edge is that line, on every screen alike.
   assert.equal(at(page, 'rule2'), undefined)
-  assert.equal(listPage(m, NOW).blocks.length, LIST_ROWS)
+  assert.equal(listPage(m, NOW).blocks.length, 2)
 })
 
-test('the list: seven rows from the top down to the hint, no head', () => {
-  const panes = Array.from({ length: 10 }, (_, i) => pane(`w/${i}.0`))
-  const page = listPage(model(panes), NOW)
-  assert.equal(LIST_ROWS, 7)
-  assert.equal(page.blocks.length, 7)
-  assert.equal(page.blocks[0].y, 0)
-  const last = page.blocks[6]
-  assert.ok(last.y + last.h <= BANNER_Y && BANNER_Y - (last.y + last.h) < LINE_H, `the last row ends at ${last.y + last.h}`)
+test('the list: nine rows in one block from the top down to the hint, the cursor a mark, no head', () => {
+  const panes = Array.from({ length: 12 }, (_, i) => pane(`w/${i}.0`))
+  const page = listPage(model(panes, { cursor: 10 }), NOW)
+  assert.equal(LIST_ROWS, 9)
+  const rows = page.blocks[0]
+  assert.equal(rows.name, 'rows2', 'the block is named by its window start')
+  assert.equal(rows.lines.length, 9)
+  assert.equal(rows.y, 0)
+  assert.ok(rows.y + rows.h <= BANNER_Y && BANNER_Y - (rows.y + rows.h) < LINE_H, `the rows end at ${rows.y + rows.h}`)
+  assert.ok(rows.lines[8].startsWith('> ') && rows.lines.filter((l) => l.startsWith('> ')).length === 1, rows.lines.join('|'))
   assert.equal('head' in page, false)
+  // Fewer panes than rows: the block keeps its lines, the rest blank.
+  assert.deepEqual(listPage(model(panes.slice(0, 2)), NOW).blocks[0].lines.slice(2), Array(7).fill(' '))
+})
+
+test('the catcher: on every page without an OS list exactly one block with nothing to show takes the gestures', () => {
+  const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' })]
+  const reading = { raw: ['a'], error: null }
+  const m = model(panes, { selected: panes.map((p) => p.address), reading: () => reading })
+  const voice = { phase: 'recording' as const, seconds: 3, text: 'hi', error: '', levels: [1] }
+  const answer = { label: 'y', short: 'y', pieces: [{ text: 'y' }, { key: 'Enter' }] }
+  const dash = {
+    list: listPage(m, NOW),
+    columns: splitPage(m),
+    pane: panePage(m, panes[0], reading, { offset: 0, reveal: false, state: 'following' }),
+    offer: offerPage(m, panes[0], answer),
+    listening: listenPage(m, panes[0], voice),
+    transcribing: listenPage(m, panes[0], { ...voice, phase: 'working' }),
+    failed: listenPage(m, panes[0], { ...voice, phase: 'error', error: 'too short' }),
+    heard: heardPage(m, panes[0], { ...voice, phase: 'review' }),
+  }
+  for (const [name, page] of Object.entries(dash)) {
+    const catchers = page.blocks.filter((b) => b.capture)
+    assert.equal(catchers.length, 1, `${name}: ${catchers.length} catchers`)
+    assert.equal(catchers[0].lines.join(''), '', `${name}: the catcher shows nothing`)
+    assert.equal(catchers[0].name, name === 'pane' || name === 'columns' ? 'rule1' : 'gesture', name)
+    // Nothing else sits in the corner catcher's corner.
+    if (catchers[0].name === 'gesture') for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
+  }
+  for (const page of [answersPage(m, panes[0], [], null, false), confirmPage(m, panes[0], answer), inboxPage({ ...m, inbox: [] }, NOW)]) {
+    assert.equal(page.kind, 'list')
+    assert.equal(page.blocks.filter((b) => b.capture).length, 0)
+  }
 })
 
 const CLAUDE = ['● Done.', '', '────────', '❯ run the tests again', '────────', '  ⏵⏵ auto mode on']

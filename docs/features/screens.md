@@ -112,9 +112,9 @@ device, whose font draws no check, no ring and no flag: `√` is done,
 other clients fly a flag. A waiting pane is marked (`★`, `√`, `○`) and
 listed first.
 
-The list is drawn by the app, seven rows at a time spread down to the
-hint, with a **cursor**, `>`, on the brightest row; the scroll moves it
-and the rows slide under it. With more panes than rows the hint starts
+The list is drawn by the app, nine rows at a time in one block at the
+font's pitch, with a **cursor**, `>`, before the row it is on; the
+scroll moves it and the rows slide under it. With more panes than rows the hint starts
 with where the window sits, `4–10 of 200`; a host that is offline is
 named there first, `○ alice-laptop offline`. A **tap** opens the pane
 under the cursor.
@@ -318,7 +318,7 @@ send this to build?
 - Rows are clamped by pixels before they reach the firmware, so a
   hostile title cannot reject the page; the mark and the selection's
   box come from the listing's fields and the wearer's gestures, never
-  from the title; a listing of hundreds of panes is seven rows and a
+  from the title; a listing of hundreds of panes is nine rows and a
   cursor.
 - The selection is a list of addresses the hub returned, held in memory
   only and pruned to every listing; a hostile listing cannot select
