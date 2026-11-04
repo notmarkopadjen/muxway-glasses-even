@@ -11,7 +11,7 @@ import { groupsOf } from '../../src/groups.ts'
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, ...extra }
   return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
@@ -92,6 +92,35 @@ test('a working pane is plain: its row and title are a quiet pane\'s but for the
   assert.equal(turning(listPage(model([quiet]), NOW)), false)
   assert.equal(turning(panePage(model([busy]), busy, undefined, { offset: 0, reveal: false, state: 'following' }, NOW)), true)
   assert.equal(turning(panePage(model([quiet]), quiet, { raw: ['◐ in the pane text'], error: null }, { offset: 0, reveal: false, state: 'following' }, NOW)), false)
+})
+
+test('a named pane: the alias first, the program, then what the program says; the folder after the name while the line has room', () => {
+  const review = pane('work/0.0', { alias: 'review', title: '✳ fixing the build', cwd: '/home/alice/src/muxway' })
+  assert.equal(rowLabel(review, NOW), '◌ review · /muxway · Claude · fixing the build · active')
+  // The title block is 376 px: this one is 395 with the folder, so the title goes without it.
+  assert.equal(titleOf(review, groupsOf([review]), NOW), '◌ review · Claude · fixing the build')
+  assert.equal(titleOf(review, groupsOf([review]), NOW, 400), '◌ review · /muxway · Claude · fixing the build')
+  const notes = pane('work/1.0', { alias: 'notes', command: 'bash', title: 'notes.md', cwd: '/home/alice/src' })
+  assert.equal(rowLabel(notes, NOW), '◌ notes · /src · bash · notes.md · active')
+  assert.equal(titleOf(notes, groupsOf([notes]), NOW), '◌ notes · /src · bash · notes.md')
+  // Without an alias the title is the name and nothing follows but the program.
+  const build = pane('work/2.0', { title: '✳ build', cwd: '/home/alice/src/muxway' })
+  assert.equal(rowLabel(build, NOW), '◌ build · /muxway · Claude · active')
+  assert.equal(titleOf(build, groupsOf([build]), NOW), '◌ build · /muxway · Claude')
+  // A status that repeats the name is left out; a title that says nothing gives none.
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '✳ build' }), NOW), '◌ build · Claude · active')
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: 'claude' }), NOW), '◌ build · Claude · active')
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '' }), NOW), '◌ build · Claude · active')
+  // A folder without a cwd: none; a reader gets none from the hub, and the row is as before.
+  assert.equal(rowLabel(pane('work/4.0', { alias: 'review', title: '✳ fixing the build', writable: false }), NOW), '◌ review · Claude · fixing the build · active · read-only')
+  // The folder goes first when the line is too wide, in the row, the title and a column.
+  const long = pane('work/5.0', { alias: 'review', title: '✳ ' + 'word '.repeat(12).trim(), cwd: '/home/alice/src/muxway' })
+  assert.equal(rowLabel(long, NOW), `◌ review · Claude · ${'word '.repeat(12).trim()} · active`)
+  assert.equal(titleOf(long, groupsOf([long]), NOW), `◌ review · Claude · ${'word '.repeat(12).trim()}`)
+  assert.equal(titleOf(review, groupsOf([review]), NOW, 180), '◌ review · Claude · fixing the build')
+  assert.equal(rowLabel(long, NOW, 'on', true), `│ [x] ◌ review · Claude · ${'word '.repeat(12).trim()} · active`)
+  // The inbox row keeps the name alone: the kind and the age matter more in its 63 bytes.
+  assert.equal(inboxLabel({ ...review, attention: 'permission', attentionAt: NOW - 60 }, NOW), '★ review · Claude · needs permission · 1m')
 })
 
 test('a row: mark, name, program, state, read-only, and the selection prefix', () => {

@@ -8,7 +8,9 @@ the title), *Codex* (`codex`), *Gemini* (`gemini`), *Antigravity*
 Antigravity and Copilot also by their name in the title when the command
 is an interpreter (`node`, `bun`, `deno`, `python`, `python3`, `uv`). The
 name stands where the command would in the list's rows and the pane's
-title (`★ build · Codex · asks a question`), and the word *working*
+title (`★ build · Codex · asks a question`; for a pane its owner named,
+after the name and before the codename, `★ review · Claude · build ·
+asks a question`), and the word *working*
 applies to any of them (see [notifications](notifications.md)); a
 working pane is plain, as on every client since 2026-11-02, its mark
 the half circle `◐` `◑` turned once a second in place of the ring,

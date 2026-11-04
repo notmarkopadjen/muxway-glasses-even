@@ -19,6 +19,8 @@ export interface Pane {
   command: string
   title: string
   alias: string
+  /** The directory the pane's program is in, for a writer under a preview root; '' when the host gives none. */
+  cwd: string
   /** The AI harness in the pane, from its command or its title; '' for any other program. */
   agent: Agent | ''
   attention: Attention | ''
@@ -62,6 +64,8 @@ const MAX_CHOICES = 8
 const MAX_CHOICE = 40
 const MAX_TALK = 32
 const MAX_MAIL = 999
+const MAX_CWD = 256
+const MAX_FOLDER = 32
 
 // The harnesses every client names, by command, and under an interpreter by their name in the title.
 const AGENTS: [Agent, string, RegExp | null][] = [
@@ -174,6 +178,7 @@ function parsePane(item: unknown, now: number): Pane | null {
     command,
     title,
     alias: str(o.alias, 32),
+    cwd: str(o.cwd, MAX_CWD),
     agent: agentOf(command, title),
     attention: kind,
     attentionAt: att ? when(att.at, now) : 0,
@@ -229,15 +234,26 @@ export function parseHosts(body: string): Host[] {
     .map((h) => ({ name: h.name as string, online: h.online === true }))
 }
 
-/** The name a pane goes by: its alias, else its title, unless the title says nothing. */
-export function paneName(p: Pane): string {
-  if (p.alias) return p.alias
+/** What the program says about itself: its title without Claude's mark, or nothing when it only repeats the command or the host. */
+export function programSays(p: Pick<Pane, 'title' | 'command' | 'host'>): string {
   let title = p.title
   // Claude Code's mark in front of its title is decoration; the list has marks of its own.
   if (title.startsWith('✳ ') || title.startsWith('* ')) title = title.slice(2).trim()
   else if (title === '✳' || title === '*') title = ''
-  if (title.length === 0 || title === p.command || title === p.host) return p.path
+  if (title === p.command || title === p.host) return ''
   return title
+}
+
+/** The name a pane goes by: its alias, else what the program says, else its address. */
+export function paneName(p: Pane): string {
+  if (p.alias) return p.alias
+  return programSays(p) || p.path
+}
+
+/** The last segment of the directory the pane works in; '' without one. */
+export function folder(p: Pick<Pane, 'cwd'>): string {
+  const parts = p.cwd.split('/').filter((s) => s.length)
+  return (parts[parts.length - 1] ?? '').slice(0, MAX_FOLDER)
 }
 
 /** The hub's JSON events, oldest first, and the cursor. */
