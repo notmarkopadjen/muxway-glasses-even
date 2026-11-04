@@ -173,4 +173,7 @@ codename follows as the status), this plan.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+The full suite on the pull request's tree (`88c7007`):
+[#66](https://github.com/notmarkopadjen/muxway-glasses-even/issues/66),
+109 tests, passed; the logs, screenshots and traces are the workflow
+run's artifact.
