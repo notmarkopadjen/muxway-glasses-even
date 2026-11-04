@@ -15,11 +15,13 @@ import { CANVAS_W, LINE_PX, byteLength, textWidth, typed, wrapRows } from './tex
 export const MARK: Record<Attention, string> = { question: '★', permission: '★', done: '√', idle: '○' }
 const TURN = ['◐', '◑']
 const NONE = '◌'
+/** A parked pane's mark: the font has no moon, so the guideline's own fallback. */
+export const LATER = 'zz'
 export const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
 export const SAY_IT = '» Say it'
 export const INBOX = '◆ inbox'
 
-export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7 }
+export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7, later: 8 }
 
 /** What the app holds and the pages read. */
 export interface Model {
@@ -94,9 +96,9 @@ export function needs(p: Pane): boolean {
   return p.attention === 'question' || p.attention === 'permission'
 }
 
-/** Panes in the order every page uses: those that need you first, then by address, a group of panes that talk kept together after its first member. */
+/** Panes in the order every page uses: those that need you first, the parked ones last, by address between, a group of panes that talk kept together after its first member. */
 export function sorted(panes: Pane[]): Pane[] {
-  const rank = (p: Pane) => (needs(p) ? 0 : p.attention ? 1 : 2)
+  const rank = (p: Pane) => (p.later ? 3 : needs(p) ? 0 : p.attention ? 1 : 2)
   const byRank = panes.slice().sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
   return pullTogether(byRank, groupsOf(panes))
 }
@@ -182,8 +184,9 @@ function ago(seconds: number, now: number): string {
 
 // --- the list: the main screen ---------------------------------------------------------
 
-/** What a row says about the pane's state: the attention in words, else the harness's word, else what its output says. */
+/** What a row says about the pane's state: later with what waits underneath, else the attention in words, else the harness's word, else what its output says. */
 export function stateWord(p: Pane, now: number): string {
+  if (p.later) return 'later' + (p.attention ? ` · ${WORDS[p.attention]}` : '')
   if (p.attention) return WORDS[p.attention]
   // A harness is working from its last working event until its next event, however still its screen.
   if (p.working) return 'working'
@@ -191,8 +194,9 @@ export function stateWord(p: Pane, now: number): string {
   return now - p.activity >= 60 ? `quiet ${ago(p.activity, now)}` : 'active'
 }
 
-/** A pane's mark: its attention's, the half circle turned by the second while it works, else the dotted ring. */
+/** A pane's mark: parked, else its attention's, the half circle turned by the second while it works, else the dotted ring. */
 export function markOf(p: Pane, now: number): string {
+  if (p.later) return LATER
   if (p.attention) return MARK[p.attention]
   if (stateWord(p, now) === 'working') return TURN[now % 2]
   return NONE
@@ -224,9 +228,10 @@ export const MAX_SELECTED = 3
 
 export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
-/** The panes that wait, oldest first: what the inbox lists. */
+/** The panes that wait, oldest first, then the parked ones by their parking: what the inbox lists and counts. */
 export function waiting(panes: Pane[]): Pane[] {
-  return panes.filter((p) => p.attention).sort((a, b) => a.attentionAt - b.attentionAt || a.address.localeCompare(b.address))
+  const at = (p: Pane) => (p.later ? 1e12 + p.laterAt : p.attentionAt)
+  return panes.filter((p) => p.attention || p.later).sort((a, b) => at(a) - at(b) || a.address.localeCompare(b.address))
 }
 
 /** Every row of the list and what each one is: the panes, then in selection mode its actions. */
@@ -335,6 +340,11 @@ export function splitPage(m: Model, now: number): Page {
 
 // --- the pane -----------------------------------------------------------------------------
 
+/** Whether the glasses may park or wake the pane: a writer, on a host whose agent parks. */
+export function canPark(m: Pick<Model, 'hosts'>, p: Pane): boolean {
+  return p.writable && m.hosts.some((h) => h.name === p.host && h.later)
+}
+
 export interface PaneState {
   offset: number
   reveal: boolean
@@ -357,6 +367,7 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
   if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
   menu.push({ id: MENU.bottom, label: 'Bottom' })
+  if (canPark(m, p)) menu.push({ id: MENU.later, label: p.later ? 'Wake' : 'Later' })
   if (m.needsYou && m.needsYou.address !== p.address) menu.push({ id: MENU.needsYou, label: 'Go to: ' + paneName(m.needsYou) })
   return {
     kind: 'dash',
@@ -398,12 +409,12 @@ export function confirmPage(m: Model, p: Pane, a: Answer): Page {
 /** How many rows the inbox lists: the OS list's most. */
 export const INBOX_ROWS = 20
 
-/** The inbox's row: the mark, the name, the program, the kind and how long it has waited. */
+/** The inbox's row: the mark, the name, the program, the kind (later first on a parked pane) and how long it has waited, or been parked. */
 export function inboxLabel(p: Pane, now: number): string {
   const name = paneName(p)
   const prog = program(p)
-  const word = p.attention ? WORDS[p.attention] : ''
-  return `${markOf(p, now)} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${word}` + (p.attentionAt ? ` · ${ago(p.attentionAt, now)}` : '')
+  const since = p.attentionAt || p.laterAt
+  return `${markOf(p, now)} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${stateWord(p, now)}` + (since ? ` · ${ago(since, now)}` : '')
 }
 
 /** Every pane that waits, oldest first, as an OS list: a tap opens the pane. */

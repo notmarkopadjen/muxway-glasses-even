@@ -369,8 +369,11 @@ export class App {
         pane.choices = choices
         pane.working = false
       }
-      this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
-      this.later(TOAST_MS)
+      // A parked pane keeps the kind underneath and stays quiet: no toast.
+      if (!pane?.later) {
+        this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
+        this.later(TOAST_MS)
+      }
     }
     this.log(`event ${kind} on ${name}`)
     if (this.watched().some((p) => p.address === address)) this.scheduleRead(0)
@@ -666,8 +669,40 @@ export class App {
   private async openPane(pane: Pane, fromSplit: boolean) {
     this.offset = 0
     this.reveal = false
+    // Opening a parked pane is the owner coming back: it wakes, where the glasses may wake it.
+    if (pane.later && V.canPark({ hosts: this.hosts }, pane)) {
+      try {
+        await api.later(pane.address, false)
+        pane.later = false
+        this.log(`woke ${paneName(pane)}`, 'ok')
+      } catch (e) {
+        await this.failed(e, 'POST later')
+      }
+      this.scheduleList(0)
+    }
     await this.push({ kind: 'pane', pane, fromSplit })
     this.onPane?.(pane)
+  }
+
+  /** The pane as the last listing has it, else as it was opened. */
+  private current(pane: Pane): Pane {
+    return this.panes.find((x) => x.address === pane.address) ?? pane
+  }
+
+  /** Parks the open pane for later, or wakes it; the host keeps the mark and every client sees it. */
+  private async park(pane: Pane, on: boolean) {
+    let words = on ? 'parked' : 'woken'
+    try {
+      await api.later(pane.address, on)
+      pane.later = on
+      this.log(`${words} ${paneName(pane)}`, 'ok')
+    } catch (e) {
+      words = await this.failed(e, 'POST later')
+    }
+    this.flash = { text: words, until: Date.now() + FLASH_MS }
+    this.later(FLASH_MS)
+    await this.redraw()
+    this.scheduleList(0)
   }
 
   private async onMenu(id: number) {
@@ -695,6 +730,12 @@ export class App {
         await this.openPane(pane, false)
         break
       }
+      case V.MENU.later:
+        if (v.kind === 'pane') {
+          const p = this.current(v.pane)
+          if (V.canPark({ hosts: this.hosts }, p)) await this.park(p, !p.later)
+        }
+        break
       case V.MENU.typeOnly:
         if (v.kind === 'heard') await this.sendVoice(v.pane, false)
         break
@@ -899,7 +940,7 @@ export class App {
     let bestAt = Infinity
     for (const p of this.sorted) {
       const a = this.attention.get(p.address)
-      if (!a) continue
+      if (!a || p.later) continue
       const at = (V.needs(p) ? 0 : 1e13) + a.at
       if (at < bestAt) {
         best = p
@@ -961,13 +1002,16 @@ export class App {
       case 'pane': {
         const r = this.readers.get(v.pane.address)
         const a = this.attention.get(v.pane.address)
+        const p = this.current(v.pane)
         let state: string
         if (m.flash) state = m.flash
         else if (r?.error) state = r.error
+        // The state has room for a few words: the kind as the hub names it, after later.
+        else if (p.later) state = 'later' + (a ? ` · ${a.kind}` : '')
         else if (a) state = V.WORDS[a.kind]
         else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
         else state = r?.raw.length ? 'following' : 'reading…'
-        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state }, now)
+        return V.panePage(m, p, r, { offset: this.offset, reveal: this.reveal, state }, now)
       }
       case 'answers':
         return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane))

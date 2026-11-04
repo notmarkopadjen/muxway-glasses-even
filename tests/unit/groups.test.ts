@@ -6,7 +6,7 @@ import { groupsOf, pullTogether } from '../../src/groups.ts'
 import type { Pane } from '../../src/protocol.ts'
 
 function pane(path: string, talk: string[] = []): Pane {
-  return { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'bash', title: '', alias: '', cwd: '', agent: '', attention: '', attentionAt: 0, attentionText: '', choices: [], activity: 0, working: false, talk: talk.map((t) => 'alice-laptop/' + t), mail: 0 }
+  return { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'bash', title: '', alias: '', cwd: '', agent: '', attention: '', attentionAt: 0, attentionText: '', choices: [], activity: 0, working: false, talk: talk.map((t) => 'alice-laptop/' + t), mail: 0, later: false, laterAt: 0 }
 }
 
 test('groupsOf joins partners of partners and numbers a group by its first member', () => {
