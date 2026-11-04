@@ -62,26 +62,27 @@ before the hub has said so.
 ## The pane list: the main screen
 
 ```
-  ⚑ inbox · 2 waiting
+  ◆ inbox · 2 waiting
   [x] ★ build · Claude · needs permission
-  [x] ● tests · bash · done
-> │ [ ] · logs · mail 1 · tail · active
-  │ [ ] · api · Codex · working
+  [x] √ tests · bash · done
+> │ [ ] ◌ logs · mail 1 · tail · active
+  │ [ ] ◐ api · Codex · working
   → open 2 side by side
   → clear selection
 
-⚑ 2 · ▽ move · ● select · 3 at most · ×× done
+◆ 2 · ▽ move · ● select · 3 at most · ×× done
 ```
 
 One row per pane, those that need you first, then by address: the mark
-(`★` asks a question or needs permission, `●` done, `○` idle, `·`
-nothing reported), the name, the program, a **state word**, and
+(`★` asks a question or needs permission, `√` done, `○` idle, `◐`
+turning while the pane works, `◌` nothing reported), the name, the
+program, a **state word**, and
 `read-only` where the token cannot write. The program is named as every
 muxway client names it ([lenses](lenses.md)): *Claude*, *Codex*,
 *Gemini*, *Antigravity*, *OpenCode*, *Copilot*, *aider*, *goose*, *Amp*
 or *Cursor* for an AI harness, else the command. While anything waits
-the first row is the way to the [inbox](#the-inbox), `⚑ inbox · 2
-waiting`, and the hint starts with the count, `⚑ 2`. The state word
+the first row is the way to the [inbox](#the-inbox), `◆ inbox · 2
+waiting`, and the hint starts with the count, `◆ 2`. The state word
 says only what is known:
 
 | The hub said | The row says |
@@ -99,12 +100,16 @@ harness's own word, from its hook or the host's watcher
 ([notifications](notifications.md)), and lasts until its next event,
 however still the screen: a long tool call draws nothing for minutes.
 
-The word is the whole of a state on the glasses: the display has no
-paint for one. A working pane's row and title are drawn like a quiet
-pane's, with the plain `·`, and only the word says it is working, as
-the core's guideline (§1.2) has it for every client since 2026-11-02:
-the ring and the word carry the state, and the glasses, which draw no
-ring, keep the word. A waiting pane is marked (`★`, `●`, `○`) and
+The mark and the word are the whole of a state on the glasses: the
+display has no paint for one. A working pane's row and title are drawn
+like a quiet pane's, as the core's guideline (§1.2) has it for every
+client since 2026-11-02, where the ring and the word carry the state;
+the glasses' ring is the half circle, `◐` then `◑`, turned once a
+second while the mark is on the screen (the row is upgraded in place,
+nothing is rebuilt). The marks are of one size and were found on the
+device, whose font draws no check, no ring and no flag: `√` is done,
+`◌` is a pane with nothing reported, and the inbox's `◆` stands where
+other clients fly a flag. A waiting pane is marked (`★`, `√`, `○`) and
 listed first.
 
 The list is drawn by the app, nine rows at a time in one block at the
@@ -144,7 +149,7 @@ confirms. Nowhere else leaves the app.
 ```
 ★ build · Claude · needs permission · 3m
 ★ tests · Codex · asks a question · 40s
-● api · Claude · done · 12s
+√ api · Claude · done · 12s
 inbox · 3 waiting · ▽ choose · ● open · ×× back
 ```
 
@@ -161,7 +166,7 @@ that has waited longest, a question or a permission before the rest.
 ## Side by side
 
 ```
-» ★ build · claude       ● tests · bash
+» ★ build · claude       √ tests · bash
 ● Bash(make test)        $ make test
   ok                     ok
   ...                    $

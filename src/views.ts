@@ -11,10 +11,13 @@ import { paneName, program, type Attention, type Host, type Pane } from './proto
 import { tiles, type Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, byteLength, typed, wrapRows } from './text.ts'
 
-export const MARK: Record<Attention | '', string> = { question: '★', permission: '★', done: '●', idle: '○', '': '·' }
+// The marks were found on the device: the font draws no check, no ring and no flag.
+export const MARK: Record<Attention, string> = { question: '★', permission: '★', done: '√', idle: '○' }
+const TURN = ['◐', '◑']
+const NONE = '◌'
 export const WORDS: Record<Attention, string> = { question: 'asks a question', permission: 'needs permission', idle: 'idle', done: 'done' }
 export const SAY_IT = '» Say it'
-export const INBOX = '⚑ inbox'
+export const INBOX = '◆ inbox'
 
 export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7 }
 
@@ -101,8 +104,8 @@ export function mailWord(p: Pane): string {
 }
 
 /** The pane's title line: the bar when it is in a group, the mark, the name, its mail, the program. */
-export function titleOf(p: Pane, groups: Groups): string {
-  return `${groups.has(p.address) ? BAR : ''}${MARK[p.attention]} ${paneName(p)}${mailWord(p)} · ${program(p) || '?'}`
+export function titleOf(p: Pane, groups: Groups, now: number): string {
+  return `${groups.has(p.address) ? BAR : ''}${markOf(p, now)} ${paneName(p)}${mailWord(p)} · ${program(p) || '?'}`
 }
 
 function hint(m: Model, base: string): Pick<Page, 'hint' | 'hintLevel' | 'hintBorder'> {
@@ -165,12 +168,25 @@ export function stateWord(p: Pane, now: number): string {
   return now - p.activity >= 60 ? `quiet ${ago(p.activity, now)}` : 'active'
 }
 
+/** A pane's mark: its attention's, the half circle turned by the second while it works, else the dotted ring. */
+export function markOf(p: Pane, now: number): string {
+  if (p.attention) return MARK[p.attention]
+  if (stateWord(p, now) === 'working') return TURN[now % 2]
+  return NONE
+}
+
+/** Whether a page carries a turning mark, so it is drawn again next second. */
+export function turning(p: Page): boolean {
+  const texts = p.blocks.filter((b) => b.name?.startsWith('row') || b.name?.startsWith('title')).flatMap((b) => b.lines)
+  return [...texts, ...p.items].some((t) => TURN.some((f) => t.includes(f)))
+}
+
 /** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]. */
 export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none', grouped = false): string {
   const name = paneName(p)
   const word = stateWord(p, now)
   const prog = program(p)
-  return (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${MARK[p.attention]} ${name}` + mailWord(p) + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  return (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${markOf(p, now)} ${name}` + mailWord(p) + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
 }
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
@@ -251,7 +267,7 @@ export function listPage(m: Model, now: number): Page {
   const where = items.length > LIST_ROWS ? `${start + 1}–${Math.min(items.length, start + LIST_ROWS)} of ${items.length} · ` : ''
   const offline = m.hosts.filter((h) => !h.online).map((h) => `○ ${h.name} offline · `).join('')
   const n = waiting(m.panes).length
-  const wait = n && m.loaded ? `⚑ ${n} · ` : ''
+  const wait = n && m.loaded ? `◆ ${n} · ` : ''
   const base = !m.loaded
     ? 'reading the hub ' + '·'.repeat(Math.max(1, Math.min(3, m.dots)))
     : wait + offline + where + (m.selecting ? `▽ move · ● select · ${MAX_SELECTED} at most · ×× done` : '▽ move · ● open · hold to select · ×× exit')
@@ -260,7 +276,7 @@ export function listPage(m: Model, now: number): Page {
 
 // --- side by side -------------------------------------------------------------------------
 
-export function splitPage(m: Model): Page {
+export function splitPage(m: Model, now: number): Page {
   const shown = selectedPanes(m)
   const columns = Math.max(2, shown.length)
   const colW = Math.floor((CANVAS_W - COL_GAP * (columns - 1)) / columns)
@@ -269,7 +285,7 @@ export function splitPage(m: Model): Page {
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    const title = `${chosen ? '» ' : ''}${titleOf(p, groups)}`
+    const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now)}`
     blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
@@ -301,8 +317,8 @@ export interface PaneState {
 const TITLE_W = 376
 const BODY_W = CANVAS_W - 4
 
-export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState): Page {
-  const title = titleOf(p, groupsOf(m.panes))
+export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState, now: number): Page {
+  const title = titleOf(p, groupsOf(m.panes), now)
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
   blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })
@@ -361,7 +377,7 @@ export function inboxLabel(p: Pane, now: number): string {
   const name = paneName(p)
   const prog = program(p)
   const word = p.attention ? WORDS[p.attention] : ''
-  return `${MARK[p.attention]} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${word}` + (p.attentionAt ? ` · ${ago(p.attentionAt, now)}` : '')
+  return `${markOf(p, now)} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${word}` + (p.attentionAt ? ` · ${ago(p.attentionAt, now)}` : '')
 }
 
 /** Every pane that waits, oldest first, as an OS list: a tap opens the pane. */
