@@ -83,6 +83,8 @@ export class App {
   private clearTimer: ReturnType<typeof setTimeout> | null = null
   /** Redraws now and then, so a row's "quiet 4m" grows older. */
   private tickTimer: ReturnType<typeof setInterval> | null = null
+  /** Turns a working mark once a second while one is on the screen. */
+  private spinTimer: ReturnType<typeof setInterval> | null = null
   private cursor: number | null = null
   private eventsRunning = false
   private eventsGen = 0
@@ -160,6 +162,7 @@ export class App {
     if (this.tickTimer) clearInterval(this.tickTimer)
     this.listTimer = this.readTimer = null
     this.tickTimer = null
+    this.spin(false)
     this.stopDots()
     this.eventsGen++
     this.eventsRunning = false
@@ -931,7 +934,17 @@ export class App {
   }
 
   private async redraw() {
-    await this.view.show(this.page())
+    const page = this.page()
+    await this.view.show(page)
+    this.spin(this.foreground && V.turning(page))
+  }
+
+  private spin(on: boolean) {
+    if (on && !this.spinTimer) this.spinTimer = setInterval(() => void this.redraw(), 1000)
+    if (!on && this.spinTimer) {
+      clearInterval(this.spinTimer)
+      this.spinTimer = null
+    }
   }
 
   private page(): Page {
@@ -944,7 +957,7 @@ export class App {
       case 'inbox':
         return V.inboxPage(m, now)
       case 'split':
-        return V.splitPage(m)
+        return V.splitPage(m, now)
       case 'pane': {
         const r = this.readers.get(v.pane.address)
         const a = this.attention.get(v.pane.address)
@@ -954,7 +967,7 @@ export class App {
         else if (a) state = V.WORDS[a.kind]
         else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
         else state = r?.raw.length ? 'following' : 'reading…'
-        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state })
+        return V.panePage(m, v.pane, r, { offset: this.offset, reveal: this.reveal, state }, now)
       }
       case 'answers':
         return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane))
