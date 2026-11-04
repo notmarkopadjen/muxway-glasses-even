@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentOf, agentName, checkHubUrl, checkToken, errorWords, paneName, parseChoices, parseEvents, parseHosts, parseInbox, parsePanes } from '../../src/protocol.ts'
+import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneName, parseChoices, programSays, parseEvents, parseHosts, parseInbox, parsePanes } from '../../src/protocol.ts'
 
 const NOW = 1_800_000_000
 const pane = (o: Record<string, unknown>) => ({ address: 'alice-laptop/work/0.0', mode: 'write', command: 'bash', title: 'test-pane', activity: NOW - 60, ...o })
@@ -89,6 +89,31 @@ test('paneName: a title that says nothing gives the address; an alias wins', () 
   assert.equal(paneName({ ...p, title: '*' }), 'work/0.1')
   assert.equal(paneName({ ...p, title: '* tests' }), 'tests')
   assert.equal(paneName({ ...p, alias: 'build' }), 'build')
+})
+
+test('programSays: the title without the spark, nothing when it repeats the command or the host', () => {
+  const p = parsePanes(JSON.stringify({ panes: [pane({ command: 'claude', title: '✳ fixing the build' })] }), NOW)[0]
+  assert.equal(programSays(p), 'fixing the build')
+  assert.equal(programSays({ ...p, title: '✳' }), '')
+  assert.equal(programSays({ ...p, title: '' }), '')
+  assert.equal(programSays({ ...p, title: 'claude' }), '')
+  assert.equal(programSays({ ...p, title: 'alice-laptop' }), '')
+  assert.equal(programSays({ ...p, command: 'vim', title: 'notes.md' }), 'notes.md')
+})
+
+test('parsePanes: cwd read, cleaned and cut; folder is its last segment', () => {
+  const panes = parsePanes(JSON.stringify({ panes: [
+    pane({ cwd: '/home/alice/src/muxway' }),
+    pane({ address: 'alice-laptop/work/1.0', cwd: '/' }),
+    pane({ address: 'alice-laptop/work/2.0' }),
+    pane({ address: 'alice-laptop/work/3.0', cwd: ['/x'] }),
+    pane({ address: 'alice-laptop/work/4.0', cwd: '/a\x1b[1m/../' + 'b'.repeat(100) }),
+    pane({ address: 'alice-laptop/work/5.0', cwd: '/x/'.repeat(200) + 'deep' }),
+  ] }), NOW)
+  assert.deepEqual(panes.map(folder), ['muxway', '', '', '', 'b'.repeat(32), 'x'])
+  assert.equal(panes[0].cwd, '/home/alice/src/muxway')
+  assert.equal(panes[4].cwd.includes('\x1b'), false)
+  assert.equal(panes[5].cwd.length, 256)
 })
 
 test('parsePanes: a forged mark or mode in the title changes nothing', () => {

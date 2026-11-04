@@ -7,9 +7,9 @@ import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
 import { BANNER_Y, LINE_H, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
-import { paneName, program, type Attention, type Host, type Pane } from './protocol.ts'
+import { folder, paneName, program, programSays, type Attention, type Host, type Pane } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
-import { CANVAS_W, LINE_PX, byteLength, typed, wrapRows } from './text.ts'
+import { CANVAS_W, LINE_PX, byteLength, textWidth, typed, wrapRows } from './text.ts'
 
 // The marks were found on the device: the font draws no check, no ring and no flag.
 export const MARK: Record<Attention, string> = { question: '★', permission: '★', done: '√', idle: '○' }
@@ -80,6 +80,12 @@ function rule(name: string, y: number): Block {
 const CATCH = 16
 /** Width left to a title row beside the catcher. */
 const BESIDE_W = CANVAS_W - CATCH - 4
+/** The pane's title block; the state sits beside it. */
+const TITLE_W = 376
+/** The rows' block leaves the corner to the catcher; a row's text is at most 490 px anyway. */
+const ROW_W = CANVAS_W - CATCH - 6
+/** What a block shows of a line: its width less the text's margin. */
+const INNER = 4
 function catcher(): Block {
   return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: CATCH, lines: [''], level: 0, capture: true }
 }
@@ -103,9 +109,26 @@ export function mailWord(p: Pane): string {
   return p.mail ? ` · mail ${p.mail}` : ''
 }
 
-/** The pane's title line: the bar when it is in a group, the mark, the name, its mail, the program. */
-export function titleOf(p: Pane, groups: Groups, now: number): string {
-  return `${groups.has(p.address) ? BAR : ''}${markOf(p, now)} ${paneName(p)}${mailWord(p)} · ${program(p) || '?'}`
+/** A named pane's status: what the program says about itself, after the program; nothing without an alias, or when it repeats the name. */
+function statusWord(p: Pane, name: string): string {
+  const said = p.alias ? programSays(p) : ''
+  return said && said !== name ? ` · ${said}` : ''
+}
+
+/** The folder after the name, when the whole line has room for it in the width; else the line without. */
+function withFolder(before: string, after: string, p: Pane, room: number): string {
+  const dir = folder(p)
+  if (dir) {
+    const line = `${before} · /${dir}${after}`
+    if (textWidth(line) <= room) return line
+  }
+  return before + after
+}
+
+/** The pane's title line: the bar when it is in a group, the mark, the name, its mail, the folder, the program, a named pane's status. */
+export function titleOf(p: Pane, groups: Groups, now: number, room = TITLE_W - INNER): string {
+  const name = paneName(p)
+  return withFolder(`${groups.has(p.address) ? BAR : ''}${markOf(p, now)} ${name}${mailWord(p)}`, ` · ${program(p) || '?'}${statusWord(p, name)}`, p, room)
 }
 
 function hint(m: Model, base: string): Pick<Page, 'hint' | 'hintLevel' | 'hintBorder'> {
@@ -181,20 +204,23 @@ export function turning(p: Page): boolean {
   return [...texts, ...p.items].some((t) => TURN.some((f) => t.includes(f)))
 }
 
-/** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]. */
+/** The cursor's lead on a row, counted in its width. */
+const CURSOR = '> '
+
+/** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]; the folder only when the row has room. */
 export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none', grouped = false): string {
   const name = paneName(p)
   const word = stateWord(p, now)
   const prog = program(p)
-  return (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${markOf(p, now)} ${name}` + mailWord(p) + (prog && prog !== name ? ` · ${prog}` : '') + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  const before = (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${markOf(p, now)} ${name}` + mailWord(p)
+  const after = (prog && prog !== name ? ` · ${prog}` : '') + statusWord(p, name) + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  return withFolder(before, after, p, ROW_W - INNER - textWidth(CURSOR))
 }
 
 /** Rows on the list at once: the page's eight text containers less the hint; the window slides under the cursor. */
 /** Rows on the list at once: one block of lines at the font's pitch, down to the hint's box. */
 export const LIST_ROWS = Math.floor((BANNER_Y - TOP) / LINE_H)
 export const MAX_SELECTED = 3
-/** The rows' block leaves the corner to the catcher; a row's text is at most 490 px anyway. */
-const ROW_W = CANVAS_W - CATCH - 6
 
 export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
@@ -260,7 +286,7 @@ export function listPage(m: Model, now: number): Page {
   const lines: string[] = []
   for (let i = 0; i < LIST_ROWS; i++) {
     const at = start + i
-    lines.push(items[at] === undefined ? ' ' : (at === cursor && m.loaded ? '> ' : '  ') + items[at])
+    lines.push(items[at] === undefined ? ' ' : (at === cursor && m.loaded ? CURSOR : '  ') + items[at])
   }
   const blocks: Block[] = [{ name: 'rows' + start, x: 2, y: TOP, w: ROW_W, h: LIST_ROWS * LINE_H, lines, level: 3 }, catcher()]
   // Where the window sits, in words: the glasses refused a thin bar drawn as a picture.
@@ -285,7 +311,8 @@ export function splitPage(m: Model, now: number): Page {
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now)}`
+    // The folder is measured with the mark's room whether or not the column is marked, so it does not come and go.
+    const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now, colW - INNER - textWidth('» '))}`
     blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
@@ -314,7 +341,6 @@ export interface PaneState {
   state: string
 }
 
-const TITLE_W = 376
 const BODY_W = CANVAS_W - 4
 
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState, now: number): Page {

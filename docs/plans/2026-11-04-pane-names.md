@@ -1,6 +1,6 @@
 # Feature: the alias is the name; the folder after it
 
-> Status: proposed. Parity with the core's "a name for a pane, the
+> Status: approved 2026-11-04 ("ok"). Parity with the core's "a name for a pane, the
 > folder it works in, a lighter header" (muxway#232), the guideline's
 > §1.1 rows *alias*, *tab* and *folder*; this is muxway-glasses-even#42.
 
