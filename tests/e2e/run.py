@@ -71,7 +71,7 @@ class Run:
 
 
 def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"{HOST}/*", params=None,
-          revoke=False, before=None, says_claude=False, says=None, token=None, stt=False):
+          revoke=False, before=None, says_claude=False, says=None, token=None, stt=False, preview=False):
     logs = run.logs(name)
     hub_args = []
     transcriber = None
@@ -79,7 +79,13 @@ def setup(run, name, mode="normal", expose="--write", read=f"{HOST}/*", write=f"
         transcriber = Transcriber(logs)
         run.cleanups.append(transcriber.close)
         hub_args = ["--stt-url", transcriber.url, "--stt-model", "whisper-base.en", "--stt-prompt", f"{HOST}, muxway"]
-    core = Core(run, run.binary, logs, hub_args).start(expose=expose)
+    core = Core(run, run.binary, logs, hub_args)
+    if preview:
+        # A preview root with one folder in it, for a pane that works there.
+        core.preview = core.dir / "preview"
+        (core.preview / "src").mkdir(parents=True)
+        core.agent_args += ["--preview", str(core.preview)]
+    core.start(expose=expose)
     core.transcriber = transcriber
     run.cleanups.append(core.close)
     tok = core.token(read=read, write=write)
@@ -460,17 +466,34 @@ def s42(run, name):
     sim.shot("no-question")
 
 
-@test("S50", "Hostile talk and mail from the proxy: 600 partners, one of 300 characters, a lone pane's unlisted partner, counts of a billion, minus one and a string: rows within the budget, the bar only where both panes are listed, the page accepted", "e2e-security")
+@test("S50", "Hostile talk, mail, cwd and alias from the proxy: 600 partners, one of 300 characters, a lone pane's unlisted partner, counts of a billion, minus one and a string, a cwd of 10 000 characters with control bytes, one that is no string, one of slashes, an alias of 300: rows within the budget, the bar only where both panes are listed, the page accepted", "e2e-security")
 def s50(run, name):
     core, proxy, sim, tok = setup(run, name, mode="talk-hostile")
     page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3, "three rows", 20)
-    check(rows(page)[0].startswith("│ ◌ test-pane · mail 999 · bash · "), rows(page))
+    # The first pane's cwd is cut to 256 characters, so its folder is whatever segment the cut leaves; it shows only if the row has room.
+    check(re.fullmatch(r"│ ◌ test-pane · mail 999 · (/\S+ · )?bash · .*", rows(page)[0]), rows(page))
     check(rows(page)[1].startswith("│ ◌ build · bash · "), rows(page))
-    check(rows(page)[2].startswith("◌ lone · bash · "), rows(page))
+    check(rows(page)[2].startswith("◌ " + "a" * 32 + " · bash · lone · "), rows(page))
     check(all(len(r.encode()) <= 63 for r in rows(page)), [len(r.encode()) for r in rows(page)])
+    check(all(c >= " " for r in rows(page) for c in r), "a control byte in a row")
     check("mail" not in page["hint"] and not page.get("hintBorder"), page["hint"])
     sim.shot("talk-hostile")
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
+
+
+@test("S51", "A read-only token on a pane under the agent's preview root: the hub gives no cwd, the row and the title show no folder", "e2e-security")
+def s51(run, name):
+    def before(core):
+        core.new_window("notes", title="notes.md", cwd=core.preview / "src", alias="notes")
+    core, proxy, sim, tok = setup(run, name, write=None, preview=True, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "two rows", 20)
+    check(rows(page) == ["◌ test-pane · bash · active · read-only", "◌ notes · bash · notes.md · active · read-only"], rows(page))
+    status, body = direct(proxy.url, tok, "GET", "/v1/panes", accept="application/json")
+    check(status == 200 and b"cwd" not in body, f"the listing for a reader: {status} {body[:200]!r}")
+    sim.shot("list-reader")
+    sim.pick(1)
+    sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "◌ notes · bash · notes.md" for b in p["blocks"]), "the title without a folder", 10)
+    sim.shot("pane-reader")
 
 
 @test("S25", "No transcriber: no Say it row; a hub that offers one and then fails: an error line, nothing sent", "e2e-security")
@@ -903,6 +926,29 @@ def f42(run, name):
     page = sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] in ("◐ test-pane · Codex", "◑ test-pane · Codex") for b in p["blocks"]), "the pane names Codex", 10)
     check(next(b["level"] for b in page["blocks"] if b.get("name") == "title") == 4, page["blocks"])
     sim.shot("pane-codex")
+
+
+@test("F43", "A named pane goes by its name, the program and its title after it; the folder after the name for a writer under a preview root, left out when the row has no room", "UI")
+def f43(run, name):
+    def before(core):
+        core.new_window("notes", title="notes.md", cwd=core.preview / "src", alias="notes")
+    core, proxy, sim, tok = setup(run, name, preview=True, before=before)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "two rows", 20)
+    check(rows(page) == ["◌ test-pane · bash · active", "◌ notes · /src · bash · notes.md · active"], rows(page))
+    sim.shot("list-named")
+    long = "a title of sixty characters that leaves the row no room at all"
+    core.tmux_cmd("select-pane", "-t", "work:notes.0", "-T", long)
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2 and rows(p)[1].startswith("◌ notes · bash · a title"), "the long title", 20)
+    check("/src" not in rows(page)[1], rows(page))
+    sim.shot("list-long")
+    core.tmux_cmd("select-pane", "-t", "work:notes.0", "-T", "notes.md")
+    # Pages before this point already had the folder; the wait is for a newer one.
+    sim.mark = len(sim.trace())
+    sim.expect(lambda p: listed(p) and len(rows(p)) == 2 and rows(p)[1] == "◌ notes · /src · bash · notes.md · active", "the folder back", 20)
+    sim.pick(1)
+    sim.expect(lambda p: any(b.get("name") == "title" and b["lines"][0] == "◌ notes · /src · bash · notes.md" for b in p["blocks"]), "the title with the folder", 10)
+    wait_for("following", lambda: "following" in sim.state(), 10)
+    sim.shot("pane-named")
 
 
 @test("F50", "A write and a mail from one pane to another, each naming its origin: the two rows kept together behind the bar, mail 1 after the name, the third pane without a bar, the title the same, no toast", "UI")

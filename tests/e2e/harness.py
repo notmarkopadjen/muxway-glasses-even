@@ -58,9 +58,10 @@ def check(cond, message):
 class Core:
     """Hub, agent and tmux for one test."""
 
-    def __init__(self, run, binary, logs, hub_args=()):
+    def __init__(self, run, binary, logs, hub_args=(), agent_args=()):
         self.run, self.bin, self.logs = run, binary, logs
         self.hub_args = list(hub_args)
+        self.agent_args = list(agent_args)
         self.dir = Path(run.tmp) / secrets.token_hex(4)
         self.dir.mkdir(mode=0o700)
         self.port = free_port()
@@ -115,11 +116,11 @@ class Core:
         wait_for("hub", lambda: (self.dir / "hub" / "admin.sock").exists())
 
     def start_agent(self):
-        self.spawn("agent", "agent", "run", "--dir", str(self.dir / "agent"), "--tmux-name", self.tmux)
+        self.spawn("agent", "agent", "run", "--dir", str(self.dir / "agent"), "--tmux-name", self.tmux, *self.agent_args)
         wait_for("agent online", lambda: f"{HOST}\tonline" in self.cli("hub", "agents", "--dir", str(self.dir / "hub")))
 
-    def expose(self, target, flag="--write"):
-        args = ["expose", "--tmux-name", self.tmux, "-t", target] + ([flag] if flag else [])
+    def expose(self, target, flag="--write", alias=None):
+        args = ["expose", "--tmux-name", self.tmux, "-t", target] + ([flag] if flag else []) + (["--name", alias] if alias else [])
         self.cli(*args)
 
     def token(self, read=f"{HOST}/*", write=f"{HOST}/*", name="glasses"):
@@ -134,13 +135,13 @@ class Core:
         for line in self.cli("hub", "token", "list", "--dir", str(self.dir / "hub")).splitlines()[1:]:
             self.cli("hub", "token", "revoke", "--dir", str(self.dir / "hub"), line.split()[0])
 
-    def new_window(self, name, title=None, expose="--write"):
-        """A new window with one pane, exposed; returns its target."""
-        self.tmux_cmd("new-window", "-d", "-t", "work", "-n", name,
+    def new_window(self, name, title=None, expose="--write", cwd=None, alias=None):
+        """A new window with one pane, exposed, started in cwd and named alias when given; returns its target."""
+        self.tmux_cmd("new-window", "-d", "-t", "work", "-n", name, *(["-c", str(cwd)] if cwd else []),
                       "env -i PATH=/usr/bin:/bin TERM=xterm LANG=C.UTF-8 PS1='$ ' bash --norc --noprofile")
         target = f"work:{name}.0"
         self.tmux_cmd("select-pane", "-t", target, "-T", title or name)
-        self.expose(target, expose)
+        self.expose(target, expose, alias)
         return target
 
     def pane_id(self, target="work:0.0"):
@@ -339,14 +340,17 @@ class Proxy:
                                        "extra": {"a": {"b": {"c": list(range(1000))}}}}).encode()
                 if proxy.mode == "talk-hostile" and bare == "/v1/panes":
                     # Talk and mail that break every rule: 600 partners, one of 300 characters, a partner that is not
-                    # listed, a count of a billion, a negative one and one that is a string.
+                    # listed, a count of a billion, a negative one and one that is a string. A cwd of 10 000
+                    # characters with control bytes and dot-dots, one that is no string, one of slashes only; an
+                    # alias of 300 characters.
                     now = int(time.time())
                     many = [{"address": f"{HOST}/work/{i}.0", "pane_id": f"%{i}", "at": now, "way": "to"} for i in range(3, 603)]
                     pane = lambda path, **kw: {"address": f"{HOST}/work/{path}", "mode": "write", "command": "bash", "activity": now, **kw}
                     data = json.dumps({"panes": [
-                        pane("0.0", title="test-pane", talk=many + [{"address": "x" * 300}, {"address": f"{HOST}/work/1.0", "way": "both"}], mail={"unread": 10 ** 9, "at": now}),
-                        pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}),
-                        pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}),
+                        pane("0.0", title="test-pane", talk=many + [{"address": "x" * 300}, {"address": f"{HOST}/work/1.0", "way": "both"}], mail={"unread": 10 ** 9, "at": now},
+                             cwd="/\x1b[2J.." * 1666 + "/" + "z" * 40),
+                        pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}, cwd=123),
+                        pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}, cwd="////", alias="a" * 300),
                     ]}).encode()
                 keep = ("etag", "content-type", "access-control-allow-origin", "access-control-allow-methods",
                         "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age")

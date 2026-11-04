@@ -163,10 +163,13 @@ codename follows as the status), this plan.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan. One addition: a column's title is measured
+  with the room of the `» ` mark whether or not the column is marked, so
+  the folder does not come and go with the selection.
+- [x] Security rules (AGENTS.md section 2) hold: S50 and S51 pass against
+  the core's main (2026-11-04, local run `20261104-113659-fe3f264`).
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
 
 ## Test run
 

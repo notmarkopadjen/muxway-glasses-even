@@ -76,11 +76,25 @@ before the hub has said so.
 One row per pane, those that need you first, then by address: the mark
 (`★` asks a question or needs permission, `√` done, `○` idle, `◐`
 turning while the pane works, `◌` nothing reported), the name, the
-program, a **state word**, and
+folder, the program, a named pane's status, a **state word**, and
 `read-only` where the token cannot write. The program is named as every
 muxway client names it ([lenses](lenses.md)): *Claude*, *Codex*,
 *Gemini*, *Antigravity*, *OpenCode*, *Copilot*, *aider*, *goose*, *Amp*
-or *Cursor* for an AI harness, else the command. While anything waits
+or *Cursor* for an AI harness, else the command.
+
+The **name** is the pane's alias when its owner gave it one (`muxway
+expose --name review`, or from the web), else what the program says
+about itself in its title (Claude's codename, without the spark), else
+the tmux address. A named pane keeps what the program says, after the
+program, as its **status**: `◌ review · Claude · fixing the build ·
+active`, `◌ notes · bash · notes.md · active`. The **folder** is the
+last segment of the directory the pane works in, with a slash in front,
+after the name: `◌ build · /muxway · Claude · active`. The hub gives it
+(the listing's `cwd`) only to a token that may write the pane and only
+under one of the host's preview roots; a reader, a pane elsewhere and
+an older agent show none. It is in only while the whole row fits its
+width, so a long codename costs the folder before the state word is
+cut. While anything waits
 the first row is the way to the [inbox](#the-inbox), `◆ inbox · 2
 waiting`, and the hint starts with the count, `◆ 2`. The state word
 says only what is known:
@@ -207,7 +221,9 @@ to the list with the selection kept.
 ```
 
 The **title** (the bar when the pane is in a group, mark, name, its
-mail, program), a rule under it, with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
+mail, the folder while the title has room, program, a named pane's
+status, as the list's row has them), a rule under it, with the pane's
+**state** beside it: the attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
 the error (`host offline`, `no connection`, `not found`); after an
 answer the state flashes what happened for a few seconds (`sent y,
