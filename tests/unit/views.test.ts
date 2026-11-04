@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
-import { BANNER_Y, LINE_H } from '../../src/glasses.ts'
+import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
 import { INBOX_ROWS, LIST_ROWS, OFFER_BYTES, answersPage, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
@@ -217,9 +217,28 @@ test('every page ends above the banner: a toast grows the hint upward and the gl
     assert.ok(page.blocks.length > 0, `${name} draws blocks`)
     for (const b of page.blocks) assert.ok(b.y + b.h <= BANNER_Y, `${name}: ${b.name} ends at ${b.y + b.h}, under the banner at ${BANNER_Y}`)
   }
-  // The pane keeps its eight lines and the title its one row.
+  // The pane keeps its eight lines; the title gives the rule its two pixels.
   assert.equal(pages.pane.blocks.find((b) => b.name === 'body')!.lines.length, 8)
-  assert.equal(pages.pane.blocks.find((b) => b.name === 'title')!.h, LINE_H)
+  assert.equal(pages.pane.blocks.find((b) => b.name === 'title')!.h, LINE_H - RULE_H)
+})
+
+test('the rule under the title: a bordered block with nothing in it, the body right under', () => {
+  const panes = [pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two' }), pane('w/3.0', { title: 'three' })]
+  const reading = { raw: ['a', 'b'], error: null }
+  const m = model(panes, { reading: () => reading })
+  const at = (page: { blocks: { name?: string; y: number; h: number; border?: boolean; pad?: number }[] }, name: string) => page.blocks.find((b) => b.name === name)
+  const page = panePage(m, panes[0], reading, { offset: 0, reveal: false, state: 'following' })
+  const upper = at(page, 'rule1')!
+  assert.deepEqual([upper.y, upper.h, upper.border, upper.pad], [LINE_H - RULE_H, RULE_H, true, 0])
+  assert.equal(at(page, 'body')!.y, LINE_H, 'the body starts under the rule')
+  // The columns too, three of them within the page's containers, eight lines each.
+  const cols = splitPage(model(panes, { selected: panes.map((p) => p.address), reading: () => reading }))
+  assert.ok(at(cols, 'rule1'))
+  assert.ok(cols.blocks.length <= MAX_BLOCKS, `${cols.blocks.length} blocks`)
+  assert.equal(at(cols, 'col0')!.lines.length, 8)
+  // No page carries a lower rule: the hint's own box edge is that line, on every screen alike.
+  assert.equal(at(page, 'rule2'), undefined)
+  assert.equal(listPage(m, NOW).blocks.length, LIST_ROWS)
 })
 
 test('the list: seven rows from the top down to the hint, no head', () => {

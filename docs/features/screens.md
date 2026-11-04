@@ -12,7 +12,7 @@ Four gestures reach everything:
 Every page is text from the top of the glasses down to a **hint** at the
 foot, which names the gestures that work on the page. There is no status
 line: the list's order and marks say which panes need you. A notification
-arrives as a bordered **banner** in the hint's place for ten seconds; the
+arrives as a **banner**, the hint's box brighter, for ten seconds; the
 result of an answer flashes on the pane for four.
 
 ```mermaid
@@ -176,7 +176,12 @@ that has waited longest, a question or a permission before the rest.
 The selected panes in the list's order, two or three columns, each a
 title line with its mark, name and program, and the last eight lines
 through the lens wrapped to the column. All of them follow, each with
-its own ETag. Titles are text, so the page carries no pictures.
+its own ETag. Titles are text, so the page carries no pictures. A rule
+runs under the titles.
+
+Every screen ends the same way: the hint is a box with exactly one
+line inside, the banner's shape, and its top edge is the rule above the
+footer. A banner is the same box, brighter.
 
 The **scroll marks a column** and opens nothing: forward marks the next
 one, or the first when none is marked; back the previous one, or the
@@ -202,14 +207,14 @@ to the list with the selection kept.
 ```
 
 The **title** (the bar when the pane is in a group, mark, name, its
-mail, program) with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
+mail, program), a rule under it, with the pane's **state** beside it: the attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
 the error (`host offline`, `no connection`, `not found`); after an
 answer the state flashes what happened for a few seconds (`sent y,
 Enter`, `read only`). The body is the last lines of the pane,
 `GET /v1/panes/{address}` in text mode with `lines` (setting, default
 200) and `width=400`, wrapped by the app to the body's width, through
-the [lens](lenses.md): eight lines, down to the hint. Claude Code's
+the [lens](lenses.md): eight lines, down to the hint's edge. Claude Code's
 input box is not drawn; what it holds is the first answer.
 
 - **Following**: at the bottom, the pane is read every *follow* seconds
