@@ -6,7 +6,7 @@ Four gestures reach everything:
 |---|---|
 | scroll | moves the cursor on the pane list; marks the next or previous column on the columns; moves the highlight in a list; pages the pane |
 | tap | opens the row under the cursor (the inbox from its row); on the columns, opens the marked pane; on a pane, its answers (or reads it again when it is read-only); in the inbox, the pane of the row |
-| hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Go to: the pane that has waited longest |
+| hold | on the pane list, starts selection mode with the row under the cursor selected; on a pane, the OS menu: Refresh, Reveal all / Lens on, Bottom, Later / Wake, Go to: the pane that has waited longest |
 | double tap | back one page; leaves selection mode; from the pane list, out of the app, which the OS confirms first |
 
 Every page is text from the top of the glasses down to a **hint** at the
@@ -73,9 +73,10 @@ before the hub has said so.
 ◆ 2 · ▽ move · ● select · 3 at most · ×× done
 ```
 
-One row per pane, those that need you first, then by address: the mark
-(`★` asks a question or needs permission, `√` done, `○` idle, `◐`
-turning while the pane works, `◌` nothing reported), the name, the
+One row per pane, those that need you first, the panes parked for
+later last, then by address: the mark (`★` asks a question or needs
+permission, `√` done, `○` idle, `◐` turning while the pane works, `◌`
+nothing reported, `zz` parked for [later](notifications.md#later)), the name, the
 folder, the program, a named pane's status, a **state word**, and
 `read-only` where the token cannot write. The program is named as every
 muxway client names it ([lenses](lenses.md)): *Claude*, *Codex*,
@@ -103,6 +104,7 @@ says only what is known:
 |---|---|
 | a question or a permission | `asks a question`, `needs permission` |
 | done, idle | `done`, `idle` |
+| later, the owner's own mark | `later`, and whatever waits underneath after it: `later · needs permission` |
 | working, in its last event | `working` |
 | nothing, and the pane wrote something in the last minute | `active` |
 | nothing, and the pane has been silent for a minute or more | `quiet 4m` |
@@ -168,14 +170,18 @@ inbox · 3 waiting · ▽ choose · ● open · ×× back
 ```
 
 Every pane that waits for you, on every host the token reads, **oldest
-first**: `GET /v1/inbox`, read when the page opens and again with every
-listing while it is open. One row per pane: the mark, the name, the
-program, the attention in words and how long it has waited. It is an OS
+first**, then the panes parked for [later](notifications.md#later),
+oldest parking first: `GET /v1/inbox`, read when the page opens and
+again with every listing while it is open. One row per pane: the mark,
+the name, the program, the attention in words (`later` first on a
+parked pane, `zz build · Claude · later · needs permission · 3m`) and
+how long it has waited, or has been parked. It is an OS
 list of up to twenty rows; a **tap** opens the pane of the row, where a
 tap leads to the answers as from the list, and a **double tap** comes
-back to the inbox, then to the list. With nothing waiting the page says
-so. The menu's **Go to** on a pane takes the same first row: the pane
-that has waited longest, a question or a permission before the rest.
+back to the inbox, then to the list; opening a parked pane wakes it.
+With nothing waiting the page says so. The menu's **Go to** on a pane
+takes the first awake row: the pane that has waited longest, a question
+or a permission before the rest, parked panes skipped.
 
 ## Side by side
 
@@ -224,10 +230,13 @@ The **title** (the bar when the pane is in a group, mark, name, its
 mail, the folder while the title has room, program, a named pane's
 status, as the list's row has them), a rule under it, with the pane's
 **state** beside it: the attention in words (`asks a question`, `needs permission`,
-`idle`, `done`), else `following`, `paused · 2 pages up`, `reading…`, or
+`idle`, `done`), on a parked pane `later` with the kind after it as the
+hub names it (`later · permission`: the state has room for a few words),
+else `following`, `paused · 2 pages up`, `reading…`, or
 the error (`host offline`, `no connection`, `not found`); after an
 answer the state flashes what happened for a few seconds (`sent y,
-Enter`, `read only`). The body is the last lines of the pane,
+Enter`, `read only`), and after the menu's Later or Wake `parked` or
+`woken`. The body is the last lines of the pane,
 `GET /v1/panes/{address}` in text mode with `lines` (setting, default
 200) and `width=400`, wrapped by the app to the body's width, through
 the [lens](lenses.md): eight lines, down to the hint's edge. Claude Code's
@@ -239,8 +248,9 @@ input box is not drawn; what it holds is the first answer.
   forward, and past the last page following resumes.
 - **Tap** opens the answers on a writable pane; on a read-only pane it
   reads the pane again (the hint says `refresh`).
-- **Menu** (hold): Refresh, Reveal all / Lens on, Bottom, and Go to:
-  *name* when another pane needs you.
+- **Menu** (hold): Refresh, Reveal all / Lens on, Bottom, Later or
+  Wake on a writable pane whose host parks ([later](notifications.md#later)),
+  and Go to: *name* when another pane needs you.
 - **Double tap** goes back where the pane was opened from: the columns
   or the list.
 
