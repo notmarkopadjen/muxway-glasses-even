@@ -21,21 +21,32 @@ sequenceDiagram
 
 - While the app is in the foreground it keeps one **long poll** on
   `GET /v1/events` with `wait=25`, and starts the next as the last
-  returns. The first call, without `after`, only takes the cursor, so old
-  events are not replayed as new.
+  returns. The first call, without `after`, takes the hub's recent
+  events for the cursor and for what was working: a pane whose last
+  event among them said `working` is working before its next event, as
+  the guideline has every client do on start; nothing among them draws
+  a toast.
 - An event of kind `question`, `permission`, `idle` or `done` sets the
   pane's **mark** (`★ √ ○`) in the list and the pane's title, shows a
   **toast** in the hint line for ten seconds, brightest (`★ build: Claude
   needs your permission to use Bash`), reads the list again, and reads the
   pane again when it is the open one. `working` clears the mark and
-  gives the row the word *working* while the pane moves.
+  gives the row the word *working*. An `idle` on a harness whose screen
+  still moves draws no toast and shows working: Claude is at its prompt
+  but its background tasks still print, so the pane is not waiting on
+  you; the words follow once the screen is still ([lenses](lenses.md)).
+- The pane page leads with the notice's text for a question or a
+  permission, and the [inbox](screens.md#the-inbox) carries the text and
+  a question's choices under every row.
 - A `question` may carry **choices** (`"choices": ["yes", "no"]`, from
   `muxway ask`): the toast cannot be touched, but the pane's answers page
   leads with them, and a confirmed choice goes back through `POST
   /v1/panes/{address}/answer` ([screens](screens.md#answers-and-confirmation)).
-- The pane's menu entry **Go to: *name*** opens the pane that has waited
-  longest, a question or a permission before the rest; the
-  [inbox](screens.md#the-inbox) lists them all in that order.
+- The pane's menu entry **Go to: *name*** opens the hub's inbox's first
+  awake entry: the pane that has waited longest by the hub's clock, a
+  question, a permission, idle or done alike, parked panes skipped. The
+  inbox is read with every listing, so the entry is there before its
+  page was ever opened.
 - Attention and its choices also come with every pane list, so the marks
   are right after a restart, before any event.
 - A message between panes, typed or mailed, is **not** a notification:
@@ -77,7 +88,8 @@ stateDiagram-v2
   parked one, `POST /v1/panes/{address}/later`, for a writable pane on
   a host whose agent parks (`hosts[].later`); a read-only pane and an
   older host have no entry. The state flashes `parked` or `woken`, or
-  the hub's refusal in words.
+  the hub's refusal in words. The inbox page's menu has the same entry
+  for the entry under its cursor, and says the words in the hint.
 - Opening a parked pane from the list, the inbox or the columns is the
   owner coming back: the app wakes it first, when it may. *Go to* skips
   parked panes.
@@ -95,5 +107,8 @@ stateDiagram-v2
   two to eight of them, each 1 to 40 clean characters without `|`,
   distinct; a list that breaks a rule is no list.
 - The cursor is a number; anything else restarts the poll without one.
+- The recent events at start only set what is working: a hostile fifty
+  of them with bad kinds, bad addresses and 10 KiB texts set nothing
+  else and draw nothing (S64).
 - A failed poll waits five seconds and doubles up to a minute; `401`
   forgets the token and stops.

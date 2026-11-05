@@ -22,28 +22,43 @@ same app.
 
 ## What it does
 
-- **The pane list**, panes that wait for you first, each with its word:
-  *asks a question*, *needs permission*, *done*. Scroll moves, tap opens,
-  hold selects two for side by side. Panes whose agents talk to each
-  other are kept together behind one bar, and a pane with unread mail
-  says *mail 2* after its name.
-- **A pane**, following its tail, or two panes in columns.
+- **The pane list**, a line per host, panes that wait for you first,
+  each with its word: *asks a question*, *needs permission*, *done*,
+  *working*, *later*. Scroll moves, tap opens, hold selects two or
+  three for side by side. A pane goes by the name its owner gave it, or
+  by its program and what it says (*Claude · fixing the build*), with
+  its folder after it. Panes whose agents talk to each other are kept
+  together behind one bar, and a pane with unread mail says *mail 2*
+  after its name.
+- **A pane**, following its tail, with a notice's text first and its
+  place beside the title, or two or three panes in columns; the menu
+  moves to the next or previous pane, parks it for later, mails it,
+  lays the pane it talks with beside it, closes it or splits one more
+  beside it; a tap on a host's line starts a session.
+- **Messages and mail**: what panes said to panes, oldest first, from
+  a row under the inbox; one pane's mail, and a mail back to whoever
+  wrote, said aloud or typed on the phone, never typed into the pane.
 - **The Claude Code lens** reshapes Claude Code's screen for eight short
   lines: the conversation stays, the chrome goes, and whatever Claude
   suggests in its input box is offered as the first answer.
 - **Answers**: a question's own choices first (`muxway ask`), then
-  Enter, `y`, `n`, numbered choices, a few keys; or **say it**, read the
-  transcript back on the glasses, and send.
-- **The inbox**: every pane that waits, on every host, oldest first, one
-  row away from the list.
+  Enter, `y`, `n`, numbered choices, Esc and Ctrl-C, the console keys
+  and the program's commands (Claude Code's slash commands, a shell's
+  starters) behind two rows; or **say it**, read the transcript back on
+  the glasses, and send.
+- **The inbox**: every pane that waits, on every host, oldest first,
+  with the notice's text and a question's choices, one row away from
+  the list; *later* parks a pane from there or from its menu.
 - **A banner** at the foot of whatever you are reading when a pane needs
   you, and *go to* from the menu.
 
 Every AI coding CLI muxway knows (Claude Code, Codex, Gemini,
 Antigravity, OpenCode, Copilot and the rest) is named in the list and
-reports its state through its hooks or the host's watcher; a question it
-asks with fixed answers (`muxway ask`) is answered from the glasses with
-a tap, and the **inbox** lists what waits across hosts, oldest first.
+reports its state through its hooks or the host's watcher, and works
+while its screen moves; a question it asks with fixed answers (`muxway
+ask`) is answered from the glasses with a tap, and the **inbox** lists
+what waits across hosts, oldest first. The phone pane holds the hub,
+the token and a few settings, amber, green or paper like every client.
 Only the Claude Code lens reshapes a screen; Claude Code is the harness
 tested on the device.
 
@@ -57,6 +72,7 @@ tested on the device.
 </p>
 
 - [Screens and gestures](docs/features/screens.md)
+- [Messages and mail](docs/features/messages.md)
 - [Notifications](docs/features/notifications.md)
 - [Lenses: every harness named, the Claude Code lens](docs/features/lenses.md)
 - [The phone pane](docs/features/phone-pane.md)
