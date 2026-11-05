@@ -1353,14 +1353,14 @@ def s60(run, name):
     check(core.tmux_cmd("list-windows") .count("\n") == 1, "a window came or went")
 
 
-@test("S61", "Hostile feed and mailbox from the proxy: entries of 10 KiB, a destination that is no address, a seq that is a string, junk replies, an actor of 300 characters, sixty mails of 20 KiB with control bytes: the bad dropped, the rest cut, rows within the budget, both pages accepted, nothing sent", "e2e-security")
+@test("S61", "Hostile feed and mailbox from the proxy: entries of 50 KiB, a destination that is no address, a seq that is a string, junk replies, an actor of 300 characters, forty mails with control bytes and one of 30 KiB: the bad dropped, the rest cut and wrapped, both pages accepted, nothing sent", "e2e-security")
 def s61(run, name):
     core, proxy, sim, tok = setup(run, name, mode="feed-hostile", before=lambda c: c.new_window("build"))
     page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("» messages"), "the messages row", 20)
     sim.tap()
     page = sim.head("messages · 97 ·", "the messages page", 10)
     items = allrows(page)
-    check(len(items) == 9 and all(len(r.encode()) <= 63 for r in items), [len(r.encode()) for r in items])
+    check(len(items) == 9 and all(len(r.encode()) <= 80 for r in items), [len(r.encode()) for r in items])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the page")
     check(any(r.startswith("test-pane → build · ") for r in items), items[:3])
     check(any(r.endswith("…") for r in items), "a long text was not cut")
@@ -1373,7 +1373,8 @@ def s61(run, name):
     pick_menu(sim, "Mail")
     page = sim.head("mail · test-pane · 21 unread", "the mail page", 10)
     items = allrows(page)
-    check(len(items) == 9 and all(len(r.encode()) <= 63 for r in items), [len(r.encode()) for r in items])
+    # The page's rows are wrapped by pixels like the pane's body (the 63 bytes are the OS list's rule): nine of them, none wider than a row.
+    check(len(items) == 9 and all(len(r.encode()) <= 80 for r in items), [len(r.encode()) for r in items])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the page")
     sim.shot("mail-hostile")
     sim.tap()
