@@ -760,8 +760,9 @@ export function mailPage(m: Model, p: Pane, mailbox: Mail[] | null, talk: Talk[]
   const menu: MenuSpec[] = []
   if (p.writable && hostOf(m, p)?.mail) menu.push({ id: MENU.mail, label: `Mail ${paneName(p)}` })
   menu.push({ id: MENU.messages, label: `Messages with ${paneName(p)}` })
-  const back = mailBackTo(m, entries[c]) ? ' · ● mail back' : ''
-  return { kind: 'dash', ...hint(m, `mail · ${paneName(p)} · ${unread} unread · ▽ move${back} · ≡ menu · ×× back`), blocks, charts: [], items: [], menu }
+  // No ▽ move here: the line has no room for it beside the pane's name, and the scroll is the same on every page of rows.
+  const back = mailBackTo(m, entries[c]) ? '● mail back · ' : ''
+  return { kind: 'dash', ...hint(m, `mail · ${paneName(p)} · ${unread} unread · ${back}≡ menu · ×× back`), blocks, charts: [], items: [], menu }
 }
 
 function textBox(text: string): Block {

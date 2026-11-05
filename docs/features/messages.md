@@ -58,7 +58,7 @@ From the mail page's menu the same page shows one pane's exchanges,
   → review · 2m · cut
     all green, the docs are updated and the branch is ready for …
 
-mail · build · 1 unread · ▽ move · ● mail back · ≡ menu · ×× back
+mail · build · 1 unread · ● mail back · ≡ menu · ×× back
 ```
 
 **Mail** in the pane page's menu, on a host whose agent holds mail

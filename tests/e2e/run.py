@@ -1532,7 +1532,7 @@ def f61(run, name):
     sim.expect(titled("test-pane · mail 1"), "the pane", 10)
     wait_for("following", lambda: following(sim), 10)
     pick_menu(sim, "Mail")
-    page = sim.head("mail · test-pane · 1 unread · ▽ move · ● mail back · ≡ menu · ×× back", "the mail page", 10)
+    page = sim.head("mail · test-pane · 1 unread · ● mail back · ≡ menu · ×× back", "the mail page", 10)
     items = allrows(page)
     check(re.fullmatch(r"← review · \d+s · unread", items[0]) and items[1] == "    run the tests and tell me", items)
     check(menu_labels(sim) == ["Mail test-pane", "Messages with test-pane"], menu_labels(sim))

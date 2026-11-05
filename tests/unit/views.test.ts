@@ -638,7 +638,7 @@ test('the mail page: what came in from the mailbox, what went out from the feed,
   assert.equal(mailBackTo(model([build, { ...review, writable: false }]), entries[2]), undefined, 'a reader may not mail back')
   const page = mailPage(m, build, box, feed, 2, 0, NOW)
   assert.deepEqual(page.menu.map((e) => e.label), ['Mail build', 'Messages with build'])
-  assert.ok(page.hint.startsWith('mail · build · 1 unread · ▽ move · ● mail back · ≡ menu · ×× back'), page.hint)
+  assert.ok(page.hint.startsWith('mail · build · 1 unread · ● mail back · ≡ menu · ×× back'), page.hint)
   assert.ok(!mailPage(m, build, box, feed, 0, 0, NOW).hint.includes('mail back'))
   assert.deepEqual(mailPage(m, { ...build, writable: false }, box, feed, 0, 0, NOW).menu.map((e) => e.label), ['Messages with build'])
   assert.deepEqual(mailPage(m, build, null, feed, 0, 0, NOW).blocks[0].lines[0], '  reading the mail…')
