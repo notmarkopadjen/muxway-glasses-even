@@ -6,7 +6,7 @@ import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrea
 import { ANSWERS, choiceAnswer, type Answer } from './answers.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneName, parseEvents, parseHosts, parseInbox, parsePanes, type Attention, type Host, type Pane } from './protocol.ts'
+import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parsePanes, type Attention, type Host, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -43,6 +43,8 @@ const FLASH_MS = 4_000
 const MENU_CLOSE_MS = 1500
 const DOTS_MS = 500
 const NOTE_MS = 3_000
+/** Entries of the feed kept on the glasses; the hub's ring holds 500. */
+const FEED_KEPT = 200
 
 export class App {
   private bridge: EvenAppBridge
@@ -54,8 +56,15 @@ export class App {
   private attention = new Map<string, Attn>()
   /** The panes whose last event said working, by address. */
   private working = new Set<string>()
-  /** The hub's inbox while its page is open; null before it is read. */
+  /** The hub's inbox as last read with the listing; null before it is read. */
   private inbox: Pane[] | null = null
+  /** The hub's feed, oldest first, at most 200 entries, and its cursor. */
+  private talk: Talk[] = []
+  private talkCursor: number | null = null
+  /** The newest seq seen when the messages page was last opened: what is newer counts as not looked at. */
+  private seenSeq = 0
+  /** The hub answered 404 to the feed: an older hub, asked once. */
+  private noFeed = false
   private listError: string | null = null
   private listBusy = false
   private listTimer: ReturnType<typeof setTimeout> | null = null
@@ -218,7 +227,7 @@ export class App {
         }
         p.working = this.working.has(p.address)
       }
-      if (this.stack.some((v) => v.kind === 'inbox')) await this.readInbox()
+      await Promise.all([this.readInbox(), this.readFeed()])
       this.listError = null
       this.loaded = true
       this.stopDots()
@@ -583,22 +592,42 @@ export class App {
     return p?.attention === 'question' ? p.choices : []
   }
 
-  /** The inbox page over the list, read from the hub. */
+  /** The inbox page over the list, read again as it opens. */
   private async openInbox() {
-    this.inbox = null
     await this.push({ kind: 'inbox' })
     await this.readInbox()
+    await this.redraw()
   }
 
+  /** The inbox comes with every listing: Go to takes its first awake entry, the hub's oldest. */
   private async readInbox() {
     try {
       const a = await api.inbox()
       this.inbox = parseInbox(a.body)
       this.log(`GET inbox ${a.status} ${this.inbox.length} waiting`)
     } catch (e) {
-      this.listError = await this.failed(e, 'GET inbox')
+      // An older hub has no inbox: the page says so when opened, the list goes on.
+      if (!(e instanceof ApiError && e.status === 404)) this.listError = await this.failed(e, 'GET inbox')
     }
-    await this.redraw()
+  }
+
+  /** The feed comes with every listing too: the first time the hub's recent entries, then what is newer than the cursor. */
+  private async readFeed() {
+    if (this.noFeed) return
+    try {
+      const a = await api.talk(this.talkCursor)
+      const r = parseFeed(a.body)
+      const fresh = this.talkCursor === null ? r.talk : r.talk.filter((t) => t.seq > this.talkCursor!)
+      if (this.talkCursor === null) this.seenSeq = r.next ?? 0
+      this.talk = this.talk.concat(fresh).slice(-FEED_KEPT)
+      if (r.next !== null) this.talkCursor = r.next
+      if (fresh.length) this.log(`GET talk ${a.status} ${fresh.length} new`)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        this.noFeed = true
+        this.log('GET talk: not on this hub')
+      } else await this.failed(e, 'GET talk')
+    }
   }
 
   private async onSelect(idx: number) {
@@ -970,6 +999,8 @@ export class App {
       windowStart: this.winStart,
       marked: this.marked,
       inbox: this.inbox,
+      feed: this.talk.length > 0,
+      unseen: this.talk.filter((t) => t.seq > this.seenSeq).length,
       reading: (address) => this.readers.get(address),
     }
   }
@@ -1010,7 +1041,7 @@ export class App {
         else if (p.later) state = 'later' + (a ? ` · ${a.kind}` : '')
         else if (a) state = V.WORDS[a.kind]
         else if (this.offset > 0) state = `paused · ${this.offset} ${this.offset === 1 ? 'page' : 'pages'} up`
-        else state = r?.raw.length ? 'following' : 'reading…'
+        else state = r?.raw.length ? V.placeWord(p) : 'reading…'
         return V.panePage(m, p, r, { offset: this.offset, reveal: this.reveal, state }, now)
       }
       case 'answers':

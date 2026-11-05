@@ -81,7 +81,9 @@ test('foreground exit stops the requests, enter and gestures resume them', async
   assert.ok(hub.calls.some((c) => c.includes('/v1/events?limit=50')), 'the recent events were read for the cursor')
   assert.ok(!hub.calls.some((c) => c.includes('token')), 'no token in a URL')
 
-  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the list's cursor is on the first row: the pane
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never }) // the first row is the host's line: one down is the pane
+  await sleep(150)
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
   await sleep(150)
   const reads = () => hub.calls.filter((c) => c.includes('/v1/panes/alice-laptop')).length
   assert.ok(reads() >= 1, 'the pane was read on opening')
@@ -118,6 +120,8 @@ test('a spoken reply: Say it, frames, stop, read back, send with Enter', async (
   app.toneMic = true
   await app.start()
   await sleep(200)
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never }) // past the host's line
+  await sleep(150)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the first pane
   await sleep(200)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // answers
@@ -148,6 +152,8 @@ test('without a transcriber the answers offer no Say it', async () => {
   const app = new App(bridge as never, () => {}, null)
   await app.start()
   await sleep(200)
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+  await sleep(150)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
   await sleep(200)
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
@@ -166,7 +172,7 @@ test('a working mark turns once a second, in place, and stops with the foregroun
   const app = new App(bridge as never, () => {}, null)
   await app.start()
   await sleep(600)
-  const marks = () => bridge.upgrades.filter((c) => c.includes('◐ build') || c.includes('◑ build'))
+  const marks = () => bridge.upgrades.filter((c) => c.includes('◐ Codex') || c.includes('◑ Codex'))
   await sleep(2300)
   const seen = marks()
   assert.ok(seen.length >= 2, `the mark turned: ${seen.length} upgrades`)

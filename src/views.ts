@@ -50,6 +50,9 @@ export interface Model {
   marked: number
   /** The hub's inbox as last read, oldest first; null before the first read. */
   inbox: Pane[] | null
+  /** Whether the hub's feed holds anything, and how many entries arrived since the messages page was last opened. */
+  feed: boolean
+  unseen: number
   reading: (address: string) => Reader | undefined
 }
 
@@ -111,10 +114,19 @@ export function mailWord(p: Pane): string {
   return p.mail ? ` · mail ${p.mail}` : ''
 }
 
-/** A named pane's status: what the program says about itself, after the program; nothing without an alias, or when it repeats the name. */
-function statusWord(p: Pane, name: string): string {
-  const said = p.alias ? programSays(p) : ''
-  return said && said !== name ? ` · ${said}` : ''
+/**
+ * How a pane is named, as the guideline has it: the alias, then the program and its status
+ * (`review · Claude · fixing the build`); unnamed, a harness is its name and what it says is its
+ * status (`Claude · fixing the build`), any other program is named with what it says
+ * (`vim · notes.md`). The mail and the folder go between the name and the status.
+ */
+export function nameParts(p: Pane): { name: string; status: string } {
+  const prog = program(p)
+  const said = programSays(p)
+  if (p.alias) return { name: p.alias, status: (prog && prog !== p.alias ? ` · ${prog}` : '') + (said && said !== p.alias ? ` · ${said}` : '') }
+  if (p.agent) return { name: prog, status: said && said.toLowerCase() !== prog.toLowerCase() ? ` · ${said}` : '' }
+  if (!prog) return { name: said || p.path, status: '' }
+  return { name: said && said !== prog ? `${prog} · ${said}` : prog, status: '' }
 }
 
 /** The folder after the name, when the whole line has room for it in the width; else the line without. */
@@ -129,8 +141,8 @@ function withFolder(before: string, after: string, p: Pane, room: number): strin
 
 /** The pane's title line: the bar when it is in a group, the mark, the name, its mail, the folder, the program, a named pane's status. */
 export function titleOf(p: Pane, groups: Groups, now: number, room = TITLE_W - INNER): string {
-  const name = paneName(p)
-  return withFolder(`${groups.has(p.address) ? BAR : ''}${markOf(p, now)} ${name}${mailWord(p)}`, ` · ${program(p) || '?'}${statusWord(p, name)}`, p, room)
+  const { name, status } = nameParts(p)
+  return withFolder(`${groups.has(p.address) ? BAR : ''}${markOf(p, now)} ${name}${mailWord(p)}`, status, p, room)
 }
 
 function hint(m: Model, base: string): Pick<Page, 'hint' | 'hintLevel' | 'hintBorder'> {
@@ -213,11 +225,10 @@ const CURSOR = '> '
 
 /** A pane's row: the bar when it is in a group, then in selection mode its box, [x] or [ ]; the folder only when the row has room. */
 export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'none', grouped = false): string {
-  const name = paneName(p)
+  const { name, status } = nameParts(p)
   const word = stateWord(p, now)
-  const prog = program(p)
   const before = (grouped ? BAR : '') + (box === 'none' ? '' : box === 'on' ? '[x] ' : '[ ] ') + `${markOf(p, now)} ${name}` + mailWord(p)
-  const after = (prog && prog !== name ? ` · ${prog}` : '') + statusWord(p, name) + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
+  const after = status + (word ? ` · ${word}` : '') + (p.writable ? '' : ' · read-only')
   return withFolder(before, after, p, ROW_W - INNER - textWidth(CURSOR))
 }
 
@@ -226,7 +237,24 @@ export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'non
 export const LIST_ROWS = Math.floor((BANNER_Y - TOP) / LINE_H)
 export const MAX_SELECTED = 3
 
-export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
+export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'messages' } | { kind: 'host'; host: Host } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
+
+export const MESSAGES = '» messages'
+
+/** A host's line: its name and state, and + session where its agent starts them. */
+export function hostLine(h: Host, panes: Pane[]): string {
+  const state = panes.some((p) => p.host === h.name) ? 'online' : 'nothing exposed'
+  return `── ${h.name} · ${state}${h.sessions ? ' · + session' : ''} ──`
+}
+
+/** The hosts whose lines the list draws: the online ones, by name, and any host the listing names that the hosts call did not. */
+export function listedHosts(m: Pick<Model, 'hosts' | 'panes'>): Host[] {
+  const hosts = m.hosts.filter((h) => h.online || m.panes.some((p) => p.host === h.name)).map((h) => ({ ...h }))
+  for (const p of m.panes) {
+    if (!hosts.some((h) => h.name === p.host)) hosts.push({ name: p.host, online: true, later: false, sessions: false, close: false, mail: false, keys: 0 })
+  }
+  return hosts.sort((a, b) => a.name.localeCompare(b.name))
+}
 
 /** The panes that wait, oldest first, then the parked ones by their parking: what the inbox lists and counts. */
 export function waiting(panes: Pane[]): Pane[] {
@@ -247,11 +275,22 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
     items.push(`${INBOX} · ${n0} waiting`)
     what.push({ kind: 'inbox' })
   }
-  const groups = groupsOf(m.panes)
-  for (const p of m.panes) {
-    items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none', groups.has(p.address)))
-    what.push({ kind: 'pane', pane: p })
+  if (m.feed) {
+    items.push(MESSAGES + (m.unseen ? ` · mail ${m.unseen}` : ''))
+    what.push({ kind: 'messages' })
   }
+  const groups = groupsOf(m.panes)
+  // A line per online host, its panes under it in the order they have across the list.
+  for (const h of listedHosts(m)) {
+    items.push(hostLine(h, m.panes))
+    what.push({ kind: 'host', host: h })
+    for (const p of m.panes) {
+      if (p.host !== h.name) continue
+      items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none', groups.has(p.address)))
+      what.push({ kind: 'pane', pane: p })
+    }
+  }
+
   const n = selectedPanes(m).length
   if (m.selecting) {
     if (n >= 2) {
@@ -353,15 +392,31 @@ export interface PaneState {
 
 const BODY_W = CANVAS_W - 4
 
+/** The notice a pane page leads with: a question's or a permission's text, as the toast says it; nothing for the rest. */
+export function noticeLine(p: Pane): string {
+  return needs(p) ? `${MARK[p.attention as Attention]} ${p.attentionText || WORDS[p.attention as Attention]}` : ''
+}
+
+/** The state beside the title while nothing else is to say: the place, with read-only in front where the token cannot write. */
+export function placeWord(p: Pane, room = CANVAS_W - TITLE_W - 8 - INNER): string {
+  if (p.writable) return p.path
+  const both = `read-only · ${p.path}`
+  return textWidth(both) <= room ? both : 'read-only'
+}
+
 export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState, now: number): Page {
   const title = titleOf(p, groupsOf(m.panes), now)
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
   blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })
+  const { size } = pageSize(p, r, m.lens, st.reveal)
   const body = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, m.lens, st.reveal) : []
-  const end = body.length - st.offset * BODY_LINES
-  const lines = body.slice(Math.max(0, end - BODY_LINES), Math.max(0, end))
-  while (lines.length < BODY_LINES) lines.unshift('')
+  const end = body.length - st.offset * size
+  const lines = body.slice(Math.max(0, end - size), Math.max(0, end))
+  while (lines.length < size) lines.unshift('')
+  // The notice's text leads the body, in the same block: its coming and going is an upgrade.
+  const notice = noticeLine(p)
+  if (notice) lines.unshift(notice)
   blocks.push(rule('rule1', TOP + TITLE_H))
   blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
@@ -379,10 +434,10 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   }
 }
 
-/** How many lines of the pane a page shows, for paging. */
+/** How many lines of the pane a page shows, for paging: one less under a notice. */
 export function pageSize(p: Pane, r: Reader | undefined, lens: boolean, reveal: boolean): { size: number; total: number } {
   const body = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, lens, reveal) : []
-  return { size: BODY_LINES, total: body.length }
+  return { size: BODY_LINES - (noticeLine(p) ? 1 : 0), total: body.length }
 }
 
 // --- answers ------------------------------------------------------------------------------
@@ -411,10 +466,12 @@ export const INBOX_ROWS = 20
 
 /** The inbox's row: the mark, the name, the program, the kind (later first on a parked pane) and how long it has waited, or been parked. */
 export function inboxLabel(p: Pane, now: number): string {
-  const name = paneName(p)
+  const { name, status } = nameParts(p)
   const prog = program(p)
   const since = p.attentionAt || p.laterAt
-  return `${markOf(p, now)} ${name}` + (prog && prog !== name ? ` · ${prog}` : '') + ` · ${stateWord(p, now)}` + (since ? ` · ${ago(since, now)}` : '')
+  // A named pane goes without its status here: the kind and the age matter more in 63 bytes. An unnamed one keeps what it says, which is what tells it apart.
+  const who = p.alias ? name + (prog && prog !== name ? ` · ${prog}` : '') : name + status
+  return `${markOf(p, now)} ${who} · ${stateWord(p, now)}` + (since ? ` · ${ago(since, now)}` : '')
 }
 
 /** Every pane that waits, oldest first, as an OS list: a tap opens the pane. */
