@@ -9,7 +9,7 @@ cd "$(git rev-parse --show-toplevel)"
 if [ -n "${1:-}" ]; then
     run=${1%/}
 else
-    scripts/e2e.sh F31 F32 F33 F11 F13 F14 F15 F35 F16 >/dev/null || true
+    scripts/e2e.sh F31 F32 F33 F11 F13 F14 F15 F35 F16 F60 F61 F67 >/dev/null || true
     run=$(ls -td test-runs/*/ | head -1)
 fi
 shots="$run/screens"
@@ -25,4 +25,7 @@ pick F35_f35 listening-graph 07-listening.png
 pick F35_f35 heard-box 08-heard.png
 pick F15_f15 banner 09-banner.png
 pick F16_f16 tested-phone 10-phone.png
+pick F60_f60 messages 12-messages.png
+pick F61_f61 mail 13-mail.png
+pick F67_f67 inbox-text 14-inbox.png
 python3 scripts/check-listing.py

@@ -533,6 +533,7 @@ export class App {
     this.stack.push(v)
     await this.redraw()
     this.scheduleRead(0)
+    this.aim()
   }
 
   /** The double tap: back one page, and out of the app from the list, where the OS asks first. */
@@ -556,10 +557,10 @@ export class App {
     if (v.kind === 'pane') {
       this.offset = 0
       this.reveal = false
-      this.aim()
     }
     await this.redraw()
     this.scheduleRead(0)
+    this.aim()
   }
 
   private async onScroll(dir: 1 | -1) {
@@ -763,8 +764,11 @@ export class App {
     try {
       const a = await api.talk(this.talkCursor)
       const r = parseFeed(a.body)
-      const fresh = this.talkCursor === null ? r.talk : r.talk.filter((t) => t.seq > this.talkCursor!)
-      if (this.talkCursor === null) this.seenSeq = r.next ?? 0
+      // A cursor behind the one held is a hub that started over: its recent entries are the feed now, none of them new.
+      const restarted = this.talkCursor !== null && r.next !== null && r.next < this.talkCursor
+      if (restarted) this.talk = []
+      const fresh = this.talkCursor === null || restarted ? r.talk : r.talk.filter((t) => t.seq > this.talkCursor!)
+      if (this.talkCursor === null || restarted) this.seenSeq = r.next ?? 0
       this.talk = this.talk.concat(fresh).slice(-FEED_KEPT)
       if (r.next !== null) this.talkCursor = r.next
       if (fresh.length) this.log(`GET talk ${a.status} ${fresh.length} new`)
