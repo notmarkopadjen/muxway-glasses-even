@@ -42,12 +42,38 @@ try {
   if ((await page.getAttribute('#token', 'placeholder')) !== 'stored') fail('the field does not say stored')
   await shot(page, 'tested')
 
-  // The reply box without the glasses.
+  // The reply box without the glasses, and the mail button the same.
   await page.fill('#reply', 'echo hi')
   await page.click('#send')
   const sent = await page.textContent('#sent')
   if (!/Even app|glasses first/.test(sent)) fail(`reply without the glasses: ${sent}`)
   await shot(page, 'reply-refused')
+  await page.fill('#reply', 'a mail')
+  await page.click('#mail')
+  const mailed = await page.textContent('#sent')
+  if (!/Even app|glasses first/.test(mailed)) fail(`mail without the glasses: ${mailed}`)
+  const to = await page.textContent('#to')
+  if (!/open a pane on the glasses first/.test(to)) fail(`the to line: ${to}`)
+
+  // The theme: amber by default, the others applied at once and kept with save.
+  const theme = () => page.evaluate(() => [document.documentElement.dataset.theme, getComputedStyle(document.body).color])
+  const [t0, amber] = await theme()
+  if (t0 !== 'amber') fail(`the default theme is ${t0}`)
+  await shot(page, 'amber')
+  await page.selectOption('#theme', 'paper')
+  const [t1, paper] = await theme()
+  if (t1 !== 'paper' || paper === amber) fail(`paper not applied: ${t1} ${paper}`)
+  await shot(page, 'paper')
+  await page.click('#save')
+  await page.waitForFunction(() => /hub answered/.test(document.querySelector('#conn').textContent), null, { timeout: 15000 })
+  await page.reload()
+  await page.waitForTimeout(4500)
+  const [t2] = await theme()
+  if (t2 !== 'paper') fail(`the theme was not kept: ${t2}`)
+  await page.selectOption('#theme', 'green')
+  const [t3, green] = await theme()
+  if (t3 !== 'green' || green === paper || green === amber) fail(`green not applied: ${t3} ${green}`)
+  await shot(page, 'green')
 
   // Nothing of the token in the page's log or the console.
   const log = await page.textContent('#log')
