@@ -21,7 +21,7 @@ export const WORDS: Record<Attention, string> = { question: 'asks a question', p
 export const SAY_IT = '» Say it'
 export const INBOX = '◆ inbox'
 
-export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7, later: 8 }
+export const MENU = { refresh: 1, reveal: 2, bottom: 3, needsYou: 5, typeOnly: 6, sayAgain: 7, later: 8, next: 9, previous: 10, mail: 11, beside: 12, close: 13, split: 14, messages: 15 }
 
 /** What the app holds and the pages read. */
 export interface Model {
@@ -402,6 +402,84 @@ export function canPark(m: Pick<Model, 'hosts'>, p: Pane): boolean {
   return p.writable && m.hosts.some((h) => h.name === p.host && h.later)
 }
 
+/** The host of a pane as the hosts call lists it. */
+export function hostOf(m: Pick<Model, 'hosts'>, p: Pane): Host | undefined {
+  return m.hosts.find((h) => h.name === p.host)
+}
+
+/** The newest partner of the pane that is in the listing, for Beside. */
+export function partnerOf(m: Pick<Model, 'panes'>, p: Pane): Pane | undefined {
+  for (const a of p.talk) {
+    const q = m.panes.find((x) => x.address === a)
+    if (q) return q
+  }
+  return undefined
+}
+
+/** Whether the glasses may close the pane, or split its window: a writer, on a host whose agent allows it. */
+export function canClose(m: Pick<Model, 'hosts'>, p: Pane): boolean {
+  return p.writable && !!hostOf(m, p)?.close
+}
+
+/**
+ * The pane page's menu, ten entries at most, the firmware's cap: Bottom reads the pane again, so
+ * Refresh has no entry here; Next and Previous with more than one pane; Later or Wake, Go to, Mail,
+ * Beside, Close pane and + pane each where it applies.
+ */
+export function paneMenu(m: Model, p: Pane, reveal: boolean): MenuSpec[] {
+  const menu: MenuSpec[] = []
+  if (m.lens) menu.push({ id: MENU.reveal, label: reveal ? 'Lens on' : 'Reveal all' })
+  menu.push({ id: MENU.bottom, label: 'Bottom' })
+  if (m.panes.length > 1) menu.push({ id: MENU.next, label: 'Next pane' }, { id: MENU.previous, label: 'Previous pane' })
+  if (canPark(m, p)) menu.push({ id: MENU.later, label: p.later ? 'Wake' : 'Later' })
+  if (m.needsYou && m.needsYou.address !== p.address) menu.push({ id: MENU.needsYou, label: 'Go to: ' + paneName(m.needsYou) })
+  if (hostOf(m, p)?.mail) menu.push({ id: MENU.mail, label: 'Mail' })
+  const partner = partnerOf(m, p)
+  if (partner) menu.push({ id: MENU.beside, label: 'Beside: ' + paneName(partner) })
+  if (canClose(m, p)) menu.push({ id: MENU.close, label: 'Close pane' })
+  if (p.writable) menu.push({ id: MENU.split, label: '+ pane' })
+  return menu
+}
+
+/** The next or the previous pane in the list's order, round at either end, parked panes skipped; undefined with no other. */
+export function neighbour(panes: Pane[], p: Pane, dir: 1 | -1): Pane | undefined {
+  const i = panes.findIndex((x) => x.address === p.address)
+  if (i < 0 && !panes.length) return undefined
+  for (let step = 1; step <= panes.length; step++) {
+    const q = panes[(((i < 0 ? 0 : i) + dir * step) % panes.length + panes.length) % panes.length]
+    if (q.address === p.address) return undefined
+    if (!q.later) return q
+  }
+  return undefined
+}
+
+/** The words of the close confirmation: the pane, or the session when the pane is its last. */
+export function closeQuestion(p: Pane): string {
+  return p.last && p.session ? `end session ${p.session} on ${p.host}?` : `close ${paneName(p)} on ${p.host}?`
+}
+
+/** Beside on a wide pane, below on a tall one: the web's rule, in cells. */
+export function splitDirection(p: Pick<Pane, 'width' | 'height'>): 'h' | 'v' {
+  return p.width >= 2 * p.height ? 'h' : 'v'
+}
+
+/** A session's name as the hub takes it, from what was said or typed: lowercase, spaces made dashes, the rest of the grammar kept, 32 at most. */
+export function sessionName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 32)
+}
+
+/** The first of glasses-1, glasses-2, … that is no session of the host in the listing. */
+export function defaultSession(panes: Pane[], host: string): string {
+  const taken = new Set(panes.filter((p) => p.host === host).map((p) => p.session))
+  for (let n = 1; ; n++) if (!taken.has(`glasses-${n}`)) return `glasses-${n}`
+}
+
 export interface PaneState {
   offset: number
   reveal: boolean
@@ -437,11 +515,7 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   if (notice) lines.unshift(notice)
   blocks.push(rule('rule1', TOP + TITLE_H))
   blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
-  const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
-  if (m.lens) menu.push({ id: MENU.reveal, label: st.reveal ? 'Lens on' : 'Reveal all' })
-  menu.push({ id: MENU.bottom, label: 'Bottom' })
-  if (canPark(m, p)) menu.push({ id: MENU.later, label: p.later ? 'Wake' : 'Later' })
-  if (m.needsYou && m.needsYou.address !== p.address) menu.push({ id: MENU.needsYou, label: 'Go to: ' + paneName(m.needsYou) })
+  const menu = paneMenu(m, p, st.reveal)
   return {
     kind: 'dash',
     ...hint(m, `▽ page · ● ${p.writable ? 'answer' : 'refresh'} · ≡ menu · ×× back`),
@@ -475,14 +549,18 @@ export function moreAnswersPage(m: Model, p: Pane, what: 'keys' | 'commands', an
 }
 
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
-  return {
-    kind: 'list',
-    ...hint(m, `${a.choice !== undefined ? 'answer' : 'send'} ${a.short} to ${paneName(p)}? · ×× back`),
-    blocks: [],
-    charts: [],
-    items: ['Cancel', 'Confirm'],
-    menu: [],
-  }
+  return askPage(m, `${a.choice !== undefined ? 'answer' : 'send'} ${a.short} to ${paneName(p)}?`)
+}
+
+/** The Cancel / Confirm page for anything that is not an answer: a close, a new pane, a session, a mail. */
+export function askPage(m: Model, question: string): Page {
+  return { kind: 'list', ...hint(m, `${question} · ×× back`), blocks: [], charts: [], items: ['Cancel', 'Confirm'], menu: [] }
+}
+
+/** The name for a new session: the default, and Say it when the hub transcribes; the phone's send names it too. */
+export function sessionPage(m: Model, host: string, dflt: string, voice: boolean): Page {
+  const items = ['» ' + dflt].concat(voice ? [SAY_IT] : [])
+  return { kind: 'list', ...hint(m, `a session on ${host} · ● pick the name, or type it on the phone · ×× back`), blocks: [], charts: [], items, menu: [] }
 }
 
 // --- the inbox ----------------------------------------------------------------------------
@@ -584,10 +662,21 @@ export interface VoiceView {
 const GRAPH_H = 60
 const GRAPH_W = 560
 
-export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
+/** What a spoken text is for: typed into a pane, mailed to one, or a session's name. */
+export type VoiceUse = { kind: 'input'; name: string } | { kind: 'mail'; name: string } | { kind: 'session'; host: string }
+
+export function voiceUseOf(u: VoiceUse): string {
+  return voiceFor(u)
+}
+
+function voiceFor(u: VoiceUse): string {
+  return u.kind === 'input' ? u.name : u.kind === 'mail' ? `mail to ${u.name}` : `a session on ${u.host}`
+}
+
+export function listenPage(m: Model, u: VoiceUse, v: VoiceView): Page {
   const blocks: Block[] = []
   const charts: Chart[] = []
-  const name = paneName(p)
+  const name = voiceFor(u)
   if (v.phase === 'recording') {
     blocks.push(catcher(), { name: 'state', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`● listening · ${Math.round(v.seconds)} s · ${name}`], level: 4 })
     const graph = sparkline(v.levels, GRAPH_W, GRAPH_H)
@@ -605,10 +694,12 @@ export function listenPage(m: Model, p: Pane, v: VoiceView): Page {
   return { kind: 'dash', ...hint(m, '● say it again · ×× cancel'), blocks, charts, items: [], menu: [] }
 }
 
-export function heardPage(m: Model, p: Pane, v: VoiceView): Page {
+export function heardPage(m: Model, u: VoiceUse, v: VoiceView): Page {
   const blocks: Block[] = []
-  blocks.push(catcher(), { name: 'title', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${paneName(p)}`], level: 4 })
+  blocks.push(catcher(), { name: 'title', x: 0, y: TOP, w: BESIDE_W, h: TITLE_H, lines: [`heard this · ${v.seconds.toFixed(1)} s · for ${voiceFor(u)}`], level: 4 })
   blocks.push(textBox(v.text))
-  const menu: MenuSpec[] = [{ id: MENU.typeOnly, label: 'Type without Enter' }, { id: MENU.sayAgain, label: 'Say it again' }]
-  return { kind: 'dash', ...hint(m, '● send + Enter · ≡ menu · ×× cancel'), blocks, charts: [], items: [], menu }
+  const menu: MenuSpec[] = u.kind === 'input' ? [{ id: MENU.typeOnly, label: 'Type without Enter' }] : []
+  menu.push({ id: MENU.sayAgain, label: 'Say it again' })
+  const act = u.kind === 'input' ? '● send + Enter' : u.kind === 'mail' ? '● mail' : '● name it'
+  return { kind: 'dash', ...hint(m, `${act} · ≡ menu · ×× cancel`), blocks, charts: [], items: [], menu }
 }

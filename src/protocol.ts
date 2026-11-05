@@ -293,6 +293,17 @@ export function parsePanes(body: string, now = Math.floor(Date.now() / 1000)): P
   return parseList(body, 'panes', now)
 }
 
+/** One pane as a creation answers it: {"pane": {...}}; null for anything else. */
+export function parseOne(body: string, now = Math.floor(Date.now() / 1000)): Pane | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return null
+  }
+  return parsePane((raw as Record<string, unknown>)?.pane, now)
+}
+
 /** The hub's inbox: the panes that wait, oldest first as the hub sorts them, then the parked ones; a pane with neither is not one of them. */
 export function parseInbox(body: string, now = Math.floor(Date.now() / 1000)): Pane[] {
   return parseList(body, 'inbox', now).filter((p) => p.attention || p.later)

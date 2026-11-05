@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, heardPage, hostLine, listedHosts, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
@@ -246,12 +246,12 @@ test('a parked pane: last in the order, zz and later with what waits underneath,
   assert.deepEqual(sorted(talk).map((p) => p.path), ['w/5.0', 'w/6.0', 'w/7.0'])
   // The menu: Later on an awake writable pane, Wake on a parked one, nothing for a reader or an older host.
   const menuOf = (m: Model, p: Pane) => panePage(m, p, undefined, { offset: 0, reveal: false, state: 'following' }, NOW).menu.map((e) => e.label)
-  assert.deepEqual(menuOf(model(panes), panes[1]), ['Refresh', 'Reveal all', 'Bottom', 'Later'])
-  assert.deepEqual(menuOf(model(panes), panes[0]), ['Refresh', 'Reveal all', 'Bottom', 'Wake'])
+  assert.deepEqual(menuOf(model(panes), panes[1]), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane', 'Later', '+ pane'])
+  assert.deepEqual(menuOf(model(panes), panes[0]), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane', 'Wake', '+ pane'])
   assert.ok(panePage(model(panes), panes[0], undefined, { offset: 0, reveal: false, state: 'following' }, NOW).menu.some((e) => e.id === MENU.later))
-  assert.deepEqual(menuOf(model(panes), pane('w/8.0', { writable: false })), ['Refresh', 'Reveal all', 'Bottom'])
+  assert.deepEqual(menuOf(model(panes), pane('w/8.0', { writable: false })), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane'])
   const older = model(panes, { hosts: [{ name: 'alice-laptop', online: true, later: false, sessions: false, close: false, mail: false, keys: 2 }] })
-  assert.deepEqual(menuOf(older, panes[1]), ['Refresh', 'Reveal all', 'Bottom'])
+  assert.deepEqual(menuOf(older, panes[1]), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane', '+ pane'])
   assert.equal(canPark(older, panes[1]), false)
   assert.equal(canPark(model(panes), pane('w/9.0', { host: 'bob', address: 'bob/w/9.0' })), false)
 })
@@ -392,10 +392,10 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     columns: splitPage(m),
     pane: panePage(m, panes[0], reading, { offset: 0, reveal: false, state: 'following' }),
     offer: offerPage(m, panes[0], answer),
-    listening: listenPage(m, panes[0], voice),
-    transcribing: listenPage(m, panes[0], { ...voice, phase: 'working' }),
-    failed: listenPage(m, panes[0], { ...voice, phase: 'error', error: 'too short' }),
-    heard: heardPage(m, panes[0], { ...voice, phase: 'review' }),
+    listening: listenPage(m, { kind: 'input', name: 'one' }, voice),
+    transcribing: listenPage(m, { kind: 'input', name: 'one' }, { ...voice, phase: 'working' }),
+    failed: listenPage(m, { kind: 'input', name: 'one' }, { ...voice, phase: 'error', error: 'too short' }),
+    heard: heardPage(m, { kind: 'input', name: 'one' }, { ...voice, phase: 'review' }),
     inbox: inboxPage({ ...m, inbox: panes }, NOW),
   }
   for (const [name, page] of Object.entries(dash)) {
@@ -495,4 +495,78 @@ test('rows of a group start with the bar and a pane with mail says so after its 
   // Nothing of it in the hint: no count, no toast.
   const page = listPage(m, NOW)
   assert.ok(!page.hint.includes('mail'), page.hint)
+})
+
+test('the pane menu: ten entries at most, the firmware\'s cap, each where it applies', () => {
+  const able = { name: 'alice-laptop', online: true, later: true, sessions: true, close: true, mail: true, keys: 2 }
+  const a = pane('w/1.0', { title: 'a', talk: ['alice-laptop/w/2.0'] })
+  const b = pane('w/2.0', { title: 'b', talk: ['alice-laptop/w/1.0'], attention: 'permission', attentionAt: NOW - 5 })
+  const m = model([a, b], { hosts: [able], needsYou: b })
+  assert.deepEqual(paneMenu(m, a, false).map((e) => e.label), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane', 'Later', 'Go to: b', 'Mail', 'Beside: b', 'Close pane', '+ pane'])
+  assert.equal(paneMenu(m, a, false).length, 10)
+  assert.equal(paneMenu(m, a, true)[0].label, 'Lens on')
+  // One pane: no next or previous; a reader: no Later, Close or + pane, Mail still (reading the mailbox needs the read grant).
+  assert.deepEqual(paneMenu(model([a], { hosts: [able] }), a, false).map((e) => e.label), ['Reveal all', 'Bottom', 'Later', 'Mail', 'Close pane', '+ pane'])
+  const reader = { ...a, writable: false }
+  assert.deepEqual(paneMenu(model([reader, b], { hosts: [able] }), reader, false).map((e) => e.label), ['Reveal all', 'Bottom', 'Next pane', 'Previous pane', 'Mail', 'Beside: b'])
+  assert.equal(canClose({ hosts: [able] }, reader), false)
+  assert.equal(canClose({ hosts: [{ ...able, close: false }] }, a), false)
+  // The lens off: no Reveal all.
+  assert.equal(paneMenu(model([a], { hosts: [able], lens: false }), a, false)[0].label, 'Bottom')
+  // A partner that left the listing is no Beside.
+  assert.equal(partnerOf({ panes: [a] }, a), undefined)
+  assert.equal(partnerOf({ panes: [a, b] }, a)?.path, 'w/2.0')
+})
+
+test('next and previous: the list\'s order round at the ends, parked panes skipped', () => {
+  const panes = sorted([pane('w/1.0', { title: 'one' }), pane('w/2.0', { title: 'two', later: true }), pane('w/3.0', { title: 'three' })])
+  assert.equal(neighbour(panes, panes[0], 1)?.path, 'w/1.0' === panes[0].path ? 'w/3.0' : 'w/1.0')
+  assert.deepEqual(panes.map((p) => p.path), ['w/1.0', 'w/3.0', 'w/2.0'])
+  assert.equal(neighbour(panes, panes[1], 1)?.path, 'w/1.0', 'round the end, the parked one skipped')
+  assert.equal(neighbour(panes, panes[0], -1)?.path, 'w/3.0')
+  assert.equal(neighbour([panes[0]], panes[0], 1), undefined)
+  assert.equal(neighbour([panes[0], panes[2]], panes[0], 1), undefined, 'only a parked other')
+  assert.equal(neighbour(panes, pane('w/9.0'), 1)?.path, 'w/3.0', 'a pane gone from the list: from the top')
+})
+
+test('close, split and sessions: the questions, the direction, the name folded, the default name', () => {
+  const p = pane('w/1.0', { alias: 'build', session: 'work' })
+  assert.equal(closeQuestion(p), 'close build on alice-laptop?')
+  assert.equal(closeQuestion({ ...p, last: true }), 'end session work on alice-laptop?')
+  assert.equal(splitDirection({ width: 160, height: 40 }), 'h')
+  assert.equal(splitDirection({ width: 80, height: 41 }), 'v')
+  assert.equal(splitDirection({ width: 0, height: 0 }), 'h')
+  assert.equal(sessionName('My Scratch!!'), 'my-scratch')
+  assert.equal(sessionName('  rm -rf / ; x  '), 'rm-rf-x')
+  assert.equal(sessionName('\x1b[2J☃'), '2j')
+  assert.equal(sessionName('☃ !!'), '')
+  assert.equal(sessionName('a'.repeat(50)).length, 32)
+  assert.equal(defaultSession([pane('glasses-1/0.0', { session: 'glasses-1' }), pane('glasses-2/0.0', { session: 'glasses-2' })], 'alice-laptop'), 'glasses-3')
+  assert.equal(defaultSession([pane('glasses-1/0.0', { session: 'glasses-1', host: 'bob' })], 'alice-laptop'), 'glasses-1')
+  const ask = askPage(model([p]), 'close build on alice-laptop?')
+  assert.deepEqual([ask.kind, ask.items, ask.hint], ['list', ['Cancel', 'Confirm'], 'close build on alice-laptop? · ×× back'])
+  assert.deepEqual(sessionPage(model([p]), 'alice-laptop', 'glasses-1', true).items, ['» glasses-1', '» Say it'])
+  assert.deepEqual(sessionPage(model([p]), 'alice-laptop', 'glasses-1', false).items, ['» glasses-1'])
+})
+
+test('host lines: one per online host, its state and + session; offline hosts stay in the hint; a host the hosts call missed is drawn from its panes', () => {
+  const alice = { name: 'alice-laptop', online: true, later: false, sessions: true, close: false, mail: false, keys: 2 }
+  const bob = { ...alice, name: 'bob-desktop', sessions: false }
+  const carol = { ...alice, name: 'carol-pc', online: false }
+  const panes = [pane('w/1.0', { title: 'one' })]
+  assert.equal(hostLine(alice, panes), '── alice-laptop · online · + session ──')
+  assert.equal(hostLine(bob, panes), '── bob-desktop · nothing exposed ──')
+  assert.deepEqual(listedHosts({ hosts: [carol, bob, alice], panes }).map((h) => h.name), ['alice-laptop', 'bob-desktop'])
+  assert.deepEqual(listedHosts({ hosts: [], panes }).map((h) => h.name), ['alice-laptop'])
+  const l = listLayout(model(panes, { hosts: [carol, bob, alice] }), NOW)
+  assert.deepEqual(l.items, ['── alice-laptop · online · + session ──', '◌ Claude · one · quiet 30s', '── bob-desktop · nothing exposed ──'])
+  assert.deepEqual(l.what.map((w) => w.kind), ['host', 'pane', 'host'])
+  assert.ok(listPage(model(panes, { hosts: [carol, bob, alice] }), NOW).hint.includes('○ carol-pc offline'))
+  // The messages row under the inbox row while the feed holds anything, with the count of what was not looked at.
+  const m = model(panes, { feed: true, unseen: 3 })
+  assert.deepEqual(listLayout(m, NOW).items[0], '» messages · mail 3')
+  assert.deepEqual(listLayout(model(panes, { feed: true }), NOW).items[0], '» messages')
+  assert.equal(listLayout(m, NOW).what[0].kind, 'messages')
+  const waits = model([pane('w/2.0', { attention: 'done', attentionAt: NOW })], { feed: true, unseen: 1 })
+  assert.deepEqual(listLayout(waits, NOW).items.slice(0, 2), ['◆ inbox · 1 waiting', '» messages · mail 1'])
 })

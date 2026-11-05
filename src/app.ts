@@ -7,7 +7,7 @@ import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
 import { commandsFor } from './commands.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parsePanes, type Attention, type Host, type Pane, type Talk } from './protocol.ts'
+import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parseOne, parsePanes, type Attention, type Host, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -22,8 +22,15 @@ type View =
   | { kind: 'more'; pane: Pane; what: 'keys' | 'commands'; answers: Answer[] }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
   | { kind: 'offer'; pane: Pane; answer: Answer }
-  | { kind: 'listen'; pane: Pane }
-  | { kind: 'heard'; pane: Pane }
+  | { kind: 'listen'; target: VoiceTarget }
+  | { kind: 'heard'; target: VoiceTarget }
+  /** Cancel / Confirm for what is not an answer; Confirm runs the act. */
+  | { kind: 'ask'; question: string; act: () => Promise<void> }
+  /** The name for a new session on the host. */
+  | { kind: 'session'; host: Host; dflt: string }
+
+/** What a spoken text is for: the pane it is typed into, the pane it is mailed to (and the one it is read from), or a session's name. */
+type VoiceTarget = { kind: 'input'; pane: Pane } | { kind: 'mail'; pane: Pane; to: Pane } | { kind: 'session'; host: Host }
 
 interface Voice {
   phase: 'recording' | 'working' | 'review' | 'error'
@@ -255,7 +262,8 @@ export class App {
   /** The panes on screen: the open pane, or the columns. */
   private watched(): Pane[] {
     const v = this.top
-    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'more' || v.kind === 'confirm' || v.kind === 'offer' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
+    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'more' || v.kind === 'confirm' || v.kind === 'offer') return [v.pane]
+    if ((v.kind === 'listen' || v.kind === 'heard') && v.target.kind !== 'session') return [v.target.pane]
     if (v.kind === 'split') return this.columns()
     return []
   }
@@ -324,7 +332,8 @@ export class App {
       this.onPane?.(null)
       return 'token refused · set it on the phone'
     }
-    if (err.status === 429) {
+    // A lockout pauses the app; the hub's one creation per two seconds is only a wait.
+    if (err.status === 429 && err.code !== 'rate_limited') {
       this.sleep()
       setTimeout(() => this.wake(), 10_000)
     }
@@ -455,7 +464,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm' && this.top.kind !== 'more') await this.onTap()
+          if (!['answers', 'confirm', 'more', 'ask', 'session'].includes(this.top.kind)) await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -557,12 +566,12 @@ export class App {
   private async onTap() {
     const v = this.top
     if (v.kind === 'listen') {
-      if (this.voice?.phase === 'recording') await this.finishVoice(v.pane)
-      else if (this.voice?.phase === 'error') await this.beginVoice(v.pane, true)
+      if (this.voice?.phase === 'recording') await this.finishVoice(v.target)
+      else if (this.voice?.phase === 'error') await this.beginVoice(v.target, true)
       return
     }
     if (v.kind === 'heard') {
-      await this.sendVoice(v.pane, true)
+      await this.useVoice(v.target, true)
       return
     }
     if (v.kind === 'offer') {
@@ -581,6 +590,9 @@ export class App {
           break
         case 'inbox':
           await this.openInbox()
+          break
+        case 'host':
+          if (row.host.sessions && !this.selecting) await this.push({ kind: 'session', host: row.host, dflt: V.defaultSession(this.panes, row.host.name) })
           break
         case 'open':
           this.marked = -1
@@ -683,7 +695,7 @@ export class App {
       }
       const voice = this.offersVoice(v.pane) ? 1 : 0
       if (voice && idx === 0) {
-        await this.beginVoice(v.pane, false)
+        await this.beginVoice({ kind: 'input', pane: v.pane }, false)
         return
       }
       idx -= voice
@@ -703,6 +715,13 @@ export class App {
     } else if (v.kind === 'more') {
       const a = v.answers[idx]
       if (a) await this.push({ kind: 'confirm', pane: v.pane, answer: a })
+    } else if (v.kind === 'session') {
+      if (idx === 0) await this.askSession(v.host, v.dflt)
+      else if (idx === 1 && this.canSpeak && getSettings().voice) await this.beginVoice({ kind: 'session', host: v.host }, false)
+    } else if (v.kind === 'ask') {
+      this.stack.pop()
+      await this.redraw()
+      if (idx === 1) await v.act()
     } else if (v.kind === 'confirm') {
       const { pane, answer } = v
       // Back to the pane: the confirmation, the list it came from, and the answers under that list.
@@ -812,12 +831,126 @@ export class App {
         break
       }
       case V.MENU.typeOnly:
-        if (v.kind === 'heard') await this.sendVoice(v.pane, false)
+        if (v.kind === 'heard') await this.useVoice(v.target, false)
         break
       case V.MENU.sayAgain:
-        if (v.kind === 'heard' || v.kind === 'listen') await this.beginVoice(v.pane, true)
+        if (v.kind === 'heard' || v.kind === 'listen') await this.beginVoice(v.target, true)
+        break
+      case V.MENU.next:
+      case V.MENU.previous:
+        if (v.kind === 'pane') {
+          const q = V.neighbour(this.sorted, v.pane, id === V.MENU.next ? 1 : -1)
+          if (q) await this.showPane(q)
+        }
+        break
+      case V.MENU.beside:
+        if (v.kind === 'pane') {
+          const partner = V.partnerOf({ panes: this.panes }, this.current(v.pane))
+          if (partner) await this.beside(v.pane, partner)
+        }
+        break
+      case V.MENU.close:
+        if (v.kind === 'pane') {
+          const p = this.current(v.pane)
+          if (V.canClose({ hosts: this.hosts }, p)) await this.push({ kind: 'ask', question: V.closeQuestion(p), act: () => this.close(p) })
+        }
+        break
+      case V.MENU.split:
+        if (v.kind === 'pane' && v.pane.writable) await this.push({ kind: 'ask', question: `one more pane beside ${paneName(v.pane)}?`, act: () => this.split(this.current(v.pane)) })
         break
     }
+  }
+
+  /** The open pane gives way to another on the same page: next, previous, a new one. */
+  private async showPane(q: Pane) {
+    const v = this.top
+    if (v.kind !== 'pane') return
+    this.stack[this.stack.length - 1] = { kind: 'pane', pane: q, fromSplit: v.fromSplit }
+    this.offset = 0
+    this.reveal = false
+    this.flash = null
+    this.onPane?.(q)
+    await this.redraw()
+    this.scheduleRead(0)
+  }
+
+  /** The columns with the pane and its partner, the pane first, nothing marked; the pair is the selection from here. */
+  private async beside(p: Pane, partner: Pane) {
+    this.selected = [p.address, partner.address]
+    this.marked = -1
+    await this.push({ kind: 'split' })
+  }
+
+  private async close(p: Pane) {
+    try {
+      await api.close(p.address)
+      this.log(`closed ${paneName(p)}`, 'ok')
+      await this.goHome()
+      this.toast = { text: `closed ${paneName(p)}`, until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+    } catch (e) {
+      this.flash = { text: await this.failed(e, 'POST close'), until: Date.now() + FLASH_MS }
+      this.later(FLASH_MS)
+    }
+    await this.redraw()
+    this.scheduleList(0)
+  }
+
+  private async split(p: Pane) {
+    try {
+      const a = await api.split(p.host, p.session, p.window, V.splitDirection(p))
+      const q = parseOne(a.body)
+      this.log(`split ${paneName(p)}`, 'ok')
+      if (q) await this.showPane(q)
+    } catch (e) {
+      this.flash = { text: await this.failed(e, 'POST panes'), until: Date.now() + FLASH_MS }
+      this.later(FLASH_MS)
+    }
+    await this.redraw()
+    this.scheduleList(0)
+  }
+
+  /** The session's name folded to the grammar, then Cancel / Confirm; the name page it came from is left behind. */
+  private async askSession(host: Host, raw: string) {
+    const name = V.sessionName(raw)
+    if (!name) {
+      this.toast = { text: 'not a session name', until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+      await this.redraw()
+      return
+    }
+    if (this.top.kind === 'session') this.stack.pop()
+    await this.push({ kind: 'ask', question: `start session ${name} on ${host.name}?`, act: () => this.session(host, name) })
+  }
+
+  /** A message for the pane's process, held by its host and never typed; the words land on the pane page or the hint. */
+  private async mail(to: Pane, text: string) {
+    let words = `mailed ${paneName(to)}`
+    try {
+      await api.mail(to.address, text)
+      this.log(`${words}, ${new TextEncoder().encode(text).length} bytes`, 'ok')
+    } catch (e) {
+      words = await this.failed(e, 'POST mail')
+    }
+    if (this.top.kind === 'pane') this.flash = { text: words, until: Date.now() + FLASH_MS }
+    else this.toast = { text: words, until: Date.now() + NOTE_MS }
+    this.later(FLASH_MS)
+    await this.redraw()
+    this.scheduleList(0)
+  }
+
+  private async session(host: Host, name: string) {
+    try {
+      const a = await api.session(host.name, name)
+      const q = parseOne(a.body)
+      this.log(`session ${name} on ${host.name}`, 'ok')
+      if (q) await this.openPane(q, false)
+    } catch (e) {
+      this.toast = { text: await this.failed(e, 'POST sessions'), until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+    }
+    await this.redraw()
+    this.scheduleList(0)
   }
 
   /** Back to the list, closing whatever is open. */
@@ -881,6 +1014,11 @@ export class App {
 
   /** From the phone pane: typed text to the open or selected pane. */
   async sendText(text: string, enter: boolean): Promise<string> {
+    const v = this.top
+    if (v.kind === 'session') {
+      await this.askSession(v.host, text)
+      return V.sessionName(text) ? '' : 'not a session name'
+    }
     const pane = this.focus()
     if (!pane) return 'open a pane on the glasses first'
     if (!pane.writable) return 'that pane is read-only'
@@ -903,17 +1041,17 @@ export class App {
     return this.canSpeak && pane.writable && getSettings().voice
   }
 
-  private async beginVoice(pane: Pane, again: boolean) {
+  private async beginVoice(target: VoiceTarget, again: boolean) {
     await this.endVoice()
     this.voice = { phase: 'recording', seconds: 0, text: '', error: '' }
     if (again) {
       this.stack.pop()
-      this.stack.push({ kind: 'listen', pane })
+      this.stack.push({ kind: 'listen', target })
       await this.redraw()
     } else {
-      // The answers list is left behind: the pane is where the text ends up.
+      // The list it was picked from is left behind: the pane, or the mail page, is where the text ends up.
       this.stack.pop()
-      await this.push({ kind: 'listen', pane })
+      await this.push({ kind: 'listen', target })
     }
     const ok = await this.recorder.start()
     if (!ok) this.log('audioControl did not confirm the mic; waiting for frames')
@@ -921,11 +1059,18 @@ export class App {
       let n = 0
       this.toneTimer = setInterval(() => this.recorder.push(toneFrame(n++)), 100)
     }
-    this.voiceTimer = setInterval(() => void this.tickVoice(pane), 500)
-    this.log('listening for ' + paneName(pane))
+    this.voiceTimer = setInterval(() => void this.tickVoice(target), 500)
+    this.log('listening for ' + V.voiceUseOf(this.useOf(target)))
   }
 
-  private async tickVoice(pane: Pane) {
+  /** The voice pages' words for a target. */
+  private useOf(t: VoiceTarget): V.VoiceUse {
+    if (t.kind === 'input') return { kind: 'input', name: paneName(t.pane) }
+    if (t.kind === 'mail') return { kind: 'mail', name: paneName(t.to) }
+    return { kind: 'session', host: t.host.name }
+  }
+
+  private async tickVoice(target: VoiceTarget) {
     const v = this.voice
     if (!v || v.phase !== 'recording') return
     v.seconds = Math.max(this.recorder.seconds, this.recorder.elapsed)
@@ -937,7 +1082,7 @@ export class App {
       await this.redraw()
       return
     }
-    if (this.recorder.full) await this.finishVoice(pane)
+    if (this.recorder.full) await this.finishVoice(target)
     else await this.redraw()
   }
 
@@ -954,7 +1099,7 @@ export class App {
     this.voice = null
   }
 
-  private async finishVoice(pane: Pane) {
+  private async finishVoice(target: VoiceTarget) {
     const v = this.voice
     if (!v || v.phase !== 'recording') return
     await this.stopMic()
@@ -978,7 +1123,7 @@ export class App {
       v.phase = 'review'
       this.log(`transcribed ${v.seconds.toFixed(1)} s in ${Date.now() - t0} ms`, 'ok')
       this.stack.pop()
-      this.stack.push({ kind: 'heard', pane })
+      this.stack.push({ kind: 'heard', target })
     } catch (e) {
       v.phase = 'error'
       v.error = e instanceof ApiError ? e.message : 'transcription failed'
@@ -988,9 +1133,24 @@ export class App {
     await this.redraw()
   }
 
-  private async sendVoice(pane: Pane, enter: boolean) {
+  /** What was heard goes where it was for: typed into the pane, asked as a mail, or as a session's name. */
+  private async useVoice(target: VoiceTarget, enter: boolean) {
     const text = this.voice?.text
     if (!text) return
+    if (target.kind === 'input') {
+      await this.sendVoice(target.pane, text, enter)
+      return
+    }
+    this.voice = null
+    this.stack.pop()
+    if (target.kind === 'session') {
+      await this.askSession(target.host, text)
+      return
+    }
+    await this.push({ kind: 'ask', question: `mail this to ${paneName(target.to)}?`, act: () => this.mail(target.to, text) })
+  }
+
+  private async sendVoice(pane: Pane, text: string, enter: boolean) {
     this.voice = null
     this.stack.pop()
     let words = enter ? 'sent what you said, Enter' : 'typed what you said'
@@ -1092,9 +1252,13 @@ export class App {
       case 'offer':
         return V.offerPage(m, v.pane, v.answer)
       case 'listen':
-        return V.listenPage(m, v.pane, this.voiceView())
+        return V.listenPage(m, this.useOf(v.target), this.voiceView())
       case 'heard':
-        return V.heardPage(m, v.pane, this.voiceView())
+        return V.heardPage(m, this.useOf(v.target), this.voiceView())
+      case 'ask':
+        return V.askPage(m, v.question)
+      case 'session':
+        return V.sessionPage(m, v.host.name, v.dflt, this.canSpeak && getSettings().voice)
     }
   }
 
