@@ -3,7 +3,8 @@
 // and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
-import { ANSWERS, choiceAnswer, type Answer } from './answers.ts'
+import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
+import { commandsFor } from './commands.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
 import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parsePanes, type Attention, type Host, type Pane, type Talk } from './protocol.ts'
@@ -18,6 +19,7 @@ type View =
   | { kind: 'split' }
   | { kind: 'pane'; pane: Pane; fromSplit: boolean }
   | { kind: 'answers'; pane: Pane; choices: Answer[]; offer: Answer | null }
+  | { kind: 'more'; pane: Pane; what: 'keys' | 'commands'; answers: Answer[] }
   | { kind: 'confirm'; pane: Pane; answer: Answer }
   | { kind: 'offer'; pane: Pane; answer: Answer }
   | { kind: 'listen'; pane: Pane }
@@ -253,7 +255,7 @@ export class App {
   /** The panes on screen: the open pane, or the columns. */
   private watched(): Pane[] {
     const v = this.top
-    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'confirm' || v.kind === 'offer' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
+    if (v.kind === 'pane' || v.kind === 'answers' || v.kind === 'more' || v.kind === 'confirm' || v.kind === 'offer' || v.kind === 'listen' || v.kind === 'heard') return [v.pane]
     if (v.kind === 'split') return this.columns()
     return []
   }
@@ -453,7 +455,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
+          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm' && this.top.kind !== 'more') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -684,12 +686,27 @@ export class App {
         await this.beginVoice(v.pane, false)
         return
       }
-      const a = ANSWERS[idx - voice]
+      idx -= voice
+      const a = ANSWERS[idx]
+      if (a) {
+        await this.push({ kind: 'confirm', pane: v.pane, answer: a })
+        return
+      }
+      idx -= ANSWERS.length
+      if (idx === 0) {
+        const host = this.hosts.find((h) => h.name === v.pane.host)
+        await this.push({ kind: 'more', pane: v.pane, what: 'keys', answers: keysFor(host?.keys === 2) })
+        return
+      }
+      const row = commandsFor(v.pane.command)
+      if (idx === 1 && row) await this.push({ kind: 'more', pane: v.pane, what: 'commands', answers: row.commands })
+    } else if (v.kind === 'more') {
+      const a = v.answers[idx]
       if (a) await this.push({ kind: 'confirm', pane: v.pane, answer: a })
     } else if (v.kind === 'confirm') {
       const { pane, answer } = v
-      this.stack.pop()
-      this.stack.pop()
+      // Back to the pane: the confirmation, the list it came from, and the answers under that list.
+      while (this.top.kind === 'confirm' || this.top.kind === 'more' || this.top.kind === 'answers') this.stack.pop()
       await this.redraw()
       if (idx === 1) await this.send(pane, answer)
     }
@@ -830,7 +847,7 @@ export class App {
         else if (p.key !== undefined) await api.key(pane.address, p.key)
       }
       // The suggestion is pane text: the log keeps its size only.
-      const what = ANSWERS.includes(answer) ? answer.short : `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes`
+      const what = answer.secret ? `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes` : answer.short
       this.log(`sent ${what} to ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST input')
@@ -1067,7 +1084,9 @@ export class App {
         return V.panePage(m, p, r, { offset: this.offset, reveal: this.reveal, state }, now)
       }
       case 'answers':
-        return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane))
+        return V.answersPage(m, v.pane, v.choices, v.offer, this.offersVoice(v.pane), v.pane.writable ? (commandsFor(v.pane.command)?.whose ?? null) : null)
+      case 'more':
+        return V.moreAnswersPage(m, v.pane, v.what, v.answers)
       case 'confirm':
         return V.confirmPage(m, v.pane, v.answer)
       case 'offer':

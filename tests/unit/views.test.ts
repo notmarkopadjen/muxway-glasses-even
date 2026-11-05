@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
@@ -259,8 +259,15 @@ test('a parked pane: last in the order, zz and later with what waits underneath,
 test('a question with choices: its rows lead the answers, the confirmation says answer', () => {
   const p = pane('w/0.0', { title: 'build', attention: 'question', choices: ['yes', 'no'] })
   const choices = p.choices.map(choiceAnswer)
-  assert.deepEqual(answersPage(model([p]), p, choices, null, true).items.slice(0, 4), ['» yes', '» no', '» Say it', 'Enter'])
-  assert.deepEqual(answersPage(model([p]), p, [], null, false).items.slice(0, 1), ['Enter'])
+  assert.deepEqual(answersPage(model([p]), p, choices, null, true, "Claude Code's").items.slice(0, 4), ['» yes', '» no', '» Say it', 'Enter'])
+  assert.deepEqual(answersPage(model([p]), p, [], null, false, null).items.slice(0, 1), ['Enter'])
+  // The fixed eight, then the keys row and the program's commands row: twenty rows at most with eight choices, the suggestion and Say it.
+  const full = answersPage(model([p]), p, Array.from({ length: 8 }, (_, i) => choiceAnswer('c' + i)), { label: '"go"', short: '"go"', pieces: [{ text: 'go' }, { key: 'Enter' }] }, true, "Claude Code's")
+  assert.equal(full.items.length, 20)
+  assert.deepEqual(full.items.slice(-3), ['Ctrl-C', '→ keys', "→ commands: Claude Code's"])
+  assert.deepEqual(answersPage(model([p]), p, [], null, false, null).items.slice(-2), ['Ctrl-C', '→ keys'])
+  const keys = moreAnswersPage(model([p]), p, 'keys', [{ label: 'PageUp', short: 'PageUp', pieces: [{ key: 'PageUp' }] }])
+  assert.deepEqual([keys.kind, keys.items, keys.hint.startsWith('keys for build')], ['list', ['PageUp'], true])
   assert.deepEqual(choiceAnswer('deploy'), { label: '» deploy', short: 'deploy', pieces: [], choice: 'deploy' })
   assert.ok(confirmPage(model([p]), p, choices[0]).hint.startsWith('answer yes to build?'), confirmPage(model([p]), p, choices[0]).hint)
   assert.ok(confirmPage(model([p]), p, { label: 'Enter', short: 'Enter', pieces: [{ key: 'Enter' }] }).hint.startsWith('send Enter to build?'))
@@ -399,7 +406,7 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     // Nothing else sits in the corner catcher's corner.
     if (catchers[0].name === 'gesture') for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
   }
-  for (const page of [answersPage(m, panes[0], [], null, false), confirmPage(m, panes[0], answer)]) {
+  for (const page of [answersPage(m, panes[0], [], null, false, null), confirmPage(m, panes[0], answer)]) {
     assert.equal(page.kind, 'list')
     assert.equal(page.blocks.filter((b) => b.capture).length, 0)
   }
@@ -418,7 +425,7 @@ test('the suggestion: not drawn, offered first, its text and Enter', () => {
   assert.equal(page.charts.length, 0, 'the title is text')
   const offer = offerOf(p, CLAUDE, true)!
   assert.deepEqual(offer.pieces, [{ text: 'run the tests again' }, { key: 'Enter' }])
-  assert.deepEqual(answersPage(model([p]), p, [], offer, true).items.slice(0, 3), ['» "run the tests again"', '» Say it', 'Enter'])
+  assert.deepEqual(answersPage(model([p]), p, [], offer, true, null).items.slice(0, 3), ['» "run the tests again"', '» Say it', 'Enter'])
   assert.equal(offerOf(p, ['a', '────────', '❯ ', '────────'], true), null)
   assert.equal(offerOf(p, ['a', '────────', '❯ Try "fix the bug"', '────────'], true), null)
   assert.equal(offerOf(pane('w/1.0', { writable: false }), CLAUDE, true), null)

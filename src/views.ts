@@ -186,7 +186,7 @@ export function offerOf(p: Pane, raw: string[], lens: boolean): Answer | null {
   )
   if (!text || byteLength(text) > OFFER_BYTES || wrapRows([text], BOX_W).length > BOX_ROWS) return null
   const label = `"${text}"`
-  return { label, short: label, pieces: [{ text }, { key: 'Enter' }] }
+  return { label, short: label, pieces: [{ text }, { key: 'Enter' }], secret: true }
 }
 
 function ago(seconds: number, now: number): string {
@@ -460,10 +460,18 @@ export function pageSize(p: Pane, r: Reader | undefined, lens: boolean, reveal: 
 
 // --- answers ------------------------------------------------------------------------------
 
-/** The answers: a question's choices first, then Claude's suggestion when there is one, then Say it, then the fixed set. */
-export function answersPage(m: Model, p: Pane, choices: Answer[], offer: Answer | null, offerVoice: boolean): Page {
-  const items = choices.map((c) => c.label).concat(offer ? ['» ' + offer.label] : [], offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label))
+export const KEYS_ROW = '→ keys'
+export const COMMANDS_ROW = '→ commands: '
+
+/** The answers: a question's choices first, then Claude's suggestion when there is one, then Say it, the fixed set, and the rows to the keys and the commands. */
+export function answersPage(m: Model, p: Pane, choices: Answer[], offer: Answer | null, offerVoice: boolean, commands: string | null): Page {
+  const items = choices.map((c) => c.label).concat(offer ? ['» ' + offer.label] : [], offerVoice ? [SAY_IT] : [], ANSWERS.map((a) => a.label), [KEYS_ROW], commands ? [COMMANDS_ROW + commands] : [])
   return { kind: 'list', ...hint(m, `answer ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items, menu: [] }
+}
+
+/** The keys, or the program's commands, as a list of their own; a pick confirms as every answer. */
+export function moreAnswersPage(m: Model, p: Pane, what: 'keys' | 'commands', answers: Answer[]): Page {
+  return { kind: 'list', ...hint(m, `${what} for ${paneName(p)} · ▽ choose · ● pick · ×× back`), blocks: [], charts: [], items: answers.map((a) => a.label), menu: [] }
 }
 
 export function confirmPage(m: Model, p: Pane, a: Answer): Page {
