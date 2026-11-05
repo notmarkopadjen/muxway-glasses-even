@@ -2,10 +2,10 @@
 // about a pane is only what the hub said or what its output shows.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentOf, type Pane } from '../../src/protocol.ts'
+import { agentOf, type Mail, type Pane, type Talk } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, heardPage, hostLine, listedHosts, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, endName, heardPage, hostLine, involves, listedHosts, mailBackTo, mailEntries, mailLayout, mailPage, messagesLayout, messagesPage, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, underRows, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
@@ -569,4 +569,78 @@ test('host lines: one per online host, its state and + session; offline hosts st
   assert.equal(listLayout(m, NOW).what[0].kind, 'messages')
   const waits = model([pane('w/2.0', { attention: 'done', attentionAt: NOW })], { feed: true, unseen: 1 })
   assert.deepEqual(listLayout(waits, NOW).items.slice(0, 2), ['◆ inbox · 1 waiting', '» messages · mail 1'])
+})
+
+const end = (path: string, id = '', alias = '') => ({ address: 'alice-laptop/' + path, id, alias })
+const talk = (seq: number, o: Partial<Talk> = {}): Talk => ({ seq, at: NOW - 60 * seq, kind: 'text', from: end('w/1.0', '%1'), to: end('w/2.0', '%2'), actor: 'reviewer', text: 'run the tests', bytes: 13, id: 0, replyTo: 0, ...o })
+
+test('the messages page: who → whom and the age on a row, the text under it, a reply one step in, names by alias, by id, by address, else the actor', () => {
+  const one = pane('w/1.0', { alias: 'review', id: '%1' })
+  const two = pane('w/2.0', { title: 'build', id: '%2' })
+  const m = model([one, two])
+  const feed = [
+    talk(1),
+    talk(2, { kind: 'mail', id: 7, text: 'one more thing: the docs', from: null }),
+    talk(3, { kind: 'mail', id: 8, replyTo: 7, from: end('w/2.0', '%2'), to: end('w/1.0', '%1'), text: 'done' }),
+    talk(4, { kind: 'key', text: 'Enter ×3' }),
+    talk(5, { kind: 'answer', text: 'yes', from: end('w/9.0', '%9') }),
+    talk(6, { kind: 'mail', id: 9, replyTo: 77, text: 'to a mail not here' }),
+  ]
+  const { items, entry } = messagesLayout(m, feed, NOW)
+  assert.deepEqual(items, [
+    'review → build · 1m',
+    '    run the tests',
+    'reviewer → build · 2m · mail',
+    '    one more thing: the docs',
+    '  build → review · 3m · reply',
+    '      done',
+    'review → build · 4m · key',
+    '    Enter ×3',
+    'w/9.0 → build · 5m · answer',
+    '    yes',
+    'review → build · 6m · reply',
+    '    to a mail not here',
+  ])
+  assert.deepEqual(entry, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+  assert.equal(endName(m, null, ''), 'someone')
+  assert.equal(endName(m, end('w/7.0', '%2'), ''), 'build', 'the id wins over a moved address')
+  assert.ok(involves(feed[0], one) && involves(feed[0], two) && !involves(feed[0], pane('w/3.0')))
+  const page = messagesPage(m, feed, null, 5, 0, NOW)
+  assert.equal(page.kind, 'dash')
+  assert.ok(page.hint.startsWith('messages · 6 · ▽ move · ● the mail · ×× back'), page.hint)
+  assert.ok(messagesPage(m, feed, null, 0, 0, NOW).hint.includes('● side by side'))
+  assert.ok(messagesPage(m, feed, two, 0, 0, NOW).hint.startsWith('messages · build · 6'))
+  const rows = page.blocks.find((b) => b.name?.startsWith('rows'))!.lines
+  assert.ok(rows.some((r) => r.startsWith('> review → build · 6m · reply')), rows)
+  assert.deepEqual(messagesLayout(m, [], NOW).items, ['nothing said yet'])
+  // A long text: three rows, the third cut.
+  const long = underRows('word '.repeat(80), '    ')
+  assert.equal(long.length, 3)
+  assert.ok(long[2].endsWith('…') && long.every((r) => r.startsWith('    ')), long)
+  assert.equal(underRows('short', '  ').length, 1)
+})
+
+test('the mail page: what came in from the mailbox, what went out from the feed, merged by time; mail back only to a writable origin in the listing', () => {
+  const build = pane('w/2.0', { title: 'build', id: '%2' })
+  const review = pane('w/1.0', { alias: 'review', id: '%1' })
+  const m = model([build, review], { hosts: [{ name: 'alice-laptop', online: true, later: true, sessions: false, close: false, mail: true, keys: 2 }] })
+  const mail = (id: number, o: Partial<Mail> = {}): Mail => ({ id, at: NOW - 100 * id, from: end('w/1.0', '%1', 'review'), actor: 'reviewer', text: 'run the tests', readAt: 0, replied: false, ...o })
+  const box = [mail(1, { readAt: NOW - 50, replied: true }), mail(2, { from: null })]
+  const feed = [talk(1, { kind: 'mail', id: 3, from: end('w/2.0', '%2'), to: end('w/1.0', '%1'), text: 'all green', bytes: 500, at: NOW - 150 }), talk(2, { kind: 'mail', id: 4, from: end('w/9.0'), to: end('w/2.0'), text: 'not mine' }), talk(3, { text: 'typed, not mail', from: end('w/2.0', '%2') })]
+  const entries = mailEntries(box, feed, build)
+  assert.deepEqual(entries.map((e) => (e.kind === 'in' ? 'in ' + e.mail.id : 'out ' + e.talk.id)), ['in 2', 'out 3', 'in 1'])
+  const { items, entry } = mailLayout(m, entries, NOW)
+  assert.deepEqual(items, ['← reviewer · 3m · unread', '    run the tests', '→ review · 2m · cut', '    all green', '← review · 1m · replied', '    run the tests'])
+  assert.deepEqual(entry, [0, 0, 1, 1, 2, 2])
+  assert.equal(mailBackTo(m, entries[2])?.path, 'w/1.0')
+  assert.equal(mailBackTo(m, entries[0]), undefined, 'no origin')
+  assert.equal(mailBackTo(m, entries[1]), undefined, 'sent, not received')
+  assert.equal(mailBackTo(model([build, { ...review, writable: false }]), entries[2]), undefined, 'a reader may not mail back')
+  const page = mailPage(m, build, box, feed, 2, 0, NOW)
+  assert.deepEqual(page.menu.map((e) => e.label), ['Mail build', 'Messages with build'])
+  assert.ok(page.hint.startsWith('mail · build · 1 unread · ▽ move · ● mail back · ≡ menu · ×× back'), page.hint)
+  assert.ok(!mailPage(m, build, box, feed, 0, 0, NOW).hint.includes('mail back'))
+  assert.deepEqual(mailPage(m, { ...build, writable: false }, box, feed, 0, 0, NOW).menu.map((e) => e.label), ['Messages with build'])
+  assert.deepEqual(mailPage(m, build, null, feed, 0, 0, NOW).blocks[0].lines[0], '  reading the mail…')
+  assert.deepEqual(mailLayout(m, [], NOW).items, ['no mail'])
 })

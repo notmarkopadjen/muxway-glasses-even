@@ -19,7 +19,12 @@ export interface Settings {
   lens: boolean
   /** spoken replies, when the hub has a transcriber */
   voice: boolean
+  /** the phone pane's theme: amber, as on every client, green or paper */
+  theme: Theme
 }
+
+export type Theme = 'amber' | 'green' | 'paper'
+export const THEMES: readonly Theme[] = ['amber', 'green', 'paper']
 
 const KEY = 'muxway.settings.v1'
 
@@ -27,7 +32,7 @@ const KEY = 'muxway.settings.v1'
 declare const __MX_TEST__: boolean
 export const TEST_BUILD = typeof __MX_TEST__ !== 'undefined' && __MX_TEST__
 
-const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true }
+const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true, theme: 'amber' }
 
 let current: Settings = { ...DEFAULTS }
 let bridge: EvenAppBridge | null = null
@@ -48,6 +53,7 @@ function normalize(s: Partial<Settings> | null | undefined): Settings {
     charset: s?.charset === 'utf-8' ? 'utf-8' : 'latin1',
     lens: s?.lens !== false,
     voice: s?.voice !== false,
+    theme: THEMES.includes(s?.theme as Theme) ? (s!.theme as Theme) : 'amber',
   }
 }
 
@@ -84,7 +90,7 @@ export function fromQuery(loc: { hostname: string; search: string }): Partial<Se
   if (![...q.keys()].some((k) => k in DEFAULTS)) return null
   if (!takesQuery(loc)) return null
   const out: Partial<Settings> = {}
-  for (const k of ['hub', 'token', 'charset'] as const) {
+  for (const k of ['hub', 'token', 'charset', 'theme'] as const) {
     const v = q.get(k)
     if (v !== null) (out as Record<string, unknown>)[k] = v
   }

@@ -26,6 +26,8 @@
         </div>
         <label class="check"><input id="lens" type="checkbox" /> Claude Code lens</label>
         <label class="check"><input id="voice" type="checkbox" /> Spoken replies (needs a transcriber on the hub)</label>
+        <label for="theme">theme</label>
+        <select id="theme"><option value="amber">amber</option><option value="green">green</option><option value="paper">paper</option></select>
         <button id="save">save &amp; test</button>
         <button id="test">test</button>
         <button id="forget">forget token</button>
@@ -38,6 +40,7 @@
         <textarea id="reply" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="text for the open pane"></textarea>
         <button id="send">send ⏎</button>
         <button id="type">type only</button>
+        <button id="mail">mail</button>
         <div id="sent" class="status"></div>
       </div>
 
@@ -46,7 +49,7 @@
         <div class="hint">
           <b>scroll</b> moves the cursor, or pages the pane · <b>tap</b> opens a pane, or its answers ·
           <b>hold</b> starts selecting panes for side by side (tap selects, double tap is done), or on a pane opens the menu · <b>double tap</b> goes back, and out of the app from the pane list.<br />
-          Marks: ★ needs you · ● done · ○ idle. Answers are a fixed set; type anything else here.
+          Marks: ★ needs you · √ done · ○ idle · ◐ working · zz later. Answers are a fixed set, with the keys and the program's commands behind two rows; type anything else here. <b>mail</b> leaves the text for the pane's process, never typed, after a confirmation on the glasses.
         </div>
       </div>
 

@@ -30,6 +30,7 @@ async function boot() {
   mountPhone({
     onSaved: () => void app?.onSettingsChanged(),
     send: (text, enter) => (app ? app.sendText(text, enter) : Promise.resolve('open the app from the Even app to reply')),
+    mail: (text) => (app ? app.mailText(text) : Promise.resolve('open the app from the Even app to mail')),
   })
   showOpenPane(null)
   if (!bridge) {

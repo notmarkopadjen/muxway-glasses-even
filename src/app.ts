@@ -7,7 +7,7 @@ import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
 import { commandsFor } from './commands.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parseOne, parsePanes, type Attention, type Host, type Pane, type Talk } from './protocol.ts'
+import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -28,6 +28,10 @@ type View =
   | { kind: 'ask'; question: string; act: () => Promise<void> }
   /** The name for a new session on the host. */
   | { kind: 'session'; host: Host; dflt: string }
+  /** The feed, whole or one pane's exchanges. */
+  | { kind: 'messages'; about: Pane | null }
+  /** One pane's mail. */
+  | { kind: 'mail'; pane: Pane }
 
 /** What a spoken text is for: the pane it is typed into, the pane it is mailed to (and the one it is read from), or a session's name. */
 type VoiceTarget = { kind: 'input'; pane: Pane } | { kind: 'mail'; pane: Pane; to: Pane } | { kind: 'session'; host: Host }
@@ -95,6 +99,13 @@ export class App {
   /** The inbox page's cursor, an entry, and its window's first row. */
   private inboxRow = 0
   private inboxStart = 0
+  /** The messages page's and the mail page's, the same way. */
+  private messagesRow = 0
+  private messagesStart = 0
+  private mailRow = 0
+  private mailStart = 0
+  /** The mailbox of the pane whose mail page is open; null before it is read. */
+  private mailbox: Mail[] | null = null
   /** Whether a listing has arrived since the start, or since the settings changed. */
   private loaded = false
   private dots = 1
@@ -121,8 +132,8 @@ export class App {
   /** Frames from a generated tone instead of the mic: the test harness, loopback only. */
   toneMic = false
   private toneTimer: ReturnType<typeof setInterval> | null = null
-  /** The phone pane is told which pane is open, for its reply box. */
-  onPane: ((pane: Pane | null) => void) | null = null
+  /** The phone pane is told which pane is open, for its reply box, and which one a mail from it would go to. */
+  onPane: ((pane: Pane | null, mailTo: Pane | null) => void) | null = null
 
   constructor(bridge: EvenAppBridge, log: (m: string, cls?: '' | 'ok' | 'bad') => void, trace: ((p: Page) => void) | null) {
     this.bridge = bridge
@@ -239,7 +250,7 @@ export class App {
         }
         p.working = this.working.has(p.address)
       }
-      await Promise.all([this.readInbox(), this.readFeed()])
+      await Promise.all([this.readInbox(), this.readFeed(), this.readMailbox()])
       this.listError = null
       this.loaded = true
       this.stopDots()
@@ -271,6 +282,36 @@ export class App {
   /** The held panes in the list's order. */
   private columns(): Pane[] {
     return V.selectedPanes(this.model())
+  }
+
+  /** The phone's to line: the pane a reply goes to, and the pane a mail would. */
+  private aim() {
+    this.onPane?.(this.focus() ?? null, this.mailTarget() ?? null)
+  }
+
+  /** The pane a mail from the phone or the voice goes to: the sender of the received mail under the cursor on the mail page, else the open pane where its host holds mail. */
+  private mailTarget(): Pane | undefined {
+    const v = this.top
+    if (v.kind === 'mail') {
+      const back = V.mailBackTo({ panes: this.panes }, this.mailEntries()[this.mailRow])
+      if (back) return back
+      const p = this.current(v.pane)
+      return p.writable && this.hosts.some((h) => h.name === p.host && h.mail) ? p : undefined
+    }
+    const p = this.focus()
+    return p && p.writable && this.hosts.some((h) => h.name === p.host && h.mail) ? p : undefined
+  }
+
+  private mailEntries(): V.MailEntry[] {
+    const v = this.top
+    return v.kind === 'mail' && this.mailbox ? V.mailEntries(this.mailbox, this.talk, this.current(v.pane)) : []
+  }
+
+  /** The feed as the messages page shows it: whole, or one pane's. */
+  private shownTalk(): Talk[] {
+    const v = this.top
+    if (v.kind !== 'messages') return []
+    return v.about ? this.talk.filter((t) => V.involves(t, v.about!)) : this.talk
   }
 
   /** The pane a reply goes to: the open one, or the marked column. */
@@ -329,7 +370,7 @@ export class App {
       this.selected = []
       this.marked = -1
       this.readers.clear()
-      this.onPane?.(null)
+      this.aim()
       return 'token refused · set it on the phone'
     }
     // A lockout pauses the app; the hub's one creation per two seconds is only a wait.
@@ -516,7 +557,7 @@ export class App {
     if (v.kind === 'pane') {
       this.offset = 0
       this.reveal = false
-      this.onPane?.(null)
+      this.aim()
     }
     await this.redraw()
     this.scheduleRead(0)
@@ -540,6 +581,25 @@ export class App {
       this.inboxRow = next
       this.inboxStart = V.inboxWindow(V.inboxLayout(this.model(), Math.floor(Date.now() / 1000)).entry, next, this.inboxStart)
       await this.redraw()
+      return
+    }
+    if (v.kind === 'messages') {
+      const talk = this.shownTalk()
+      const next = Math.max(0, Math.min(talk.length - 1, this.messagesRow + dir))
+      if (next === this.messagesRow) return
+      this.messagesRow = next
+      this.messagesStart = V.inboxWindow(V.messagesLayout(this.model(), talk, Math.floor(Date.now() / 1000)).entry, next, this.messagesStart)
+      await this.redraw()
+      return
+    }
+    if (v.kind === 'mail') {
+      const entries = this.mailEntries()
+      const next = Math.max(0, Math.min(entries.length - 1, this.mailRow + dir))
+      if (next === this.mailRow) return
+      this.mailRow = next
+      this.mailStart = V.inboxWindow(V.mailLayout(this.model(), entries, Math.floor(Date.now() / 1000)).entry, next, this.mailStart)
+      await this.redraw()
+      this.aim()
       return
     }
     if (v.kind === 'split') {
@@ -594,6 +654,9 @@ export class App {
         case 'host':
           if (row.host.sessions && !this.selecting) await this.push({ kind: 'session', host: row.host, dflt: V.defaultSession(this.panes, row.host.name) })
           break
+        case 'messages':
+          if (!this.selecting) await this.openMessages(null)
+          break
         case 'open':
           this.marked = -1
           await this.push({ kind: 'split' })
@@ -609,6 +672,28 @@ export class App {
     if (v.kind === 'inbox') {
       const p = V.inboxEntry(this.model())
       if (p) await this.openPane(p, false)
+      return
+    }
+    if (v.kind === 'messages') {
+      const t = this.shownTalk()[this.messagesRow]
+      if (!t) return
+      const m = { panes: this.panes }
+      if (t.kind === 'mail') {
+        const to = V.endPane(m, t.to)
+        if (to) await this.openMail(to, t)
+        else this.note('a pane is gone')
+        return
+      }
+      const from = V.endPane(m, t.from)
+      const to = V.endPane(m, t.to)
+      if (from && to && from.address !== to.address) await this.beside(from, to)
+      else this.note('a pane is gone')
+      return
+    }
+    if (v.kind === 'mail') {
+      const back = V.mailBackTo({ panes: this.panes }, this.mailEntries()[this.mailRow])
+      if (!back) return
+      await this.mailBy(v.pane, back)
       return
     }
     if (v.kind === 'split') {
@@ -655,6 +740,21 @@ export class App {
     } catch (e) {
       // An older hub has no inbox: the page says so when opened, the list goes on.
       if (!(e instanceof ApiError && e.status === 404)) this.listError = await this.failed(e, 'GET inbox')
+    }
+  }
+
+  /** The open mail page's mailbox, with every listing while it is open. */
+  private async readMailbox() {
+    const v = this.top
+    if (v.kind !== 'mail') return
+    try {
+      const a = await api.mailbox(v.pane.address)
+      this.mailbox = parseMailbox(a.body)
+      this.log(`GET mail ${a.status} ${this.mailbox.length} mails`)
+    } catch (e) {
+      this.toast = { text: await this.failed(e, 'GET mail'), until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+      if (this.mailbox === null) this.mailbox = []
     }
   }
 
@@ -774,7 +874,7 @@ export class App {
       this.scheduleList(0)
     }
     await this.push({ kind: 'pane', pane, fromSplit })
-    this.onPane?.(pane)
+    this.aim()
   }
 
   /** The pane as the last listing has it, else as it was opened. */
@@ -843,6 +943,16 @@ export class App {
           if (q) await this.showPane(q)
         }
         break
+      case V.MENU.mail:
+        if (v.kind === 'pane') await this.openMail(this.current(v.pane), null)
+        else if (v.kind === 'mail') {
+          const p = this.current(v.pane)
+          if (p.writable && this.hosts.some((h) => h.name === p.host && h.mail)) await this.mailBy(p, p)
+        }
+        break
+      case V.MENU.messages:
+        if (v.kind === 'mail') await this.openMessages(this.current(v.pane))
+        break
       case V.MENU.beside:
         if (v.kind === 'pane') {
           const partner = V.partnerOf({ panes: this.panes }, this.current(v.pane))
@@ -869,9 +979,64 @@ export class App {
     this.offset = 0
     this.reveal = false
     this.flash = null
-    this.onPane?.(q)
+    this.aim()
     await this.redraw()
     this.scheduleRead(0)
+  }
+
+  /** A word in the hint for a moment. */
+  private note(text: string) {
+    this.toast = { text, until: Date.now() + NOTE_MS }
+    this.later(NOTE_MS)
+    void this.redraw()
+  }
+
+  /** The messages page, whole from the list's row or one pane's from its mail page, the cursor on the newest; opening it clears the count. */
+  private async openMessages(about: Pane | null) {
+    this.seenSeq = this.talk.length ? this.talk[this.talk.length - 1].seq : this.seenSeq
+    const n = about ? this.talk.filter((t) => V.involves(t, about)).length : this.talk.length
+    this.messagesRow = Math.max(0, n - 1)
+    this.messagesStart = 0
+    await this.push({ kind: 'messages', about })
+    this.messagesStart = V.inboxWindow(V.messagesLayout(this.model(), this.shownTalk(), Math.floor(Date.now() / 1000)).entry, this.messagesRow, 1e9)
+    await this.redraw()
+  }
+
+  /** The mail page of a pane, the cursor on the newest entry, or on the given mail. */
+  private async openMail(p: Pane, at: Talk | null) {
+    this.mailbox = null
+    this.mailRow = 0
+    this.mailStart = 0
+    await this.push({ kind: 'mail', pane: p })
+    await this.readMailbox()
+    const entries = this.mailEntries()
+    const i = at ? entries.findIndex((e) => (e.kind === 'in' ? e.mail.id === at.id : e.talk.seq === at.seq)) : -1
+    this.mailRow = i >= 0 ? i : Math.max(0, entries.length - 1)
+    this.mailStart = V.inboxWindow(V.mailLayout(this.model(), entries, Math.floor(Date.now() / 1000)).entry, this.mailRow, 1e9)
+    await this.redraw()
+    this.aim()
+  }
+
+  /** A mail by voice to the pane, read from the pane whose page is open; without a transcriber the phone's mail button is the way. */
+  private async mailBy(from: Pane, to: Pane) {
+    if (!(this.canSpeak && getSettings().voice)) {
+      this.note("say it needs a transcriber · the phone's mail button")
+      return
+    }
+    // The mail page stays under the voice pages, unlike the answers list.
+    this.stack.push({ kind: 'mail', pane: from })
+    await this.beginVoice({ kind: 'mail', pane: from, to }, false)
+  }
+
+  /** From the phone: a mail for the pane the glasses aim at, confirmed on the glasses. */
+  async mailText(text: string): Promise<string> {
+    const to = this.mailTarget()
+    if (!to) return 'open a pane whose host holds mail first'
+    const t = typed(text).slice(0, 4000)
+    if (!t) return 'nothing to mail'
+    const peek = t.length > 40 ? t.slice(0, 39) + '…' : t
+    await this.push({ kind: 'ask', question: `mail this to ${paneName(to)}? "${peek}"`, act: () => this.mail(to, t) })
+    return ''
   }
 
   /** The columns with the pane and its partner, the pane first, nothing marked; the pair is the selection from here. */
@@ -958,7 +1123,7 @@ export class App {
     while (this.stack.length > 1) {
       const left = this.stack.pop()!
       if (left.kind === 'listen' || left.kind === 'heard') await this.endVoice()
-      if (left.kind === 'pane') this.onPane?.(null)
+      if (left.kind === 'pane') this.aim()
     }
     this.offset = 0
     this.reveal = false
@@ -1257,6 +1422,10 @@ export class App {
         return V.heardPage(m, this.useOf(v.target), this.voiceView())
       case 'ask':
         return V.askPage(m, v.question)
+      case 'messages':
+        return V.messagesPage(m, this.shownTalk(), v.about, this.messagesRow, this.messagesStart, now)
+      case 'mail':
+        return V.mailPage(m, this.current(v.pane), this.mailbox, this.talk, this.mailRow, this.mailStart, now)
       case 'session':
         return V.sessionPage(m, v.host.name, v.dflt, this.canSpeak && getSettings().voice)
     }

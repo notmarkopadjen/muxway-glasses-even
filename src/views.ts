@@ -7,9 +7,9 @@ import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
 import { BANNER_Y, LINE_H, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
-import { folder, paneName, program, programSays, type Attention, type Host, type Pane } from './protocol.ts'
+import { folder, paneName, program, programSays, type Attention, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
-import { CANVAS_W, LINE_PX, byteLength, textWidth, typed, wrapRows } from './text.ts'
+import { CANVAS_W, LINE_PX, byteLength, fitWidth, textWidth, typed, wrapRows } from './text.ts'
 
 // The marks were found on the device: the font draws no check, no ring and no flag.
 export const MARK: Record<Attention, string> = { question: '★', permission: '★', done: '√', idle: '○' }
@@ -619,22 +619,149 @@ export function inboxEntry(m: Model): Pane | undefined {
   return m.inbox?.slice(0, INBOX_ROWS)[m.inboxCursor]
 }
 
-/** Every pane that waits, oldest first, drawn by the app as the list is: a tap opens the entry under the cursor, the menu parks or wakes it. */
-export function inboxPage(m: Model, now: number): Page {
-  const { items, entry } = inboxLayout(m, now)
-  const cursor = Math.max(0, Math.min((m.inbox?.length ?? 1) - 1, m.inboxCursor))
-  const start = inboxWindow(entry, cursor, m.inboxStart)
+/** A page of the app's own rows where the cursor moves by entry (an entry is one or more rows), as the inbox, the messages and the mail pages are. */
+export function entriesBlocks(items: string[], entry: number[], cursor: number, start: number): Block[] {
   const lines: string[] = []
   for (let i = 0; i < LIST_ROWS; i++) {
     const at = start + i
     lines.push(items[at] === undefined ? ' ' : (entry[at] === cursor && at === entry.indexOf(cursor) ? CURSOR : '  ') + items[at])
   }
-  const blocks: Block[] = [{ name: 'rows' + start, x: 2, y: TOP, w: ROW_W, h: LIST_ROWS * LINE_H, lines, level: 3 }, catcher()]
+  return [{ name: 'rows' + start, x: 2, y: TOP, w: ROW_W, h: LIST_ROWS * LINE_H, lines, level: 3 }, catcher()]
+}
+
+/** The text of an entry wrapped under its head, indented, three rows at most, the third ending in an ellipsis when there was more. */
+export function underRows(text: string, indent: string, rows = 3): string[] {
+  const w = ROW_W - INNER - textWidth(CURSOR) - textWidth(indent)
+  const out = wrapRows([text], w)
+  const kept = out.slice(0, rows)
+  if (out.length > rows) kept[rows - 1] = fitWidth(kept[rows - 1] + '…', w)
+  return kept.map((r) => indent + r)
+}
+
+/** Every pane that waits, oldest first, drawn by the app as the list is: a tap opens the entry under the cursor, the menu parks or wakes it. */
+export function inboxPage(m: Model, now: number): Page {
+  const { items, entry } = inboxLayout(m, now)
+  const cursor = Math.max(0, Math.min((m.inbox?.length ?? 1) - 1, m.inboxCursor))
+  const start = inboxWindow(entry, cursor, m.inboxStart)
+  const blocks = entriesBlocks(items, entry, cursor, start)
   const n = m.inbox?.length ?? 0
   const under = inboxEntry(m)
   const menu: MenuSpec[] = under && canPark(m, under) ? [{ id: MENU.later, label: under.later ? 'Wake' : 'Later' }] : []
   const park = menu.length ? ` · ≡ ${under!.later ? 'wake' : 'later'}` : ''
   return { kind: 'dash', ...hint(m, `inbox · ${n} waiting · ▽ move · ● open${park} · ×× back`), blocks, charts: [], items: [], menu }
+}
+
+// --- messages and mail --------------------------------------------------------------------
+
+/** The name of a pane at one end of an exchange: its alias in the entry, the pane's name from the listing by its id then its address, else the address without the host; nobody is the actor. */
+export function endName(m: Pick<Model, 'panes'>, end: TalkEnd | null, actor: string): string {
+  if (!end) return actor || 'someone'
+  if (end.alias) return end.alias
+  const p = (end.id && m.panes.find((x) => x.id === end.id && x.host === end.address.split('/')[0])) || m.panes.find((x) => x.address === end.address)
+  if (p) return paneName(p)
+  return end.address.slice(end.address.indexOf('/') + 1)
+}
+
+/** The pane at one end, as the listing has it: by its id on its host, else by its address. */
+export function endPane(m: Pick<Model, 'panes'>, end: TalkEnd | null): Pane | undefined {
+  if (!end) return undefined
+  return (end.id && m.panes.find((x) => x.id === end.id && x.host === end.address.split('/')[0])) || m.panes.find((x) => x.address === end.address)
+}
+
+/** Whether an entry is the pane's: it wrote it or received it, by id first, then by address. */
+export function involves(t: Talk, p: Pane): boolean {
+  const is = (e: TalkEnd | null) => !!e && ((!!p.id && e.id === p.id && e.address.split('/')[0] === p.host) || e.address === p.address)
+  return is(t.from) || is(t.to)
+}
+
+/** The messages page's rows: each entry's head, who → whom and the age, with its kind, then the text under it; a reply one step further in when what it answers is on the page. */
+export function messagesLayout(m: Pick<Model, 'panes'>, talk: Talk[], now: number): { items: string[]; entry: number[] } {
+  if (!talk.length) return { items: ['nothing said yet'], entry: [-1] }
+  const items: string[] = []
+  const entry: number[] = []
+  talk.forEach((t, i) => {
+    const reply = t.replyTo > 0 && talk.some((x) => x.kind === 'mail' && x.id === t.replyTo)
+    const kind = t.kind === 'mail' ? (t.replyTo ? ' · reply' : ' · mail') : t.kind === 'text' ? '' : ` · ${t.kind}`
+    const lead = reply ? '  ' : ''
+    items.push(`${lead}${endName(m, t.from, t.actor)} → ${endName(m, t.to, '')} · ${ago(t.at, now)}${kind}`)
+    entry.push(i)
+    if (t.text) {
+      for (const r of underRows(t.text, lead + '    ')) {
+        items.push(r)
+        entry.push(i)
+      }
+    }
+  })
+  return { items, entry }
+}
+
+export function messagesPage(m: Model, talk: Talk[], about: Pane | null, cursor: number, start: number, now: number): Page {
+  const { items, entry } = messagesLayout(m, talk, now)
+  const c = Math.max(0, Math.min(talk.length - 1, cursor))
+  const s = inboxWindow(entry, c, start)
+  const blocks = entriesBlocks(items, entry, c, s)
+  const t = talk[c]
+  const open = t ? (t.kind === 'mail' ? '● the mail' : '● side by side') : ''
+  const title = about ? `messages · ${paneName(about)}` : 'messages'
+  return { kind: 'dash', ...hint(m, `${title} · ${talk.length} · ▽ move${open ? ' · ' + open : ''} · ×× back`), blocks, charts: [], items: [], menu: [] }
+}
+
+/** One row of the mail page: what came in from the mailbox, what went out from the feed, merged by time. */
+export type MailEntry = { kind: 'in'; mail: Mail; at: number } | { kind: 'out'; talk: Talk; at: number }
+
+export function mailEntries(mailbox: Mail[], talk: Talk[], p: Pane): MailEntry[] {
+  const out: MailEntry[] = mailbox.map((mail) => ({ kind: 'in', mail, at: mail.at }))
+  for (const t of talk) {
+    if (t.kind !== 'mail' || !t.from) continue
+    const mine = (!!p.id && t.from.id === p.id && t.from.address.split('/')[0] === p.host) || t.from.address === p.address
+    if (mine) out.push({ kind: 'out', talk: t, at: t.at })
+  }
+  return out.sort((a, b) => a.at - b.at || (a.kind === 'in' ? a.mail.id : a.talk.seq) - (b.kind === 'in' ? b.mail.id : b.talk.seq))
+}
+
+export function mailLayout(m: Pick<Model, 'panes'>, entries: MailEntry[], now: number): { items: string[]; entry: number[] } {
+  if (!entries.length) return { items: ['no mail'], entry: [-1] }
+  const items: string[] = []
+  const entry: number[] = []
+  entries.forEach((e, i) => {
+    let head: string
+    let text: string
+    if (e.kind === 'in') {
+      head = `← ${endName(m, e.mail.from, e.mail.actor)} · ${ago(e.mail.at, now)}` + (e.mail.readAt ? '' : ' · unread') + (e.mail.replied ? ' · replied' : '')
+      text = e.mail.text
+    } else {
+      head = `→ ${endName(m, e.talk.to, '')} · ${ago(e.talk.at, now)}` + (e.talk.bytes > e.talk.text.length ? ' · cut' : '')
+      text = e.talk.text
+    }
+    items.push(head)
+    entry.push(i)
+    for (const r of underRows(text, '    ')) {
+      items.push(r)
+      entry.push(i)
+    }
+  })
+  return { items, entry }
+}
+
+/** The pane a received mail is answered to: its origin, when that is a pane in the listing the token may write. */
+export function mailBackTo(m: Pick<Model, 'panes'>, e: MailEntry | undefined): Pane | undefined {
+  if (!e || e.kind !== 'in') return undefined
+  const p = endPane(m, e.mail.from)
+  return p?.writable ? p : undefined
+}
+
+export function mailPage(m: Model, p: Pane, mailbox: Mail[] | null, talk: Talk[], cursor: number, start: number, now: number): Page {
+  const entries = mailbox ? mailEntries(mailbox, talk, p) : []
+  const { items, entry } = mailbox ? mailLayout(m, entries, now) : { items: ['reading the mail…'], entry: [-1] }
+  const c = Math.max(0, Math.min(entries.length - 1, cursor))
+  const s = inboxWindow(entry, c, start)
+  const blocks = entriesBlocks(items, entry, c, s)
+  const unread = mailbox?.filter((x) => !x.readAt).length ?? 0
+  const menu: MenuSpec[] = []
+  if (p.writable && hostOf(m, p)?.mail) menu.push({ id: MENU.mail, label: `Mail ${paneName(p)}` })
+  menu.push({ id: MENU.messages, label: `Messages with ${paneName(p)}` })
+  const back = mailBackTo(m, entries[c]) ? ' · ● mail back' : ''
+  return { kind: 'dash', ...hint(m, `mail · ${paneName(p)} · ${unread} unread · ▽ move${back} · ≡ menu · ×× back`), blocks, charts: [], items: [], menu }
 }
 
 function textBox(text: string): Block {
