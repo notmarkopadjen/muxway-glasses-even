@@ -1371,7 +1371,7 @@ def s61(run, name):
     sim.expect(titled("test-pane"), "the pane", 10)
     wait_for("following", lambda: following(sim), 10)
     pick_menu(sim, "Mail")
-    page = sim.head("mail · test-pane · 25 unread", "the mail page", 10)
+    page = sim.head("mail · test-pane · 21 unread", "the mail page", 10)
     items = allrows(page)
     check(len(items) == 9 and all(len(r.encode()) <= 63 for r in items), [len(r.encode()) for r in items])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the page")

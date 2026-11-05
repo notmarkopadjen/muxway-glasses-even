@@ -397,8 +397,11 @@ class Proxy:
                     data = json.dumps({"talk": talk, "next": 129}).encode()
                 if proxy.mode == "feed-hostile" and self.command == "GET" and bare.endswith("/mail"):
                     now = int(time.time())
+                    # Under the app's 256 KiB cap: forty mails of 2 KiB with control bytes and one of 30 KiB; the even
+                    # ones read, the odd ones with a read time that is no time, so unread.
                     mail = [{"id": i, "at": now - 100 * i, "actor": {"name": "reviewer"}, "from": {"address": f"{HOST}/work/0.0", "pane_id": "%0"},
-                             "text": "y\x07\x00" * 7000, "read_at": "soon" if i % 2 else 0} for i in range(60)]
+                             "text": "y\x07\x00" * 300, "read_at": "soon" if i % 2 else now - 1} for i in range(40)]
+                    mail += [{"id": 40, "at": now, "actor": {"name": "reviewer"}, "from": None, "text": "z\x1b[2J" * 5000}]
                     mail += [{"id": "one", "text": "no id"}, None, 7]
                     data = json.dumps({"mail": mail}).encode()
                 if proxy.mode == "later-hostile" and bare in ("/v1/panes", "/v1/inbox"):
