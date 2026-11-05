@@ -51,7 +51,7 @@ try {
   await page.fill('#reply', 'a mail')
   await page.click('#mail')
   const mailed = await page.textContent('#sent')
-  if (!/Even app|glasses first/.test(mailed)) fail(`mail without the glasses: ${mailed}`)
+  if (!/Even app|glasses first|holds mail first/.test(mailed)) fail(`mail without the glasses: ${mailed}`)
   const to = await page.textContent('#to')
   if (!/open a pane on the glasses first/.test(to)) fail(`the to line: ${to}`)
 

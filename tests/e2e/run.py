@@ -697,7 +697,7 @@ def f10(run, name):
     # The done pane puts the inbox row first; the panes follow, those that wait before the rest.
     page = sim.expect(lambda p: listed(p) and len(rows(p)) == 3, "three rows")
     check(rows(page)[0] == "◆ inbox · 1 waiting", f"rows: {rows(page)}")
-    check(rows(page)[1].startswith("√ logs") and rows(page)[1].endswith("· done · read-only"), f"rows: {rows(page)}")
+    check(rows(page)[1].startswith("√ bash · logs") and rows(page)[1].endswith("· done · read-only"), f"rows: {rows(page)}")
     check(rows(page)[2].startswith("◌ bash · test-pane · quiet"), f"rows: {rows(page)}")
     sim.shot("list")
     for i in range(10):
@@ -749,7 +749,7 @@ def f12(run, name):
     check(len(proxy.paths("/v1/panes/")) == n, "the pane was read while paused")
     sim.scroll("down")
     sim.scroll("down")
-    page = sim.head("following", "following again")
+    page = sim.expect(lambda p: any(b.get("name") == "state" and b["lines"][0] == "work/0.0" for b in p["blocks"]), "following again")
     check("40" in (sim.block("body", page) or []), "the bottom did not come back")
     sim.shot("bottom-again")
 
@@ -839,7 +839,7 @@ def f15(run, name):
     check(any(m["label"] == "Go to: build" for m in page["menu"]), page["menu"])
     sim.shot("banner")
     sim.back()
-    page = sim.expect(lambda p: listed(p) and len(rows(p)) > 1 and rows(p)[1].startswith("★ build"), "build first among the panes")
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) > 1 and rows(p)[1].startswith("★ bash · build"), "build first among the panes")
     check(rows(page)[0] == "◆ inbox · 1 waiting", rows(page)[0])
     check(rows(page)[1] == "★ bash · build · needs permission", rows(page)[1])
     sim.shot("list-attention")  # the toast still holds the hint here; the count in it is F41's
@@ -1089,7 +1089,7 @@ def f44(run, name):
     laters = [r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/later")]
     check([json.loads(r["body"]) for r in laters] == [{"later": True}, {"later": False}], [(r["path"], r["body"]) for r in laters])
     sim.back()
-    page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("★ build"), "build back in its place", 10)
+    page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("★ bash · build"), "build back in its place", 10)
     check(rows(page)[0] == "◆ inbox · 1 waiting" and rows(page)[1] == "★ bash · build · asks a question" and len(rows(page)) == 4, rows(page))
     sim.shot("list-woken")
     # Later and Wake toggle from the pane's menu.
@@ -1140,10 +1140,10 @@ def f32(run, name):
         core.keys("echo right-side", "Enter", target="work:build.0")
     core, proxy, sim, tok = setup(run, name, before=before)
     page = home(sim)
-    check(rows(page) == ["◌ bash · test-pane · quiet", "◌ bash · build · quiet", "◌ bash · logs · quiet", "◌ more · bash · quiet"], rows(page))
+    check(rows(page) == ["◌ bash · test-pane · quiet", "◌ bash · build · quiet", "◌ bash · logs · quiet", "◌ bash · more · quiet"], rows(page))
     sim.hold(0)
     page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ◌ test-pane"), "selection mode, test-pane selected")
-    check(rows(page)[1:] == ["[ ] ◌ bash · build · quiet", "[ ] ◌ bash · logs · quiet", "[ ] ◌ more · bash · quiet", "→ clear selection"], rows(page))
+    check(rows(page)[1:] == ["[ ] ◌ bash · build · quiet", "[ ] ◌ bash · logs · quiet", "[ ] ◌ bash · more · quiet", "→ clear selection"], rows(page))
     check(page["hint"].startswith("▽ move · ● select · 3 at most"), page["hint"])
     sim.pick(1)
     page = sim.expect(lambda p: listed(p) and rows(p)[1].startswith("[x] ◌ build"), "build selected by a tap")
@@ -1161,7 +1161,7 @@ def f32(run, name):
     sim.back()
     page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("[x] ") and rows(p)[1].startswith("[x] "), "the list, still selecting, selection kept")
     sim.pick(2)
-    page = sim.expect(lambda p: listed(p) and rows(p)[2].startswith("[x] ◌ logs"), "logs selected")
+    page = sim.expect(lambda p: listed(p) and rows(p)[2].startswith("[x] ◌ bash · logs"), "logs selected")
     check(rows(page)[4] == "→ open 3 side by side", rows(page))
     sim.pick(3)
     page = sim.expect(lambda p: p.get("hintBorder") and p["hint"].startswith("3 panes at most"), "the limit said", 5)
