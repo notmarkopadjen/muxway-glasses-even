@@ -627,11 +627,50 @@ For the console's parity-docs branch, the glasses cell of each row:
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan. Deviations, each small:
+  - **Working is counted at the listing.** The ten seconds of §2.11
+    are measured against the listing's own time (`Pane.moving`, set by
+    the parser), not the wall clock: the listing comes every ten
+    seconds, so a word measured against the clock flickered to `quiet`
+    a few seconds before the next listing, and an idle event arriving
+    between listings drew a banner it should not. The word now holds
+    until the next listing.
+  - **The inbox row and the name.** An unnamed harness is named by its
+    program with what it says as its status (`Codex · build`), any
+    other program by its command and its title (`vim · notes.md`), the
+    guideline's §1.1 read literally; the inbox row keeps the name and,
+    for a named pane, the program, without the status. The mail word
+    sits right after the name, before the folder, as before.
+  - **The phone's mail** shows the text's first words in the
+    confirmation's hint rather than the whole text in a box: an OS
+    list page has no room for a box, and the text is on the phone
+    where it was typed (§2.9 said both).
+  - **A reader and `+ session`.** The host's line carries `+ session`
+    for every token, since `hosts[].sessions` is the host's fact; the
+    hub refuses a reader (S60) and a host whose agent does not start
+    sessions answers `not found`, whatever a proxy says (S62).
+  - **`Pane.moving`, `id`, `session`, `window`, `width`, `height`,
+    `last`** joined the pane; the hub's error code (`mailbox_full`,
+    `exists`, `too_many`, `rate_limited`) travels with a refusal so
+    the words are the hub's, and a creation's `429` no longer pauses
+    the app for ten seconds as a lockout does.
+  - **Say it again** on a heard mail or session name keeps the mail
+    page or the name page under the voice pages, where an answer's
+    list is left behind.
+- [x] Security rules (AGENTS.md section 2) hold: S60 to S64 pass on
+  the core's main (c26018c): a reader is offered nothing it may not do
+  and is refused directly; a lying proxy earns the hub's refusal in
+  words; a hostile feed, mailbox and recent events put words on a page
+  and send nothing; commands come from the hub's `command`, never a
+  title; every write passes Cancel / Confirm; nothing is typed to
+  deliver a mail; no text is logged.
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean with the
+  owner's deny-list, the diff read; fixtures, docs and shots name the
+  test environment only.
+- [x] Docs and diagrams updated: `docs/features/messages.md` (new),
+  `screens.md`, `notifications.md`, `lenses.md`, `phone-pane.md`,
+  `ARCHITECTURE.md`, the store listing, the README, this plan.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+The full suite on the pull request's tree: RUN_PLACEHOLDER
