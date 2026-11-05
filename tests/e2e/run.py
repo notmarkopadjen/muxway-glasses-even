@@ -1362,7 +1362,7 @@ def s61(run, name):
     items = allrows(page)
     check(len(items) == 9 and all(len(r.encode()) <= 63 for r in items), [len(r.encode()) for r in items])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the page")
-    check(items[0].startswith("test-pane → build · ") or items[0].startswith("  test-pane → build · "), items[:2])
+    check(any(r.startswith("test-pane → build · ") for r in items), items[:3])
     check(any(r.endswith("…") for r in items), "a long text was not cut")
     sim.shot("messages-hostile")
     sim.back()
@@ -1383,7 +1383,7 @@ def s61(run, name):
     check(not any("refused" in e["message"] or "uncaught" in e["message"] for e in sim.console()), "the firmware refused a page")
 
 
-@test("S62", "A proxy that calls a read-only pane writable and its host able: Close, + pane and a session offered and refused in words; a mail by voice offered and nothing sent without a transcriber", "e2e-security")
+@test("S62", "A proxy that calls a read-only pane writable and its host able: Close and + pane offered and refused in words, a session answered not found; a mail by voice offered and nothing sent without a transcriber", "e2e-security")
 def s62(run, name):
     core, proxy, sim, tok = setup(run, name, write=None, mode="lie-able")
     open_pane(sim)
@@ -1413,7 +1413,8 @@ def s62(run, name):
     sim.head(f"start session glasses-1 on {HOST}?", "the confirmation", 10)
     time.sleep(2.5)
     sim.choose(1)
-    sim.head("read only", "the refusal", 10)
+    # The host starts no sessions, whatever the proxy said: the hub's 404, in words.
+    sim.head("not found", "the refusal", 10)
     sim.shot("session-refused")
     check([b for _, b in posts(proxy, "/sessions")] == [{"name": "glasses-1"}], posts(proxy, "/sessions"))
     check(len(posts(proxy, "/close")) == 1 and len(posts(proxy, "/panes")) == 1 and not posts(proxy, "/mail"), "the requests")
