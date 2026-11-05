@@ -662,14 +662,33 @@ class Sim:
                         return int(b["name"][4:]) + i
         return 0
 
-    def move(self, index):
-        """Scrolls the pane list's cursor to the index-th row, one drawn page per tick."""
+    def real(self, index):
+        """The row the index-th row without host lines is: with one host its line sits right after the inbox and
+        messages rows, so every pane row is one further down. Tests of several hosts move by every row."""
+        for b in self.last()["blocks"]:
+            if b.get("name", "").startswith("rows"):
+                start = int(b["name"][4:])
+                lines = [l[2:] for l in b["lines"]]
+                special = 0
+                for i, l in enumerate(lines):
+                    if start + i != i:
+                        break
+                    if l.startswith("◆ inbox") or l.startswith("» messages"):
+                        special = i + 1
+                    else:
+                        break
+                return index if index < special else index + 1
+        return index
+
+    def move(self, index, every=False):
+        """Scrolls the pane list's cursor to the index-th row (counted without host lines, or with every row), one drawn page per tick."""
+        target = index if every else self.real(index)
         for _ in range(40):
             at = self.cursor()
-            if at == index:
+            if at == target:
                 return
-            self.scroll("down" if index > at else "up", 0.3)
-        check(self.cursor() == index, f"the cursor is on row {self.cursor()}, not {index}")
+            self.scroll("down" if target > at else "up", 0.3)
+        check(self.cursor() == target, f"the cursor is on row {self.cursor()}, not {target}")
 
     def pick(self, index, wait=1.0):
         """Moves the pane list's cursor to the index-th row and taps it."""
