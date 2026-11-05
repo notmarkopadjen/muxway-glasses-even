@@ -11,7 +11,7 @@ import { groupsOf } from '../../src/groups.ts'
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, later: false, laterAt: 0, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, later: false, laterAt: 0, id: '', session: 'w', window: 0, width: 80, height: 24, last: false, ...extra }
   return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
@@ -19,7 +19,7 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
   return {
     configured: true,
     panes: sorted(panes),
-    hosts: [{ name: 'alice-laptop', online: true, later: true }],
+    hosts: [{ name: 'alice-laptop', online: true, later: true, sessions: false, close: false, mail: false, keys: 2 }],
     listError: null,
     needsYou: null,
     flash: null,
@@ -198,7 +198,7 @@ test('a parked pane: last in the order, zz and later with what waits underneath,
   assert.deepEqual(menuOf(model(panes), panes[0]), ['Refresh', 'Reveal all', 'Bottom', 'Wake'])
   assert.ok(panePage(model(panes), panes[0], undefined, { offset: 0, reveal: false, state: 'following' }, NOW).menu.some((e) => e.id === MENU.later))
   assert.deepEqual(menuOf(model(panes), pane('w/8.0', { writable: false })), ['Refresh', 'Reveal all', 'Bottom'])
-  const older = model(panes, { hosts: [{ name: 'alice-laptop', online: true, later: false }] })
+  const older = model(panes, { hosts: [{ name: 'alice-laptop', online: true, later: false, sessions: false, close: false, mail: false, keys: 2 }] })
   assert.deepEqual(menuOf(older, panes[1]), ['Refresh', 'Reveal all', 'Bottom'])
   assert.equal(canPark(older, panes[1]), false)
   assert.equal(canPark(model(panes), pane('w/9.0', { host: 'bob', address: 'bob/w/9.0' })), false)
@@ -254,7 +254,7 @@ test('before the first listing: one row and the dots in the hint', () => {
   assert.deepEqual(listLayout(m, NOW).items, ['reading the hub…'])
   assert.equal(listLayout(m, NOW).what[0].kind, 'none')
   assert.equal(listPage(m, NOW).hint, 'reading the hub ··')
-  const offline = model([pane('w/0.0')], { hosts: [{ name: 'alice-laptop', online: false, later: true }] })
+  const offline = model([pane('w/0.0')], { hosts: [{ name: 'alice-laptop', online: false, later: true, sessions: false, close: false, mail: false, keys: 2 }] })
   assert.ok(listPage(offline, NOW).hint.startsWith('○ alice-laptop offline · '), listPage(offline, NOW).hint)
   assert.deepEqual(listLayout(model([], { configured: false }), NOW).items, ['set the hub and token on the phone'])
   assert.deepEqual(listLayout(model([]), NOW).items, ['no panes exposed to this token'])

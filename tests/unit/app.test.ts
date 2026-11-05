@@ -78,7 +78,7 @@ test('foreground exit stops the requests, enter and gestures resume them', async
   await app.start()
   await sleep(150)
   assert.ok(hub.calls.some((c) => c.endsWith('/v1/panes')), 'the list was read')
-  assert.ok(hub.calls.some((c) => c.includes('/v1/events?limit=1')), 'the cursor was taken')
+  assert.ok(hub.calls.some((c) => c.includes('/v1/events?limit=50')), 'the recent events were read for the cursor')
   assert.ok(!hub.calls.some((c) => c.includes('token')), 'no token in a URL')
 
   bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the list's cursor is on the first row: the pane

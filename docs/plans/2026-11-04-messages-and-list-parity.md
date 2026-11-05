@@ -1,6 +1,6 @@
 # Feature: messages, mail and the list's missing rows (parity pass of 2026-11-04)
 
-> Status: proposed. One plan for muxway-glasses-even#73 (the messages
+> Status: approved 2026-11-04 ("ok"). One plan for muxway-glasses-even#73 (the messages
 > page, the mail page, mailing a pane and mailing back, the partner
 > beside) and #74 (host lines, the place, the name's order, + pane,
 > + session, close, next and previous, the notice's text, command rows,

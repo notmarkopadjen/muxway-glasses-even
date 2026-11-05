@@ -41,6 +41,16 @@ export interface Pane {
   later: boolean
   /** When it was parked, seconds since the epoch; 0 when awake or unknown. */
   laterAt: number
+  /** tmux's pane id, %n; '' when the listing gave none. */
+  id: string
+  /** The session's name and the window's index, for a split. */
+  session: string
+  window: number
+  /** The pane's size in cells; 0 when unknown. */
+  width: number
+  height: number
+  /** The only pane of its session: closing it ends the session. */
+  last: boolean
 }
 
 export interface Host {
@@ -48,6 +58,47 @@ export interface Host {
   online: boolean
   /** The host's agent parks panes for later. */
   later: boolean
+  /** The agent starts sessions, closes panes, holds mail. */
+  sessions: boolean
+  close: boolean
+  mail: boolean
+  /** The key grammar the agent takes: 2, or 0 for the earlier list. */
+  keys: number
+}
+
+export type TalkKind = 'text' | 'key' | 'answer' | 'mail'
+
+/** One end of an exchange: the pane as it was, with its id to follow. */
+export interface TalkEnd {
+  address: string
+  id: string
+  alias: string
+}
+
+/** An entry of the hub's feed: who said what to whom. */
+export interface Talk {
+  seq: number
+  at: number
+  kind: TalkKind
+  from: TalkEnd | null
+  to: TalkEnd
+  actor: string
+  text: string
+  bytes: number
+  /** A mail's id, a reply's the mail it answers; 0 otherwise. */
+  id: number
+  replyTo: number
+}
+
+/** A mail a pane holds, as its host's agent keeps it. */
+export interface Mail {
+  id: number
+  at: number
+  from: TalkEnd | null
+  actor: string
+  text: string
+  readAt: number
+  replied: boolean
 }
 
 export interface Event {
@@ -72,6 +123,12 @@ const MAX_TALK = 32
 const MAX_MAIL = 999
 const MAX_CWD = 256
 const MAX_FOLDER = 32
+const MAX_FEED = 100
+const MAX_MAILBOX = 50
+const MAX_MAIL_TEXT = 4000
+const MAX_ACTOR = 32
+const PANE_ID = /^%[0-9]{1,9}$/
+const TALK_KINDS = ['text', 'key', 'answer', 'mail'] as const
 
 // The harnesses every client names, by command, and under an interpreter by their name in the title.
 const AGENTS: [Agent, string, RegExp | null][] = [
@@ -196,7 +253,22 @@ function parsePane(item: unknown, now: number): Pane | null {
     mail: parseMail(o.mail),
     later: o.later === true,
     laterAt: o.later === true ? when(o.later_at, now) : 0,
+    id: paneId(o.pane_id),
+    session: typeof o.session === 'string' && NAME.test(o.session) ? o.session : '',
+    window: count(o.window_index, 9999),
+    width: count(o.width, 9999),
+    height: count(o.height, 9999),
+    last: o.last === true,
   }
+}
+
+function paneId(v: unknown): string {
+  return typeof v === 'string' && PANE_ID.test(v) ? v : ''
+}
+
+/** A non-negative integer up to a cap; anything else is 0. */
+function count(v: unknown, max: number): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? Math.min(v, max) : 0
 }
 
 function parseList(body: string, key: string, now: number): Pane[] {
@@ -239,7 +311,74 @@ export function parseHosts(body: string): Host[] {
   return list
     .slice(0, MAX_LIST)
     .filter((h): h is Record<string, unknown> => !!h && typeof h === 'object' && typeof (h as Record<string, unknown>).name === 'string' && HOST.test((h as Record<string, unknown>).name as string))
-    .map((h) => ({ name: h.name as string, online: h.online === true, later: h.later === true }))
+    .map((h) => ({ name: h.name as string, online: h.online === true, later: h.later === true, sessions: h.sessions === true, close: h.close === true, mail: h.mail === true, keys: h.keys === 2 ? 2 : 0 }))
+}
+
+/** A pane named in the feed or a mail: its address checked, its id and alias cleaned; null for anything else. */
+function talkEnd(v: unknown): TalkEnd | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  if (!address(o.address)) return null
+  return { address: o.address as string, id: paneId(o.pane_id), alias: str(o.alias, 32) }
+}
+
+function actorName(v: unknown): string {
+  return v && typeof v === 'object' ? str((v as Record<string, unknown>).name, MAX_ACTOR) : ''
+}
+
+/** The hub's feed, oldest first, and the cursor: an entry whose destination is no pane, or whose seq is no integer, is dropped. */
+export function parseFeed(body: string, now = Math.floor(Date.now() / 1000)): { talk: Talk[]; next: number | null } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return { talk: [], next: null }
+  }
+  const o = (raw ?? {}) as Record<string, unknown>
+  const next = typeof o.next === 'number' && Number.isInteger(o.next) && o.next >= 0 ? o.next : null
+  const talk: Talk[] = []
+  if (Array.isArray(o.talk)) {
+    for (const item of o.talk.slice(0, MAX_FEED)) {
+      if (!item || typeof item !== 'object') continue
+      const e = item as Record<string, unknown>
+      const to = talkEnd(e.to)
+      const kind = typeof e.kind === 'string' && (TALK_KINDS as readonly string[]).includes(e.kind) ? (e.kind as TalkKind) : null
+      if (!to || !kind || typeof e.seq !== 'number' || !Number.isInteger(e.seq) || e.seq < 0) continue
+      talk.push({
+        seq: e.seq,
+        at: when(e.at, now),
+        kind,
+        from: talkEnd(e.from),
+        to,
+        actor: actorName(e.actor),
+        text: str(e.text, 200),
+        bytes: count(e.bytes, 1 << 30),
+        id: count(e.id, Number.MAX_SAFE_INTEGER),
+        replyTo: count(e.reply_to, Number.MAX_SAFE_INTEGER),
+      })
+    }
+  }
+  return { talk, next }
+}
+
+/** A pane's mailbox as the hub lists it, oldest first; a mail without an integer id is dropped, fifty are kept. */
+export function parseMailbox(body: string, now = Math.floor(Date.now() / 1000)): Mail[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return []
+  }
+  const list = (raw as Record<string, unknown>)?.mail
+  if (!Array.isArray(list)) return []
+  const out: Mail[] = []
+  for (const item of list.slice(0, MAX_MAILBOX)) {
+    if (!item || typeof item !== 'object') continue
+    const m = item as Record<string, unknown>
+    if (typeof m.id !== 'number' || !Number.isInteger(m.id) || m.id < 0) continue
+    out.push({ id: m.id, at: when(m.at, now), from: talkEnd(m.from), actor: actorName(m.actor), text: str(m.text, MAX_MAIL_TEXT), readAt: when(m.read_at, now), replied: m.replied === true })
+  }
+  return out
 }
 
 /** What the program says about itself: its title without Claude's mark, or nothing when it only repeats the command or the host. */
@@ -322,8 +461,12 @@ export function checkToken(raw: string): { token: string } | { error: string } {
   return { token: s }
 }
 
+/** The hub's codes that say more than their status. */
+const CODES: Record<string, string> = { mailbox_full: 'mailbox full', exists: 'that name exists', too_many: 'too many there', bad_input: 'refused by the hub' }
+
 /** A refusal in a few words, for the hint. */
-export function errorWords(status: number): string {
+export function errorWords(status: number, code = ''): string {
+  if (CODES[code]) return CODES[code]
   switch (status) {
     case -1:
       return 'set the hub and token on the phone'

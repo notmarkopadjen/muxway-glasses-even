@@ -19,9 +19,22 @@ export interface Answer {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number) {
-    super(errorWords(status))
+  /** The hub's error code, from its JSON body; '' when there was none. */
+  code: string
+  constructor(status: number, code = '') {
+    super(errorWords(status, code))
     this.status = status
+    this.code = code
+  }
+}
+
+/** The hub's error code in a refused answer's body: a short word, or nothing. */
+export function errorCode(body: string): string {
+  try {
+    const code = (JSON.parse(body) as { error?: unknown })?.error
+    return typeof code === 'string' && /^[a-z_]{1,32}$/.test(code) ? code : ''
+  } catch {
+    return ''
   }
 }
 
@@ -101,8 +114,9 @@ async function call(method: 'GET' | 'POST', path: string, opts: { body?: string 
     throw new ApiError(0)
   }
   clearTimeout(timer)
-  if (res.status >= 400) throw new ApiError(res.status)
-  return { status: res.status, body: decode(bytes, res.headers.get('Content-Type') ?? ''), etag: res.headers.get('ETag') ?? '' }
+  const body = decode(bytes, res.headers.get('Content-Type') ?? '')
+  if (res.status >= 400) throw new ApiError(res.status, errorCode(body))
+  return { status: res.status, body, etag: res.headers.get('ETag') ?? '' }
 }
 
 function q(params: Record<string, string | number>): string {
@@ -130,11 +144,24 @@ export const api = {
   later: (address: string, on: boolean) => call('POST', `/v1/panes/${at(address)}/later`, { body: JSON.stringify({ later: on }) }),
   /** Every pane that waits, oldest first. */
   inbox: () => call('GET', '/v1/inbox', { json: true }),
+  /** The feed: who said what to whom. Without a cursor the hub's most recent entries. */
+  talk: (after: number | null) => call('GET', '/v1/talk?' + q(after === null ? { limit: 50 } : { after, limit: 100 }), { json: true }),
+  /** The mail a pane holds, read and unread. */
+  mailbox: (address: string) => call('GET', `/v1/panes/${at(address)}/mail`, { json: true }),
+  /** A message for the pane's process, held by its host and never typed. */
+  mail: (address: string, text: string) => call('POST', `/v1/panes/${at(address)}/mail`, { body: JSON.stringify({ text }) }),
+  /** Closes the pane on its host. */
+  close: (address: string) => call('POST', `/v1/panes/${at(address)}/close`, { body: '{}' }),
+  /** One more pane in the window, beside (h) or below (v); the new pane comes back. */
+  split: (host: string, session: string, window: number, direction: 'h' | 'v') =>
+    call('POST', `/v1/windows/${at(host)}/${at(session)}/${window}/panes`, { body: JSON.stringify({ direction }), json: true }),
+  /** A new session on the host; its first pane comes back. */
+  session: (host: string, name: string) => call('POST', `/v1/hosts/${at(host)}/sessions`, { body: JSON.stringify({ name }), json: true }),
   /** Whether the hub has a transcriber: 204, or 404 which the caller reads as no. */
   transcribeProbe: () => call('GET', '/v1/transcribe'),
   /** A 16 kHz mono WAV to text; the transcriber may take a while. */
   transcribe: (wav: ArrayBuffer) => call('POST', '/v1/transcribe', { body: wav, contentType: 'audio/wav', timeout: 95_000 }),
-  /** One long poll; without a cursor only the cursor is wanted. */
+  /** One long poll; without a cursor the hub's recent events, for the cursor and what was working. */
   events: (after: number | null) =>
-    call('GET', '/v1/events?' + q(after === null ? { limit: 1 } : { after, wait: 25, limit: 50 }), { timeout: LONG_POLL_MS, json: true }),
+    call('GET', '/v1/events?' + q(after === null ? { limit: 50 } : { after, wait: 25, limit: 50 }), { timeout: LONG_POLL_MS, json: true }),
 }
