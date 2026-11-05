@@ -13,9 +13,11 @@ build · working`; for a pane its owner named, after the name and before
 the codename, `★ review · Claude · build · asks a question`), and the
 word *working* applies to any of them and to no other program. A
 harness is **working** from its last `working` event until its next
-event, or while its screen moves: a change in the listing's `activity`
-within the last ten seconds, the guideline's rule for every client;
-**quiet** otherwise, with the age of its last change (`quiet 4m`). An
+event, or while its screen moves: the listing's `activity` within ten
+seconds of the listing, the guideline's rule for every client, counted
+by the hub's clock at the listing so the word holds until the next one
+ten seconds later rather than flickering between them; **quiet**
+otherwise, with the age of its last change (`quiet 4m`). An
 `idle` notice while the screen still moves counts as working, not
 waiting, and draws no banner (see [notifications](notifications.md));
 on start the recent events are read, so a pane that was working is

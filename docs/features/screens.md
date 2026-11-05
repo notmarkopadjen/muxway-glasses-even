@@ -139,12 +139,13 @@ what is known:
 | any other program, and the pane wrote something in the last ten seconds | `active` |
 | nothing, and the screen has been still for ten seconds or more | `quiet 4m` |
 
-`active` and `quiet` come from the pane's last activity in the listing;
-`working` is the harness's own word, from its hook or the host's watcher
-([notifications](notifications.md)), or its moving screen: a Claude
-Code at work redraws its spinner, one waiting at its prompt is `quiet`
-and the age grows; an `idle` notice while the screen still moves counts
-as working ([lenses](lenses.md)).
+`active` and `quiet` come from the pane's last activity in the listing,
+the ten seconds counted at the listing so a word holds until the next
+one; `working` is the harness's own word, from its hook or the host's
+watcher ([notifications](notifications.md)), or its moving screen: a
+Claude Code at work redraws its spinner, one waiting at its prompt is
+`quiet` and the age grows; an `idle` notice while the screen still
+moves counts as working ([lenses](lenses.md)).
 
 The mark and the word are the whole of a state on the glasses: the
 display has no paint for one. A working pane's row and title are drawn
