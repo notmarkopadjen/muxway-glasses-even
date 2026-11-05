@@ -7,16 +7,38 @@ the title), *Codex* (`codex`), *Gemini* (`gemini`), *Antigravity*
 *goose*, *Amp* (`amp`) and *Cursor* (`cursor-agent`); Gemini,
 Antigravity and Copilot also by their name in the title when the command
 is an interpreter (`node`, `bun`, `deno`, `python`, `python3`, `uv`). The
-name stands where the command would in the list's rows and the pane's
-title (`★ build · Codex · asks a question`; for a pane its owner named,
-after the name and before the codename, `★ review · Claude · build ·
-asks a question`), and the word *working*
-applies to any of them (see [notifications](notifications.md)); a
-working pane is plain, as on every client since 2026-11-02, its mark
-the half circle `◐` `◑` turned once a second in place of the ring,
-which the firmware font does not draw. The glasses draw no mark for a
-harness beyond the name: a row has 63 bytes and the font drops glyphs
-it lacks without a trace.
+name is the pane's, with what the harness says about itself as its
+status (`★ Codex · build · asks a question`, `◐ Claude · fixing the
+build · working`; for a pane its owner named, after the name and before
+the codename, `★ review · Claude · build · asks a question`), and the
+word *working* applies to any of them and to no other program. A
+harness is **working** from its last `working` event until its next
+event, or while its screen moves: the listing's `activity` within ten
+seconds of the listing, the guideline's rule for every client, counted
+by the hub's clock at the listing so the word holds until the next one
+ten seconds later rather than flickering between them; **quiet**
+otherwise, with the age of its last change (`quiet 4m`). An
+`idle` notice while the screen still moves counts as working, not
+waiting, and draws no banner (see [notifications](notifications.md));
+on start the recent events are read, so a pane that was working is
+working at once. The glasses cannot tell their own echo from the pane's
+output, so every change counts: an answer sent makes the pane move for
+a moment anyway. A working pane is plain, as on every client since
+2026-11-02, its mark the half circle `◐` `◑` turned once a second in
+place of the ring, which the firmware font does not draw. The glasses
+draw no mark for a harness beyond the name: a row has 63 bytes and the
+font drops glyphs it lacks without a trace. A shell or any other
+program says `active` while it moves and `quiet` with the age after.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Quiet
+    Quiet --> Working: a working event, or activity within 10 s
+    Working --> Quiet: a later event that is no working one, and 10 s without a change
+    Quiet --> Waiting: a notification
+    Working --> Waiting: a question, a permission, done, or idle once the screen is still
+    Waiting --> Quiet: cleared by a working event or an answer
+```
 
 Only one lens reshapes a screen, Claude Code's.
 

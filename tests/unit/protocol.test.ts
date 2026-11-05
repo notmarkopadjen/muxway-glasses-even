@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneName, parseChoices, programSays, parseEvents, parseHosts, parseInbox, parsePanes } from '../../src/protocol.ts'
+import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneName, parseChoices, programSays, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parsePanes } from '../../src/protocol.ts'
+import { errorCode } from '../../src/api.ts'
 
 const NOW = 1_800_000_000
 const pane = (o: Record<string, unknown>) => ({ address: 'alice-laptop/work/0.0', mode: 'write', command: 'bash', title: 'test-pane', activity: NOW - 60, ...o })
@@ -124,9 +125,11 @@ test('parsePanes: a forged mark or mode in the title changes nothing', () => {
 
 test('parseHosts', () => {
   assert.deepEqual(parseHosts('{"hosts":[{"name":"alice-laptop","online":true},{"name":"BAD HOST","online":true},{"name":"bob","online":"yes"}]}'), [
-    { name: 'alice-laptop', online: true, later: false },
-    { name: 'bob', online: false, later: false },
+    { name: 'alice-laptop', online: true, later: false, sessions: false, close: false, mail: false, keys: 0 },
+    { name: 'bob', online: false, later: false, sessions: false, close: false, mail: false, keys: 0 },
   ])
+  const able = parseHosts('{"hosts":[{"name":"alice-laptop","online":true,"sessions":true,"close":true,"mail":true,"keys":2},{"name":"bob","sessions":"yes","close":1,"mail":null,"keys":3}]}')
+  assert.deepEqual(able.map((h) => [h.sessions, h.close, h.mail, h.keys]), [[true, true, true, 2], [false, false, false, 0]])
   assert.deepEqual(parseHosts('nope'), [])
   assert.equal(parseHosts('{"hosts":[{"name":"alice-laptop","online":true,"later":true},{"name":"bob","later":"yes"}]}').map((h) => h.later).join(), 'true,false')
 })
@@ -194,6 +197,64 @@ test('errorWords', () => {
   assert.equal(errorWords(409), 'no question there now')
   assert.equal(errorWords(0), 'no connection')
   assert.equal(errorWords(418), 'error 418')
+  assert.equal(errorWords(409, 'mailbox_full'), 'mailbox full')
+  assert.equal(errorWords(409, 'exists'), 'that name exists')
+  assert.equal(errorWords(409, 'too_many'), 'too many there')
+  assert.equal(errorWords(409, 'something_else'), 'no question there now')
+  assert.equal(errorCode('{"error":"mailbox_full"}'), 'mailbox_full')
+  assert.equal(errorCode('{"error":"<script>"}'), '')
+  assert.equal(errorCode('not json'), '')
+})
+
+test('parsePanes: the id, the session and window, the size and last; junk is nothing', () => {
+  const [p, q] = parsePanes(JSON.stringify({ panes: [
+    pane({ pane_id: '%3', session: 'work', window_index: 2, width: 80, height: 24, last: true }),
+    pane({ address: 'alice-laptop/work/1.0', pane_id: 'three', session: 'wo rk', window_index: -1, width: '80', height: 1e9, last: 'yes' }),
+  ] }), NOW)
+  assert.deepEqual([p.id, p.session, p.window, p.width, p.height, p.last], ['%3', 'work', 2, 80, 24, true])
+  assert.deepEqual([q.id, q.session, q.window, q.width, q.height, q.last], ['', '', 0, 0, 9999, false])
+})
+
+test('parseFeed: entries oldest first with both ends checked, the cursor; junk dropped, a hundred kept', () => {
+  const entry = (o: Record<string, unknown>) => ({ seq: 42, at: NOW - 60, actor: { id: 'x', name: 'reviewer' }, from: { host: 'alice-laptop', address: 'alice-laptop/work/1.0', pane_id: '%3', alias: 'review' }, to: { host: 'alice-laptop', address: 'alice-laptop/work/0.0', pane_id: '%5' }, kind: 'text', bytes: 13, text: 'run the tests', ...o })
+  const { talk, next } = parseFeed(JSON.stringify({ talk: [
+    entry({}),
+    entry({ seq: 43, kind: 'mail', id: 7, text: 'a\x1bb', bytes: 5000, from: null }),
+    entry({ seq: 44, kind: 'mail', id: 8, reply_to: 7, actor: { name: 'r'.repeat(100) } }),
+    entry({ seq: 45, to: { address: 'nope' } }),
+    entry({ seq: 'x' }),
+    entry({ seq: 46, kind: 'wave' }),
+    entry({ seq: 47, from: { address: 'nope' }, text: 'y'.repeat(500), at: NOW + 999 }),
+    'junk',
+  ], next: 47 }), NOW)
+  assert.equal(next, 47)
+  assert.deepEqual(talk.map((t) => t.seq), [42, 43, 44, 47])
+  assert.deepEqual([talk[0].from?.alias, talk[0].to.id, talk[0].actor, talk[0].kind, talk[0].bytes, talk[0].id], ['review', '%5', 'reviewer', 'text', 13, 0])
+  assert.deepEqual([talk[1].from, talk[1].text, talk[1].id, talk[1].bytes], [null, 'ab', 7, 5000])
+  assert.deepEqual([talk[2].replyTo, talk[2].actor.length], [7, 32])
+  assert.deepEqual([talk[3].from, talk[3].text.length, talk[3].at], [null, 200, NOW])
+  assert.deepEqual(parseFeed('junk'), { talk: [], next: null })
+  assert.deepEqual(parseFeed('{"next":"abc"}'), { talk: [], next: null })
+  const many = JSON.stringify({ talk: Array.from({ length: 300 }, (_, i) => entry({ seq: i })), next: 300 })
+  assert.equal(parseFeed(many, NOW).talk.length, 100)
+})
+
+test('parseMailbox: the mails with their origin, read time and reply; junk dropped, fifty kept', () => {
+  const mail = (o: Record<string, unknown>) => ({ id: 7, at: NOW - 30, actor: { name: 'reviewer' }, from: { address: 'alice-laptop/work/1.0', pane_id: '%3', alias: 'review' }, text: 'run the tests', ...o })
+  const box = parseMailbox(JSON.stringify({ mail: [
+    mail({}),
+    mail({ id: 8, read_at: NOW - 10, replied: true, from: null, text: 'x'.repeat(5000) + '\x07' }),
+    mail({ id: 'nine' }),
+    mail({ id: 10, read_at: 'soon', replied: 'yes', from: { address: 'bad' } }),
+    null,
+  ] }), NOW)
+  assert.deepEqual(box.map((m) => m.id), [7, 8, 10])
+  assert.deepEqual([box[0].from?.alias, box[0].readAt, box[0].replied, box[0].actor], ['review', 0, false, 'reviewer'])
+  assert.deepEqual([box[1].from, box[1].readAt, box[1].replied, box[1].text.length], [null, NOW - 10, true, 4000])
+  assert.deepEqual([box[2].from, box[2].readAt, box[2].replied], [null, 0, false])
+  assert.deepEqual(parseMailbox('junk'), [])
+  assert.deepEqual(parseMailbox('{"mail":{}}'), [])
+  assert.equal(parseMailbox(JSON.stringify({ mail: Array.from({ length: 80 }, (_, i) => mail({ id: i })) }), NOW).length, 50)
 })
 
 test('parsePanes: talk partners and unread mail within their caps, junk ignored', () => {

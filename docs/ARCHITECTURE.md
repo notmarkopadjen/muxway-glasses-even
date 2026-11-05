@@ -25,13 +25,19 @@ preflight such a page needs. The glasses see only what the page draws.
 | Call | How | For |
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
-| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices`), `activity`, `talk` (the partners of the last ten minutes, for the group's bar), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list); hosts online or not, and `later` where the host's agent parks |
-| `GET /v1/inbox` | JSON | the inbox page: every pane that waits, oldest first, then the parked ones, read when the page opens and with every listing while it is open |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices` and its `text`), `activity` (working within ten seconds), `talk` (the partners of the last ten minutes, for the group's bar and Beside), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list), `pane_id`, `session`, `window_index`, `width`, `height` and `last` (a split's window and direction, the close confirmation's words); hosts online or not, each with `later`, `sessions`, `close`, `mail` and `keys` where its agent parks, starts sessions, closes panes, holds mail or takes the key grammar |
+| `GET /v1/inbox` | JSON | the inbox page, every pane that waits, oldest first, then the parked ones, and *Go to*, its first awake entry; read with every listing |
+| `GET /v1/talk` | JSON, `?limit=50` once, then `?after=N&limit=100` | the messages page and the `» messages · mail n` row; read with every listing |
+| `GET /v1/panes/{address}/mail` | JSON | the mail page, read when it opens and with every listing while it is open |
+| `POST /v1/panes/{address}/mail` | JSON `{"text"}` | a mail to the open pane or back to a sender, from the voice or the phone, confirmed |
+| `POST /v1/panes/{address}/close` | `{}` | *Close pane*, confirmed |
+| `POST /v1/windows/{host}/{session}/{window}/panes` | JSON `{"direction"}` | *+ pane*, confirmed; the new pane opens from the answer |
+| `POST /v1/hosts/{host}/sessions` | JSON `{"name"}` | a session from the host's line, confirmed; its first pane opens |
 | `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
 | `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
 | `POST /v1/panes/{address}/later` | JSON `{"later": true}` or `false` | the menu's Later and Wake; the wake when a parked pane is opened |
-| `GET /v1/events` | JSON long poll: `?limit=1` for the cursor, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices` |
+| `GET /v1/events` | JSON long poll: `?limit=50` for the cursor and the recent events, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices`; what was working at start |
 | `GET /v1/transcribe` | `204` or `404` | whether **Say it** is offered |
 | `POST /v1/transcribe` | `audio/wav`, 16 kHz mono, up to 60 s | the spoken reply's text |
 
@@ -39,7 +45,7 @@ Every call carries `Authorization: Bearer <token>`, `credentials: omit`,
 `cache: no-store`, and relies on the hub's CORS answers for bearer-token
 pages. Addresses in paths are the listing's, checked against the
 protocol's grammar and escaped segment by segment. Nothing else of the
-protocol (sessions, windows, files, resize, admin) is used.
+protocol (files, resize, shares, admin) is used.
 
 ## Source layout
 
@@ -47,13 +53,14 @@ protocol (sessions, windows, files, resize, admin) is used.
 |---|---|
 | `src/main.ts` | boot: the bridge, settings, the phone pane, the app |
 | `src/app.ts` | the page stack, gestures, polling of the open pane and the list, the events long poll, answers |
-| `src/views.ts` | what every page says and draws: the pane list, the inbox, the columns, the pane, the answers, the voice pages |
+| `src/views.ts` | what every page says and draws: the pane list, the inbox, the messages, the mail, the columns, the pane, the answers, the voice pages |
 | `src/glasses.ts` | the two page kinds, the hint, bordered blocks, image containers, the OS menu, in-place upgrades, clamping |
 | `src/bitmap.ts`, `src/charts.ts`, `src/raster.ts` | the four-grey raster, the bar, timeline and sparkline charts, a bitmap cut into image containers |
 | `src/api.ts` | the calls: listings in JSON, pane content in text mode, caps, timeouts, ETag, errors in words |
 | `src/protocol.ts` | the listings' JSON, the harness a pane runs, a question's choices, pane names, URL and token rules |
 | `src/lens.ts` | the Claude Code lens ([lenses](features/lenses.md)) |
-| `src/answers.ts` | the fixed answers ([screens](features/screens.md)) |
+| `src/answers.ts` | the fixed answers and the console keys ([screens](features/screens.md)) |
+| `src/commands.ts` | the command row as rows: the core's lists by the hub's command ([screens](features/screens.md#answers-and-confirmation)) |
 | `src/voice.ts` | the microphone: frames, meter, the WAV ([spoken replies](features/spoken-replies.md)) |
 | `src/text.ts` | the measured font, wrapping and fitting by pixels, clamping by bytes, filters |
 | `src/settings.ts`, `src/phone.ts`, `index.html` | the phone pane ([phone pane](features/phone-pane.md)) |
@@ -76,6 +83,14 @@ the whole design:
 - a page holds at most eight text containers, the hint among them:
   seven blocks, so the pane list is one block of nine rows at the
   font's pitch with the cursor as a mark, and there is no head line;
+  three columns are the most (four would be ten containers), and the
+  inbox, the messages and the mail are pages of the same kind, their
+  cursor moving by entry;
+- a menu holds ten entries at most, so the pane page's menu is pruned
+  to what applies and Bottom reads the pane again in place of Refresh;
+- an OS list holds twenty rows, so the answers keep eight fixed answers
+  and open the console keys and the program's commands as lists of
+  their own;
 - the glasses refused a page with an 8 px wide picture that the
   simulator took, so no picture thinner than 16 px is sent; where the
   window sits is said in words;
@@ -125,20 +140,30 @@ A 240 x 140 bar chart is 34 KB of pixels.
 stateDiagram-v2
     [*] --> Loading
     Loading --> Panes: the first listing
+    Panes --> Inbox: tap the inbox row
+    Panes --> Messages: tap the messages row
+    Panes --> Session: tap a host's line with + session
     Panes --> Pane: tap a row
     Panes --> Panes: hold a row to select
     Panes --> Columns: tap "open N side by side"
     Columns --> Columns: scroll to mark a column
     Columns --> Pane: tap (a column marked)
-    Pane --> Columns: double tap (opened from the columns)
-    Columns --> Panes: double tap
-    Pane --> Panes: double tap
+    Messages --> Columns: tap a typed entry
+    Messages --> Mail: tap a mail entry
+    Pane --> Mail: menu, Mail
+    Mail --> Messages: menu, Messages with the pane
+    Pane --> Columns: menu, Beside
+    Pane --> Pane: menu, Next or Previous pane
+    Pane --> Confirm: menu, Close pane or + pane
+    Mail --> Listening: tap a received mail, or menu, Mail the pane
+    Session --> Confirm: the name picked, said or typed
     Pane --> Answers: tap (writable pane)
+    Answers --> Keys: → keys
+    Answers --> Commands: → commands
     Answers --> Confirm: tap an answer
+    Keys --> Confirm: tap a key
+    Commands --> Confirm: tap a command
     Confirm --> Pane: Confirm sends, Cancel does not
-    Answers --> Pane: double tap
-    Confirm --> Answers: double tap
-    Pane --> Pane: menu (Refresh, Reveal all, Bottom, Go to)
     Panes --> [*]: double tap, the OS asks
 ```
 

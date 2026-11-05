@@ -119,6 +119,20 @@ class Core:
         self.spawn("agent", "agent", "run", "--dir", str(self.dir / "agent"), "--tmux-name", self.tmux, *self.agent_args)
         wait_for("agent online", lambda: f"{HOST}\tonline" in self.cli("hub", "agents", "--dir", str(self.dir / "hub")))
 
+    def other_host(self, name, run_agent=True, *args):
+        """Another host on the hub: an agent paired under its own name, run without a tmux server of its own
+        (online, nothing exposed), or paired and never run (offline)."""
+        d = self.dir / ("agent-" + name)
+        code = self.cli("hub", "pair-code", "--dir", str(self.dir / "hub"), "--host", name)
+        self.cli("agent", "pair", "--dir", str(d), code)
+        if run_agent:
+            self.spawn("agent-" + name, "agent", "run", "--dir", str(d), "--tmux-name", self.tmux + "-" + name, *args)
+            wait_for(name + " online", lambda: f"{name}\tonline" in self.cli("hub", "agents", "--dir", str(self.dir / "hub")))
+
+    def mail_reply(self, mail_id, text, target="work:0.0"):
+        """What a process in the pane does with muxway mail reply: over the agent's socket, no token."""
+        self.cli("mail", "reply", str(mail_id), text, "--dir", str(self.dir / "agent"), "--pane", self.pane_id(target))
+
     def expose(self, target, flag="--write", alias=None):
         args = ["expose", "--tmux-name", self.tmux, "-t", target] + ([flag] if flag else []) + (["--name", alias] if alias else [])
         self.cli(*args)
@@ -287,6 +301,14 @@ class Proxy:
                     if self.command == "GET":
                         return self.reply(204, b"", CORS)
                     return self.reply(502, b'{"error":"provider_unavailable"}', {"Content-Type": "application/json", **CORS})
+                if proxy.mode == "recent-hostile" and self.command == "GET" and bare == "/v1/events" and "after=" not in path:
+                    # The recent events at start: bad kinds, escapes, 10 KiB texts, a working one for the pane and
+                    # a later one that is not, so the pane is not working after all.
+                    evs = [{"seq": i, "at": 1767225600 + i, "address": HOST + "/work/0.0", "kind": k, "text": "needs \x1b[1myou\x07 " + "y" * 10000}
+                           for i, k in enumerate(["working", "nonsense", "permission", "working", 7, "done"] * 8)]
+                    evs.append({"seq": 48, "at": 1767225700, "address": HOST + "/work/1.0", "kind": "working", "text": ""})
+                    evs.append({"seq": 49, "at": 1767225701, "address": "not an address", "kind": "working", "text": ""})
+                    return self.reply(200, json.dumps({"events": evs, "next": 49}).encode(), {"Content-Type": "application/json", **CORS})
                 if proxy.mode == "events-hostile" and self.command == "GET" and bare == "/v1/events" and "after=" in path:
                     n = sum(1 for r in proxy.requests if r["method"] == "GET" and r["path"].startswith("/v1/events?after="))
                     time.sleep(1)
@@ -352,6 +374,36 @@ class Proxy:
                         pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}, cwd=123),
                         pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}, cwd="////", alias="a" * 300),
                     ]}).encode()
+                if proxy.mode == "lie-able" and self.command == "GET" and bare == "/v1/hosts":
+                    # A host whose agent, the proxy says, starts sessions, closes panes and holds mail.
+                    data = json.dumps({"hosts": [{"name": HOST, "online": True, "sessions": True, "close": True, "mail": True, "later": True, "keys": 2}]}).encode()
+                if proxy.mode == "lie-able" and self.command == "GET" and bare == "/v1/panes":
+                    data = data.replace(b'"mode":"read"', b'"mode":"write"')
+                if proxy.mode == "feed-hostile" and self.command == "GET" and bare == "/v1/talk":
+                    # A feed that breaks every rule: entries of 10 KiB, a destination that is no address, a seq that
+                    # is a string, a reply to junk, an actor of 300 characters, a hundred and more of them.
+                    now = int(time.time())
+                    end = lambda path, pid: {"host": HOST, "address": f"{HOST}/work/{path}", "pane_id": pid}
+                    # Under the app's 256 KiB cap on a body, so the entries are read at all: the junk first, then
+                    # one entry of 50 KiB and a hundred and twenty of 1 KiB, of which the app keeps a hundred.
+                    big = "x\x1b[2J" * 100
+                    talk = [{"seq": 0, "at": now, "actor": {"name": "x"}, "from": None, "to": {"address": "nope"}, "kind": "mail", "id": 1, "text": "bad to"},
+                            {"seq": "1", "at": now, "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "text", "text": "bad seq"},
+                            {"seq": 2, "at": now, "from": None, "to": end("1.0", "%1"), "kind": "mail", "id": 2, "reply_to": {"x": 1}, "text": "junk reply"},
+                            {"seq": 3, "at": "soon", "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "wave", "text": "bad kind"},
+                            {"seq": 4, "at": now, "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "text", "bytes": 50000, "text": big * 20}]
+                    talk += [{"seq": 10 + i, "at": now - 1000 + i, "actor": {"id": "a", "name": "r" * 300}, "from": end("0.0", "%0"), "to": end("1.0", "%1"),
+                              "kind": "text", "bytes": 2000, "text": big} for i in range(120)]
+                    data = json.dumps({"talk": talk, "next": 129}).encode()
+                if proxy.mode == "feed-hostile" and self.command == "GET" and bare.endswith("/mail"):
+                    now = int(time.time())
+                    # Under the app's 256 KiB cap: forty mails of 2 KiB with control bytes and one of 30 KiB; the even
+                    # ones read, the odd ones with a read time that is no time, so unread.
+                    mail = [{"id": i, "at": now - 100 * i, "actor": {"name": "reviewer"}, "from": {"address": f"{HOST}/work/0.0", "pane_id": "%0"},
+                             "text": "y\x07\x00" * 300, "read_at": "soon" if i % 2 else now - 1} for i in range(40)]
+                    mail += [{"id": 40, "at": now, "actor": {"name": "reviewer"}, "from": None, "text": "z\x1b[2J" * 5000}]
+                    mail += [{"id": "one", "text": "no id"}, None, 7]
+                    data = json.dumps({"mail": mail}).encode()
                 if proxy.mode == "later-hostile" and bare in ("/v1/panes", "/v1/inbox"):
                     # Later that breaks every rule: a string and a number for the flag, a later_at of a string, minus
                     # one and 10^18, a parked pane with nothing pending, and 200 parked panes.
@@ -662,14 +714,33 @@ class Sim:
                         return int(b["name"][4:]) + i
         return 0
 
-    def move(self, index):
-        """Scrolls the pane list's cursor to the index-th row, one drawn page per tick."""
+    def real(self, index):
+        """The row the index-th row without host lines is: with one host its line sits right after the inbox and
+        messages rows, so every pane row is one further down. Tests of several hosts move by every row."""
+        for b in self.last()["blocks"]:
+            if b.get("name", "").startswith("rows"):
+                start = int(b["name"][4:])
+                lines = [l[2:] for l in b["lines"]]
+                special = 0
+                for i, l in enumerate(lines):
+                    if start + i != i:
+                        break
+                    if l.startswith("◆ inbox") or l.startswith("» messages"):
+                        special = i + 1
+                    else:
+                        break
+                return index if index < special else index + 1
+        return index
+
+    def move(self, index, every=False):
+        """Scrolls the pane list's cursor to the index-th row (counted without host lines, or with every row), one drawn page per tick."""
+        target = index if every else self.real(index)
         for _ in range(40):
             at = self.cursor()
-            if at == index:
+            if at == target:
                 return
-            self.scroll("down" if index > at else "up", 0.3)
-        check(self.cursor() == index, f"the cursor is on row {self.cursor()}, not {index}")
+            self.scroll("down" if target > at else "up", 0.3)
+        check(self.cursor() == target, f"the cursor is on row {self.cursor()}, not {target}")
 
     def pick(self, index, wait=1.0):
         """Moves the pane list's cursor to the index-th row and taps it."""

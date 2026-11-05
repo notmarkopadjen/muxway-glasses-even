@@ -2,7 +2,8 @@
 
 The page the Even app shows on the phone while the app runs. It is the
 only place a token is typed, and the way to send free text to a pane.
-Green on black, monospace, box frames: a terminal, as every muxway UI.
+Amber on black by default, the guideline's tokens, monospace, box
+frames: a terminal, as every muxway UI.
 Setting the hub and the token here is the last step of the
 [install](install.md), which has the flow as a diagram.
 
@@ -17,6 +18,7 @@ Setting the hub and the token here is the last step of the
 | text | Latin-1 (default: every glyph the font has) or Unicode |
 | Claude Code lens | on by default; see [lenses](lenses.md) |
 | Spoken replies | on by default; offered on the glasses when the hub has a transcriber; see [spoken replies](spoken-replies.md) |
+| theme | amber (the default, as on every client), green or paper: the core's tokens (`docs/ui-guideline.md` §1.5) for the phone pane; the glasses are four greys and have no theme. The select applies at once; save keeps it |
 
 **save & test** checks the URL and the token, stores them and calls
 `GET /v1/me`; the status line says how long the hub took, the token's
@@ -35,11 +37,16 @@ status line says `settings in the URL are ignored here`.
 ## Reply
 
 A text box for the pane that is open on the glasses; the line above it
-names that pane, or says to open one first. **send ⏎** posts the text and
-then `Enter`; **type only** posts the text alone. Control characters are
+names that pane, or says to open one first, and names the pane a mail
+would go to (`mail to review`). **send ⏎** posts the text and then
+`Enter`; **type only** posts the text alone. Control characters are
 removed and the text is cut to 4096 bytes before it goes, since the hub
 refuses both. The glasses flash `sent from the phone, Enter` in the head and
-read the pane at once.
+read the pane at once. **mail** leaves the text for the pane's process
+instead, never typed: the glasses show `mail this to review?` with the
+first words and Cancel / Confirm, and Confirm posts it
+([messages and mail](messages.md)). While the glasses ask for a new
+session's name, **send ⏎** gives the name.
 
 ## Log
 

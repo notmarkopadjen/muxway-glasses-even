@@ -21,7 +21,7 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 |---|---|---|
 | `package_id` | yours, via `pack.sh` | reverse-domain, lowercase, three segments |
 | `name` | `muxway` | 6 of 20 characters, no "Even" |
-| `version` | `0.5.0` | three-part semver |
+| `version` | `0.9.0` | three-part semver |
 | `edition` | `202601` | exact |
 | `min_sdk_version` | `0.0.16` | the SDK the page is built against |
 | `min_app_version` | `2.2.10` | stamped by `evenhub pack` |
@@ -38,30 +38,31 @@ scripts/pack.sh https://<your hub> <your package id> muxway.ehpk
 Your tmux panes, and a word back, on the G2
 ```
 
-**Description** (1997 / 2000 characters)
+**Description** (1996 / 2000 characters)
 
 ```
 muxway puts your tmux panes on the Even G2: see what is running on your machines, read the last lines of a pane, and answer it, without reaching for a laptop.
 
-It is the glasses client of muxway (github.com/notmarkopadjen/muxway), an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and to nothing else.
+It is the glasses client of muxway (github.com/notmarkopadjen/muxway), an open, self-hosted service: a small agent next to each tmux server exposes only the panes you mark, a hub you run connects your devices to them, and every connection is authenticated and encrypted. The glasses talk to your hub and nothing else.
 
 On the glasses, text from top to bottom, made for a glance:
 
-- The pane list: every pane your token may see, those that need you first, with a mark, the name, the program and a word for what is known: asks a question, needs permission, done, idle, active, or quiet and for how long. A tap opens the pane under the cursor; a hold starts selecting, and taps pick the rest.
-- Side by side: hold two or three panes and open them in columns, each under its title, all following. The scroll marks one, a tap opens it; a double tap comes back to the columns, and once more to the list.
-- A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome.
-- Answers: Claude Code's suggestion of what to say next, first; then a fixed set behind a confirmation: Enter, y, n, Claude Code's 1 2 3, Esc, Ctrl-C, Tab, Shift-Tab, the arrows. Or Say it: speak while a graph shows your voice, read the transcript back, send it.
-- Notifications: when a pane needs you, a banner appears at the foot of whatever you are looking at, and the pane's menu takes you there.
+- The pane list: a line per host, every pane your token may see, those that need you first, with a mark, the name, the program and a word: asks a question, needs permission, done, idle, working, later, or quiet and for how long. A tap opens a pane, a hold selects two or three for side by side.
+- The inbox: every pane that waits, oldest first, with the notice's text and a question's choices; park one for later from there or from its menu.
+- A pane: its last lines, following as they change, through a lens for Claude Code that keeps the conversation and hides the chrome; the menu moves on, mails the pane, lays its partner beside it, closes it or splits one more.
+- Answers: a question's own choices, Claude Code's suggestion, Enter, y, n, 1 2 3, Esc, Ctrl-C, the keys and the program's commands, each confirmed. Or Say it: speak, read it back, send it.
+- Messages and mail: what your agents said to each other, and a mail back, never typed into a pane.
+- Notifications: when a pane needs you, a banner at the foot of whatever you are looking at.
 
-Scroll moves, tap opens, hold starts a selection (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for typing longer replies.
+Scroll moves, tap opens, hold starts a selection (on a pane, the menu), double tap goes back. The phone screen holds the hub address, the token, a few settings and a box for longer replies or a mail.
 
 No account, no analytics, no server of ours: you point the app at your own muxway hub, and spoken replies go to the transcriber you configured on it. Source: github.com/notmarkopadjen/muxway-glasses-even
 ```
 
-**Changelog** (0.5.0)
+**Changelog** (0.9.0)
 
 ```
-Claude Code's suggestion is no longer drawn over half the pane: it is the first answer, and picking it sends it. No status line: every page uses the whole height, seven rows on the list, eight lines on a pane and in each column. In the columns the scroll marks a pane and a tap opens it. Titles are text, so the columns appear at once.
+The list groups by host and names a pane by its program first. Messages between your agents and a pane's mail on pages of their own; mail a pane or mail back by voice or from the phone. From a pane's menu: the next or previous pane, the pane it talks with beside it, close it, one more beside it; a session from a host's line. The notice's text leads the pane, the console keys and the program's commands are two rows away on the answers page, the inbox shows what each pane asks. A harness works while its screen moves. The phone pane is amber by default.
 ```
 
 **Category**: Productivity (developer tools if offered)
@@ -106,7 +107,7 @@ Setup: open the app on the phone, enter
   token:    <review token>
 then tap "save & test" and open the app on the glasses.
 Gestures: scroll = move or page, tap = open or answer, hold = start selecting
-(on a pane, the menu), double tap = back (and out of the app from the pane list, confirmed).
+(on a pane or the inbox, the menu), double tap = back (and out of the app from the pane list, confirmed).
 The hub above serves synthetic panes only; no real machine is reachable through it.
 ```
 
@@ -124,21 +125,24 @@ shell script, so the hub does not name the program `claude`.
 
 | File | Shows | From |
 |---|---|---|
-| `store/shots/01-list.png` | the pane list: a pane that needs permission and one that is done first, with their words | demo hub |
+| `store/shots/01-list.png` | the pane list under its host's line: a pane that needs permission and one that is done first, with their words | demo hub |
 | `store/shots/02-selected.png` | two rows held, the open row under them | demo hub |
 | `store/shots/03-split.png` | two panes side by side, the first marked | demo hub |
-| `store/shots/04-pane.png` | a pane under its title: Claude Code's permission prompt, folded for the glasses | demo hub |
+| `store/shots/04-pane.png` | a pane under its title, the permission's text first, the place beside the title | demo hub |
 | `store/shots/05-lens.png` | Claude Code through the lens: the conversation, no chrome | end-to-end run |
-| `store/shots/06-answers.png` | the answers, Claude Code's suggestion first | end-to-end run |
+| `store/shots/06-answers.png` | the answers, Claude Code's suggestion first, the keys and the commands behind two rows | end-to-end run |
 | `store/shots/07-listening.png` | listening, with the graph of your voice | end-to-end run |
 | `store/shots/08-heard.png` | the transcript read back in its box | end-to-end run |
 | `store/shots/09-banner.png` | a notification banner at the foot of a pane | demo hub |
-| `store/shots/10-phone.png` | the phone screen after save & test | demo hub |
+| `store/shots/10-phone.png` | the phone screen after save & test, amber | demo hub |
 | `store/shots/11-answers-permission.png` | the answers to a permission prompt: Enter, y, n, Claude Code's 1 2 3 | demo hub |
+| `store/shots/12-messages.png` | the messages page: who said what to whom | end-to-end run |
+| `store/shots/13-mail.png` | a pane's mail, a received mail unread | end-to-end run |
+| `store/shots/14-inbox.png` | the inbox with the notices' text and a question's choices | end-to-end run |
 
-Pick `01`, `03`, `04`, `11`, `05`, `07`, `09` and `10` for the listing,
-in that order: the list, the columns, a pane, its answers, the lens,
-listening, a banner, the phone.
+Pick `01`, `03`, `04`, `11`, `05`, `12`, `07`, `09` and `10` for the
+listing, in that order: the list, the columns, a pane, its answers, the
+lens, the messages, listening, a banner, the phone.
 
 ## 8. Icon
 
