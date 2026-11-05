@@ -50,6 +50,9 @@ export interface Model {
   marked: number
   /** The hub's inbox as last read, oldest first; null before the first read. */
   inbox: Pane[] | null
+  /** The inbox page's cursor, an entry, and its window's first row. */
+  inboxCursor: number
+  inboxStart: number
   /** Whether the hub's feed holds anything, and how many entries arrived since the messages page was last opened. */
   feed: boolean
   unseen: number
@@ -196,21 +199,36 @@ function ago(seconds: number, now: number): string {
 
 // --- the list: the main screen ---------------------------------------------------------
 
-/** What a row says about the pane's state: later with what waits underneath, else the attention in words, else the harness's word, else what its output says. */
-export function stateWord(p: Pane, now: number): string {
-  if (p.later) return 'later' + (p.attention ? ` · ${WORDS[p.attention]}` : '')
-  if (p.attention) return WORDS[p.attention]
-  // A harness is working from its last working event until its next event, however still its screen.
-  if (p.working) return 'working'
-  if (!p.activity) return ''
-  return now - p.activity >= 60 ? `quiet ${ago(p.activity, now)}` : 'active'
+/** A screen change this recent counts as working: the guideline's ten seconds. */
+export const WORKING_SECONDS = 10
+
+/** Whether the pane's screen changed in the last ten seconds, by the listing's activity. */
+export function moving(p: Pick<Pane, 'activity'>, now: number): boolean {
+  return p.activity > 0 && now - p.activity <= WORKING_SECONDS
 }
 
-/** A pane's mark: parked, else its attention's, the half circle turned by the second while it works, else the dotted ring. */
+/** A harness is working from its last working event until its next event, or while its screen moves; an idle notice while it still moves is working too, not waiting. */
+export function isWorking(p: Pane, now: number): boolean {
+  if (p.later || !p.agent) return false
+  if (p.attention) return p.attention === 'idle' && moving(p, now)
+  return p.working || moving(p, now)
+}
+
+/** What a row says about the pane's state: later with what waits underneath, else working, else the attention in words, else what its output says. */
+export function stateWord(p: Pane, now: number): string {
+  if (p.later) return 'later' + (p.attention ? ` · ${WORDS[p.attention]}` : '')
+  if (isWorking(p, now)) return 'working'
+  if (p.attention) return WORDS[p.attention]
+  if (!p.activity) return ''
+  if (moving(p, now)) return p.agent ? 'working' : 'active'
+  return `quiet ${ago(p.activity, now)}`
+}
+
+/** A pane's mark: parked, else the half circle turned by the second while it works, else its attention's, else the dotted ring. */
 export function markOf(p: Pane, now: number): string {
   if (p.later) return LATER
+  if (isWorking(p, now)) return TURN[now % 2]
   if (p.attention) return MARK[p.attention]
-  if (stateWord(p, now) === 'working') return TURN[now % 2]
   return NONE
 }
 
@@ -474,12 +492,63 @@ export function inboxLabel(p: Pane, now: number): string {
   return `${markOf(p, now)} ${who} · ${stateWord(p, now)}` + (since ? ` · ${ago(since, now)}` : '')
 }
 
-/** Every pane that waits, oldest first, as an OS list: a tap opens the pane. */
+/** The second row of an inbox entry: the notice's text, and a question's choices after »; nothing when there is neither. */
+export function noticeRow(p: Pane): string {
+  const choices = p.attention === 'question' && p.choices.length ? `» ${p.choices.join(' · ')}` : ''
+  const text = p.attentionText
+  if (!text && !choices) return ''
+  return '    ' + (text && choices ? `${text} ${choices}` : text || choices)
+}
+
+/** The inbox's rows and, for each, which entry it belongs to (-1 for none): an entry is its row, then the notice's text and choices under it. */
+export function inboxLayout(m: Model, now: number): { items: string[]; entry: number[] } {
+  if (m.inbox === null) return { items: ['reading the inbox…'], entry: [-1] }
+  if (!m.inbox.length) return { items: ['nothing waits for you'], entry: [-1] }
+  const items: string[] = []
+  const entry: number[] = []
+  m.inbox.slice(0, INBOX_ROWS).forEach((p, i) => {
+    items.push(inboxLabel(p, now))
+    entry.push(i)
+    const under = noticeRow(p)
+    if (under) {
+      items.push(under)
+      entry.push(i)
+    }
+  })
+  return { items, entry }
+}
+
+/** The first row on screen so the cursor's entry is whole on it; the window slides only when it must. */
+export function inboxWindow(entry: number[], cursor: number, start: number): number {
+  const first = entry.indexOf(cursor)
+  const last = entry.lastIndexOf(cursor)
+  if (first < 0) return listWindow(entry.length, 0, start)
+  let s = listWindow(entry.length, first, start)
+  if (last >= s + LIST_ROWS) s = last - LIST_ROWS + 1
+  return s
+}
+
+/** The entry under the inbox's cursor, if any. */
+export function inboxEntry(m: Model): Pane | undefined {
+  return m.inbox?.slice(0, INBOX_ROWS)[m.inboxCursor]
+}
+
+/** Every pane that waits, oldest first, drawn by the app as the list is: a tap opens the entry under the cursor, the menu parks or wakes it. */
 export function inboxPage(m: Model, now: number): Page {
-  const rows = m.inbox
-  const items = rows === null ? ['reading the inbox…'] : rows.length ? rows.slice(0, INBOX_ROWS).map((p) => inboxLabel(p, now)) : ['nothing waits for you']
-  const n = rows?.length ?? 0
-  return { kind: 'list', ...hint(m, `inbox · ${n} waiting · ▽ choose · ● open · ×× back`), blocks: [], charts: [], items, menu: [] }
+  const { items, entry } = inboxLayout(m, now)
+  const cursor = Math.max(0, Math.min((m.inbox?.length ?? 1) - 1, m.inboxCursor))
+  const start = inboxWindow(entry, cursor, m.inboxStart)
+  const lines: string[] = []
+  for (let i = 0; i < LIST_ROWS; i++) {
+    const at = start + i
+    lines.push(items[at] === undefined ? ' ' : (entry[at] === cursor && at === entry.indexOf(cursor) ? CURSOR : '  ') + items[at])
+  }
+  const blocks: Block[] = [{ name: 'rows' + start, x: 2, y: TOP, w: ROW_W, h: LIST_ROWS * LINE_H, lines, level: 3 }, catcher()]
+  const n = m.inbox?.length ?? 0
+  const under = inboxEntry(m)
+  const menu: MenuSpec[] = under && canPark(m, under) ? [{ id: MENU.later, label: under.later ? 'Wake' : 'Later' }] : []
+  const park = menu.length ? ` · ≡ ${under!.later ? 'wake' : 'later'}` : ''
+  return { kind: 'dash', ...hint(m, `inbox · ${n} waiting · ▽ move · ● open${park} · ×× back`), blocks, charts: [], items: [], menu }
 }
 
 function textBox(text: string): Block {

@@ -5,13 +5,13 @@ import assert from 'node:assert/strict'
 import { agentOf, type Pane } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxPage, listLayout, listPage, listWindow, listenPage, markOf, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, canPark, confirmPage, heardPage, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 10, working: false, talk: [], mail: 0, later: false, laterAt: 0, id: '', session: 'w', window: 0, width: 80, height: 24, last: false, ...extra }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 30, working: false, talk: [], mail: 0, later: false, laterAt: 0, id: '', session: 'w', window: 0, width: 80, height: 24, last: false, ...extra }
   return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
 }
 
@@ -34,6 +34,8 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
     windowStart: 0,
     marked: -1,
     inbox: null,
+    inboxCursor: 0,
+    inboxStart: 0,
     feed: false,
     unseen: 0,
     reading: () => undefined,
@@ -41,22 +43,34 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
   }
 }
 
-test('the state word says only what is known', () => {
+test('the state word says only what is known: a harness works while its screen moves, ten seconds', () => {
   assert.equal(stateWord(pane('a/0.0', { attention: 'permission' }), NOW), 'needs permission')
   assert.equal(stateWord(pane('a/0.0', { attention: 'done' }), NOW), 'done')
-  assert.equal(stateWord(pane('a/0.0'), NOW), 'active')
-  assert.equal(stateWord(pane('a/0.0', { activity: NOW - 59 }), NOW), 'active')
+  assert.equal(stateWord(pane('a/0.0'), NOW), 'quiet 30s')
+  assert.equal(stateWord(pane('a/0.0', { activity: NOW - 9 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { activity: NOW - 10 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { activity: NOW - 11 }), NOW), 'quiet 11s')
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 60 }), NOW), 'quiet 1m')
   assert.equal(stateWord(pane('a/0.0', { activity: NOW - 4 * 3600 }), NOW), 'quiet 4h')
   assert.equal(stateWord(pane('a/0.0', { activity: 0 }), NOW), '')
+  // Any other program says active while it moves, never working.
+  assert.equal(stateWord(pane('a/0.0', { command: 'bash', activity: NOW - 9 }), NOW), 'active')
+  assert.equal(stateWord(pane('a/0.0', { command: 'bash', activity: NOW - 11 }), NOW), 'quiet 11s')
+  assert.equal(stateWord(pane('a/0.0', { command: 'bash', working: true, activity: NOW - 90 }), NOW), 'quiet 1m')
   // The harness said working: the word until its next event, however still the screen.
   assert.equal(stateWord(pane('a/0.0', { working: true }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, activity: NOW - 4 * 3600 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, activity: 0 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { working: true, attention: 'done' }), NOW), 'done')
+  // An idle notice while the screen still moves is working; once it is still, idle. A question is never masked.
+  assert.equal(stateWord(pane('a/0.0', { attention: 'idle', activity: NOW - 5 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { attention: 'idle', activity: NOW - 15 }), NOW), 'idle')
+  assert.equal(stateWord(pane('a/0.0', { attention: 'question', activity: NOW - 5 }), NOW), 'asks a question')
+  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5 }), NOW), true)
+  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5, later: true }), NOW), false)
   // A time ahead of now is clamped by the parser; here it must not go negative either.
-  assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'active')
+  assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'working')
 })
 
 test('the marks: the attention\'s, the half circle turned by the second while working, the dotted ring otherwise', () => {
@@ -68,15 +82,18 @@ test('the marks: the attention\'s, the half circle turned by the second while wo
   assert.equal(markOf(pane('a/0.0', { activity: NOW - 400 }), NOW), '◌')
   assert.equal(markOf(pane('a/0.0', { working: true }), NOW), '◐')
   assert.equal(markOf(pane('a/0.0', { working: true }), NOW + 1), '◑')
-  // The harness's word wins over the screen's age; the attention wins over working.
+  assert.equal(markOf(pane('a/0.0', { activity: NOW - 3 }), NOW), '◐')
+  assert.equal(markOf(pane('a/0.0', { command: 'bash', activity: NOW - 3 }), NOW), '◌')
+  // The harness's word wins over the screen's age; the attention wins over working, but an idle while moving.
   assert.equal(markOf(pane('a/0.0', { working: true, activity: NOW - 90 }), NOW), '◐')
   assert.equal(markOf(pane('a/0.0', { working: true, attention: 'done' }), NOW), '√')
+  assert.equal(markOf(pane('a/0.0', { attention: 'idle', activity: NOW - 3 }), NOW), '◐')
 })
 
 test('a working pane is plain: its row and title are a quiet pane\'s but for the mark and the word, and the inbox has no place for it', () => {
-  const quiet = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 5 })
-  const busy = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 5, working: true })
-  assert.equal(rowLabel(quiet, NOW), '◌ Codex · build · active')
+  const quiet = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 30 })
+  const busy = pane('work/0.0', { command: 'codex', title: 'build', activity: NOW - 30, working: true })
+  assert.equal(rowLabel(quiet, NOW), '◌ Codex · build · quiet 30s')
   assert.equal(rowLabel(busy, NOW), '◐ Codex · build · working')
   assert.equal(rowLabel(busy, NOW + 1), '◑ Codex · build · working')
   assert.equal(titleOf(busy, groupsOf([busy]), NOW), '◐ Codex · build')
@@ -98,29 +115,29 @@ test('a working pane is plain: its row and title are a quiet pane\'s but for the
 
 test('a named pane: the alias first, the program, then what the program says; the folder after the name while the line has room', () => {
   const review = pane('work/0.0', { alias: 'review', title: '✳ fixing the build', cwd: '/home/alice/src/muxway' })
-  assert.equal(rowLabel(review, NOW), '◌ review · /muxway · Claude · fixing the build · active')
+  assert.equal(rowLabel(review, NOW), '◌ review · /muxway · Claude · fixing the build · quiet 30s')
   // The title block is 376 px: this one is 395 with the folder, so the title goes without it.
   assert.equal(titleOf(review, groupsOf([review]), NOW), '◌ review · Claude · fixing the build')
   assert.equal(titleOf(review, groupsOf([review]), NOW, 400), '◌ review · /muxway · Claude · fixing the build')
   const notes = pane('work/1.0', { alias: 'notes', command: 'bash', title: 'notes.md', cwd: '/home/alice/src' })
-  assert.equal(rowLabel(notes, NOW), '◌ notes · /src · bash · notes.md · active')
+  assert.equal(rowLabel(notes, NOW), '◌ notes · /src · bash · notes.md · quiet 30s')
   assert.equal(titleOf(notes, groupsOf([notes]), NOW), '◌ notes · /src · bash · notes.md')
   // Without an alias a harness is the name, the folder after it, and what it says is its status.
   const build = pane('work/2.0', { title: '✳ build', cwd: '/home/alice/src/muxway' })
-  assert.equal(rowLabel(build, NOW), '◌ Claude · /muxway · build · active')
+  assert.equal(rowLabel(build, NOW), '◌ Claude · /muxway · build · quiet 30s')
   assert.equal(titleOf(build, groupsOf([build]), NOW), '◌ Claude · /muxway · build')
   // A status that repeats the name is left out; a title that says nothing gives none.
-  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '✳ build' }), NOW), '◌ build · Claude · active')
-  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: 'claude' }), NOW), '◌ build · Claude · active')
-  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '' }), NOW), '◌ build · Claude · active')
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '✳ build' }), NOW), '◌ build · Claude · quiet 30s')
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: 'claude' }), NOW), '◌ build · Claude · quiet 30s')
+  assert.equal(rowLabel(pane('work/3.0', { alias: 'build', title: '' }), NOW), '◌ build · Claude · quiet 30s')
   // A folder without a cwd: none; a reader gets none from the hub, and the row is as before.
-  assert.equal(rowLabel(pane('work/4.0', { alias: 'review', title: '✳ fixing the build', writable: false }), NOW), '◌ review · Claude · fixing the build · active · read-only')
+  assert.equal(rowLabel(pane('work/4.0', { alias: 'review', title: '✳ fixing the build', writable: false }), NOW), '◌ review · Claude · fixing the build · quiet 30s · read-only')
   // The folder goes first when the line is too wide, in the row, the title and a column.
   const long = pane('work/5.0', { alias: 'review', title: '✳ ' + 'word '.repeat(12).trim(), cwd: '/home/alice/src/muxway' })
-  assert.equal(rowLabel(long, NOW), `◌ review · Claude · ${'word '.repeat(12).trim()} · active`)
+  assert.equal(rowLabel(long, NOW), `◌ review · Claude · ${'word '.repeat(12).trim()} · quiet 30s`)
   assert.equal(titleOf(long, groupsOf([long]), NOW), `◌ review · Claude · ${'word '.repeat(12).trim()}`)
   assert.equal(titleOf(review, groupsOf([review]), NOW, 180), '◌ review · Claude · fixing the build')
-  assert.equal(rowLabel(long, NOW, 'on', true), `│ [x] ◌ review · Claude · ${'word '.repeat(12).trim()} · active`)
+  assert.equal(rowLabel(long, NOW, 'on', true), `│ [x] ◌ review · Claude · ${'word '.repeat(12).trim()} · quiet 30s`)
   // The inbox row keeps the name alone: the kind and the age matter more in its 63 bytes.
   assert.equal(inboxLabel({ ...review, attention: 'permission', attentionAt: NOW - 60 }, NOW), '★ review · Claude · needs permission · 1m')
 })
@@ -128,17 +145,17 @@ test('a named pane: the alias first, the program, then what the program says; th
 test('a row: mark, name, program, state, read-only, and the selection prefix', () => {
   assert.equal(rowLabel(pane('work/0.0', { title: 'build', attention: 'question' }), NOW), '★ Claude · build · asks a question')
   assert.equal(rowLabel(pane('work/0.0', { title: 'build', activity: NOW - 240 }), NOW, 'on'), '[x] ◌ Claude · build · quiet 4m')
-  assert.equal(rowLabel(pane('work/0.0', { title: 'build' }), NOW, 'off'), '[ ] ◌ Claude · build · active')
-  assert.equal(rowLabel(pane('work/0.0', { command: 'bash', writable: false }), NOW), '◌ bash · active · read-only')
+  assert.equal(rowLabel(pane('work/0.0', { title: 'build' }), NOW, 'off'), '[ ] ◌ Claude · build · quiet 30s')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'bash', writable: false }), NOW), '◌ bash · quiet 30s · read-only')
   // Every harness is named, and the name leads; what the program says is its status.
   assert.equal(rowLabel(pane('work/0.0', { command: 'codex', title: 'codex', working: true }), NOW), '◐ Codex · working')
-  assert.equal(rowLabel(pane('work/0.0', { command: 'agy', title: 'notes' }), NOW), '◌ Antigravity · notes · active')
-  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'gemini' }), NOW), '◌ Gemini · active')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'agy', title: 'notes' }), NOW), '◌ Antigravity · notes · quiet 30s')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'gemini' }), NOW), '◌ Gemini · quiet 30s')
   // Any other program is named with what it says: the command, then the title.
-  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'server' }), NOW), '◌ node · server · active')
-  assert.equal(rowLabel(pane('work/0.0', { command: 'vim', title: 'notes.md' }), NOW), '◌ vim · notes.md · active')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'node', title: 'server' }), NOW), '◌ node · server · quiet 30s')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'vim', title: 'notes.md' }), NOW), '◌ vim · notes.md · quiet 30s')
   // The title of a pane named after the program says nothing: the row has the program once.
-  assert.equal(rowLabel(pane('work/0.0', { command: 'opencode', title: 'OpenCode' }), NOW), '◌ OpenCode · active')
+  assert.equal(rowLabel(pane('work/0.0', { command: 'opencode', title: 'OpenCode' }), NOW), '◌ OpenCode · quiet 30s')
 })
 
 test('the inbox: the first row of the list while anything waits, the count in the hint, the page oldest first', () => {
@@ -164,15 +181,45 @@ test('the inbox: the first row of the list while anything waits, the count in th
   assert.deepEqual(waiting(panes).map((p) => p.path), ['w/2.0', 'w/4.0', 'w/1.0'])
   assert.equal(inboxLabel(panes[3], NOW), '★ Codex · four · needs permission · 1m')
   assert.equal(inboxLabel(pane('w/5.0', { title: 'five', attention: 'idle', attentionAt: 0 }), NOW), '○ Claude · five · idle')
-  let page = inboxPage(model(panes, { inbox: waiting(panes) }), NOW)
-  assert.equal(page.kind, 'list')
-  assert.deepEqual(page.items, ['★ Claude · two · asks a question · 3m', '★ Codex · four · needs permission · 1m', '√ Claude · one · done · 30s'])
-  assert.ok(page.hint.startsWith('inbox · 3 waiting · '), page.hint)
-  assert.deepEqual(inboxPage(model(panes, { inbox: [] }), NOW).items, ['nothing waits for you'])
-  assert.deepEqual(inboxPage(model(panes), NOW).items, ['reading the inbox…'])
-  const many = Array.from({ length: 30 }, (_, i) => pane(`w/${i}.0`, { attention: 'done', attentionAt: NOW - i }))
-  page = inboxPage(model(many, { inbox: waiting(many) }), NOW)
-  assert.equal(page.items.length, INBOX_ROWS)
+  // The page: the app's own rows, an entry's row and under it the notice's text and a question's choices.
+  const withText = [
+    { ...panes[1], attentionText: 'deploy to staging?' },
+    { ...panes[3], attentionText: 'Codex needs your permission to run make' },
+    panes[0],
+  ]
+  let page = inboxPage(model(panes, { inbox: withText }), NOW)
+  assert.equal(page.kind, 'dash')
+  const rowsOf = (pg: ReturnType<typeof inboxPage>) => pg.blocks.find((b) => b.name?.startsWith('rows'))!.lines
+  assert.deepEqual(rowsOf(page).slice(0, 5), [
+    '> ★ Claude · two · asks a question · 3m',
+    '      deploy to staging? » yes · no',
+    '  ★ Codex · four · needs permission · 1m',
+    '      Codex needs your permission to run make',
+    '  √ Claude · one · done · 30s',
+  ])
+  assert.deepEqual(inboxLayout(model(panes, { inbox: withText }), NOW).entry, [0, 0, 1, 1, 2])
+  assert.equal(noticeRow(pane('w/9.0', { attention: 'question', choices: ['yes', 'no'] })), '    » yes · no')
+  assert.equal(noticeRow(pane('w/9.0', { attention: 'done', attentionText: 'built' })), '    built')
+  assert.equal(noticeRow(pane('w/9.0', { attention: 'done' })), '')
+  assert.ok(page.hint.startsWith('inbox · 3 waiting · ▽ move · ● open · ≡ later · ×× back'), page.hint)
+  assert.deepEqual(page.menu.map((e) => e.label), ['Later'])
+  // The cursor on the second entry: its row marked, the menu for it; a parked entry offers Wake; a reader's nothing.
+  page = inboxPage(model(panes, { inbox: withText, inboxCursor: 1 }), NOW)
+  assert.ok(rowsOf(page)[2].startsWith('> ★ Codex'), rowsOf(page))
+  const parked = [{ ...panes[0], later: true, laterAt: NOW - 5 }]
+  assert.deepEqual(inboxPage(model(panes, { inbox: parked }), NOW).menu.map((e) => e.label), ['Wake'])
+  assert.deepEqual(inboxPage(model(panes, { inbox: [{ ...panes[0], writable: false }] }), NOW).menu, [])
+  assert.ok(inboxPage(model(panes, { inbox: [{ ...panes[0], writable: false }] }), NOW).hint.includes('● open · ×× back'))
+  assert.deepEqual(rowsOf(inboxPage(model(panes, { inbox: [] }), NOW))[0], '  nothing waits for you')
+  assert.deepEqual(rowsOf(inboxPage(model(panes), NOW))[0], '  reading the inbox…')
+  // Twenty entries at most; the window keeps the cursor's entry whole.
+  const many = Array.from({ length: 30 }, (_, i) => pane(`w/${i}.0`, { attention: 'done', attentionAt: NOW - i, attentionText: 'built' }))
+  const lay = inboxLayout(model(many, { inbox: waiting(many) }), NOW)
+  assert.equal(lay.items.length, INBOX_ROWS * 2)
+  assert.equal(inboxWindow(lay.entry, 0, 0), 0)
+  assert.equal(inboxWindow(lay.entry, 4, 0), 1, 'the fifth entry\'s second row is the tenth')
+  assert.equal(inboxWindow(lay.entry, 19, 0), 40 - LIST_ROWS)
+  assert.equal(inboxWindow(lay.entry, 0, 20), 0)
 })
 
 test('a parked pane: last in the order, zz and later with what waits underneath, counted after the awake ones, Wake in the menu', () => {
@@ -227,8 +274,8 @@ test('the layout: panes, then in selection mode the actions', () => {
   assert.deepEqual(l.what.map((w) => w.kind), ['host', 'pane', 'pane', 'pane'], 'actions outside selection mode')
   l = listLayout(model(panes, { selected: ['alice-laptop/w/2.0'], selecting: true }), NOW)
   assert.deepEqual(l.what.map((w) => w.kind), ['host', 'pane', 'pane', 'pane', 'clear'])
-  assert.equal(l.items[2], '[x] ◌ Claude · two · active')
-  assert.equal(l.items[1], '[ ] ◌ Claude · one · active')
+  assert.equal(l.items[2], '[x] ◌ Claude · two · quiet 30s')
+  assert.equal(l.items[1], '[ ] ◌ Claude · one · quiet 30s')
   // The host line has no box.
   assert.equal(l.items[0], '── alice-laptop · online ──')
   l = listLayout(model(panes, { selecting: true }), NOW)
@@ -342,6 +389,7 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     transcribing: listenPage(m, panes[0], { ...voice, phase: 'working' }),
     failed: listenPage(m, panes[0], { ...voice, phase: 'error', error: 'too short' }),
     heard: heardPage(m, panes[0], { ...voice, phase: 'review' }),
+    inbox: inboxPage({ ...m, inbox: panes }, NOW),
   }
   for (const [name, page] of Object.entries(dash)) {
     const catchers = page.blocks.filter((b) => b.capture)
@@ -351,7 +399,7 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     // Nothing else sits in the corner catcher's corner.
     if (catchers[0].name === 'gesture') for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
   }
-  for (const page of [answersPage(m, panes[0], [], null, false), confirmPage(m, panes[0], answer), inboxPage({ ...m, inbox: [] }, NOW)]) {
+  for (const page of [answersPage(m, panes[0], [], null, false), confirmPage(m, panes[0], answer)]) {
     assert.equal(page.kind, 'list')
     assert.equal(page.blocks.filter((b) => b.capture).length, 0)
   }
@@ -427,10 +475,10 @@ test('rows of a group start with the bar and a pane with mail says so after its 
   const b = pane('work/2.0', { title: 'tests', command: 'claude', talk: ['alice-laptop/work/1.0'] })
   const lone = pane('work/0.0', { title: 'test-pane', command: 'bash', talk: ['alice-laptop/work/9.0'], mail: 3 })
   const m = model([lone, a, b])
-  assert.deepEqual(listLayout(m, NOW).items, ['── alice-laptop · online ──', '◌ bash · test-pane · mail 3 · active', '│ ◌ Codex · mail 1 · build · active', '│ ◌ Claude · tests · active'])
+  assert.deepEqual(listLayout(m, NOW).items, ['── alice-laptop · online ──', '◌ bash · test-pane · mail 3 · quiet 30s', '│ ◌ Codex · mail 1 · build · quiet 30s', '│ ◌ Claude · tests · quiet 30s'])
   // In selection mode the bar comes before the box.
-  assert.equal(listLayout(model([lone, a, b], { selecting: true, selected: [a.address] }), NOW).items[2], '│ [x] ◌ Codex · mail 1 · build · active')
-  assert.equal(rowLabel(a, NOW), '◌ Codex · mail 1 · build · active')
+  assert.equal(listLayout(model([lone, a, b], { selecting: true, selected: [a.address] }), NOW).items[2], '│ [x] ◌ Codex · mail 1 · build · quiet 30s')
+  assert.equal(rowLabel(a, NOW), '◌ Codex · mail 1 · build · quiet 30s')
   // The titles carry the same.
   const groups = groupsOf(m.panes)
   assert.equal(titleOf(a, groups, NOW), '│ ◌ Codex · mail 1 · build')

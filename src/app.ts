@@ -83,6 +83,9 @@ export class App {
   /** The list's cursor and its window's first row. */
   private row = 0
   private winStart = 0
+  /** The inbox page's cursor, an entry, and its window's first row. */
+  private inboxRow = 0
+  private inboxStart = 0
   /** Whether a listing has arrived since the start, or since the settings changed. */
   private loaded = false
   private dots = 1
@@ -338,6 +341,7 @@ export class App {
           const r = parseEvents(a.body)
           this.backoff = 5_000
           if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
+          else this.recent(r.events)
           this.cursor = r.next
         } catch (e) {
           if (gen !== this.eventsGen) return
@@ -355,6 +359,17 @@ export class App {
     })().finally(() => {
       if (gen === this.eventsGen) this.eventsRunning = false
     })
+  }
+
+  /** The hub's recent events, read at start: a pane whose last one said working is working before its next event. Nothing is replayed as a toast. */
+  private recent(events: { address: string; kind: Attention | 'working' }[]) {
+    for (const ev of events) {
+      if (ev.kind === 'working') this.working.add(ev.address)
+      else this.working.delete(ev.address)
+    }
+    for (const p of this.panes) p.working = !p.attention && this.working.has(p.address)
+    if (this.working.size) this.log(`${this.working.size} working from the recent events`)
+    void this.redraw()
   }
 
   private onNotify(address: string, kind: Attention | 'working', text: string, choices: string[] = []) {
@@ -378,8 +393,10 @@ export class App {
         pane.choices = choices
         pane.working = false
       }
-      // A parked pane keeps the kind underneath and stays quiet: no toast.
-      if (!pane?.later) {
+      // A parked pane keeps the kind underneath and stays quiet: no toast. Nor does an idle on a
+      // harness whose screen still moves: it is working, and the words follow once the screen stops.
+      const now = Math.floor(Date.now() / 1000)
+      if (!pane?.later && !(kind === 'idle' && pane && V.isWorking(pane, now))) {
         this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
         this.later(TOAST_MS)
       }
@@ -436,7 +453,7 @@ export class App {
     if (e.sysEvent) {
       switch (sys) {
         case OsEventTypeList.CLICK_EVENT:
-          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm' && this.top.kind !== 'inbox') await this.onTap()
+          if (this.top.kind !== 'answers' && this.top.kind !== 'confirm') await this.onTap()
           break
         case OsEventTypeList.FOREGROUND_EXIT_EVENT:
           if (Date.now() - this.menuAt > MENU_CLOSE_MS) this.sleep()
@@ -505,6 +522,15 @@ export class App {
       await this.redraw()
       return
     }
+    if (v.kind === 'inbox') {
+      const n = Math.min(this.inbox?.length ?? 0, V.INBOX_ROWS)
+      const next = Math.max(0, Math.min(n - 1, this.inboxRow + dir))
+      if (next === this.inboxRow) return
+      this.inboxRow = next
+      this.inboxStart = V.inboxWindow(V.inboxLayout(this.model(), Math.floor(Date.now() / 1000)).entry, next, this.inboxStart)
+      await this.redraw()
+      return
+    }
     if (v.kind === 'split') {
       // The scroll marks a column, the next or the previous; the first or the last when none is marked. A tap opens it.
       const cols = this.columns()
@@ -566,6 +592,11 @@ export class App {
       }
       return
     }
+    if (v.kind === 'inbox') {
+      const p = V.inboxEntry(this.model())
+      if (p) await this.openPane(p, false)
+      return
+    }
     if (v.kind === 'split') {
       const sel = this.focus()
       if (sel) await this.openPane(sel, true)
@@ -594,6 +625,8 @@ export class App {
 
   /** The inbox page over the list, read again as it opens. */
   private async openInbox() {
+    this.inboxRow = 0
+    this.inboxStart = 0
     await this.push({ kind: 'inbox' })
     await this.readInbox()
     await this.redraw()
@@ -632,11 +665,6 @@ export class App {
 
   private async onSelect(idx: number) {
     const v = this.top
-    if (v.kind === 'inbox') {
-      const p = this.inbox?.[idx]
-      if (p) await this.openPane(p, false)
-      return
-    }
     if (v.kind === 'answers') {
       const c = v.choices[idx]
       if (c) {
@@ -728,7 +756,9 @@ export class App {
     } catch (e) {
       words = await this.failed(e, 'POST later')
     }
-    this.flash = { text: words, until: Date.now() + FLASH_MS }
+    // The pane page flashes it in its state; the inbox has only the hint.
+    if (this.top.kind === 'inbox') this.toast = { text: words, until: Date.now() + NOTE_MS }
+    else this.flash = { text: words, until: Date.now() + FLASH_MS }
     this.later(FLASH_MS)
     await this.redraw()
     this.scheduleList(0)
@@ -759,12 +789,11 @@ export class App {
         await this.openPane(pane, false)
         break
       }
-      case V.MENU.later:
-        if (v.kind === 'pane') {
-          const p = this.current(v.pane)
-          if (V.canPark({ hosts: this.hosts }, p)) await this.park(p, !p.later)
-        }
+      case V.MENU.later: {
+        const p = v.kind === 'pane' ? this.current(v.pane) : v.kind === 'inbox' ? V.inboxEntry(this.model()) : undefined
+        if (p && V.canPark({ hosts: this.hosts }, p)) await this.park(p, !p.later)
         break
+      }
       case V.MENU.typeOnly:
         if (v.kind === 'heard') await this.sendVoice(v.pane, false)
         break
@@ -963,20 +992,11 @@ export class App {
   }
 
   // ------------------------------------------------------------------- pages
-  /** The pane to go to: the one that has waited longest, a question or a permission before the rest. */
+  /** The pane to go to: the hub's inbox's first awake entry, the one that has waited longest by the hub's clock; none before the inbox is read. */
   private needsYou(): Pane | null {
-    let best: Pane | null = null
-    let bestAt = Infinity
-    for (const p of this.sorted) {
-      const a = this.attention.get(p.address)
-      if (!a || p.later) continue
-      const at = (V.needs(p) ? 0 : 1e13) + a.at
-      if (at < bestAt) {
-        best = p
-        bestAt = at
-      }
-    }
-    return best
+    const first = this.inbox?.find((p) => p.attention && !p.later)
+    if (!first) return null
+    return this.panes.find((p) => p.address === first.address) ?? first
   }
 
   private model(): V.Model {
@@ -999,6 +1019,8 @@ export class App {
       windowStart: this.winStart,
       marked: this.marked,
       inbox: this.inbox,
+      inboxCursor: this.inboxRow,
+      inboxStart: this.inboxStart,
       feed: this.talk.length > 0,
       unseen: this.talk.filter((t) => t.seq > this.seenSeq).length,
       reading: (address) => this.readers.get(address),
