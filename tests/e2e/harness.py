@@ -386,12 +386,12 @@ class Proxy:
                     end = lambda path, pid: {"host": HOST, "address": f"{HOST}/work/{path}", "pane_id": pid}
                     # Under the app's 256 KiB cap on a body, so the entries are read at all: the junk first, then
                     # one entry of 50 KiB and a hundred and twenty of 1 KiB, of which the app keeps a hundred.
-                    big = "x\x1b[2J" * 250
+                    big = "x\x1b[2J" * 100
                     talk = [{"seq": 0, "at": now, "actor": {"name": "x"}, "from": None, "to": {"address": "nope"}, "kind": "mail", "id": 1, "text": "bad to"},
                             {"seq": "1", "at": now, "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "text", "text": "bad seq"},
                             {"seq": 2, "at": now, "from": None, "to": end("1.0", "%1"), "kind": "mail", "id": 2, "reply_to": {"x": 1}, "text": "junk reply"},
                             {"seq": 3, "at": "soon", "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "wave", "text": "bad kind"},
-                            {"seq": 4, "at": now, "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "text", "bytes": 50000, "text": big * 50}]
+                            {"seq": 4, "at": now, "from": end("0.0", "%0"), "to": end("1.0", "%1"), "kind": "text", "bytes": 50000, "text": big * 20}]
                     talk += [{"seq": 10 + i, "at": now - 1000 + i, "actor": {"id": "a", "name": "r" * 300}, "from": end("0.0", "%0"), "to": end("1.0", "%1"),
                               "kind": "text", "bytes": 2000, "text": big} for i in range(120)]
                     data = json.dumps({"talk": talk, "next": 129}).encode()
