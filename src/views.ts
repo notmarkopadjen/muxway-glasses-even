@@ -199,35 +199,31 @@ function ago(seconds: number, now: number): string {
 
 // --- the list: the main screen ---------------------------------------------------------
 
-/** A screen change this recent counts as working: the guideline's ten seconds. */
-export const WORKING_SECONDS = 10
-
-/** Whether the pane's screen changed in the last ten seconds, by the listing's activity. */
-export function moving(p: Pick<Pane, 'activity'>, now: number): boolean {
-  return p.activity > 0 && now - p.activity <= WORKING_SECONDS
-}
-
-/** A harness is working from its last working event until its next event, or while its screen moves; an idle notice while it still moves is working too, not waiting. */
-export function isWorking(p: Pane, now: number): boolean {
+/**
+ * A harness is working from its last working event until its next event, or while its screen moves
+ * (the listing's activity within ten seconds of the listing, so the word holds until the next one);
+ * an idle notice while it still moves is working too, not waiting.
+ */
+export function isWorking(p: Pane): boolean {
   if (p.later || !p.agent) return false
-  if (p.attention) return p.attention === 'idle' && moving(p, now)
-  return p.working || moving(p, now)
+  if (p.attention) return p.attention === 'idle' && p.moving
+  return p.working || p.moving
 }
 
 /** What a row says about the pane's state: later with what waits underneath, else working, else the attention in words, else what its output says. */
 export function stateWord(p: Pane, now: number): string {
   if (p.later) return 'later' + (p.attention ? ` · ${WORDS[p.attention]}` : '')
-  if (isWorking(p, now)) return 'working'
+  if (isWorking(p)) return 'working'
   if (p.attention) return WORDS[p.attention]
   if (!p.activity) return ''
-  if (moving(p, now)) return p.agent ? 'working' : 'active'
+  if (p.moving) return 'active'
   return `quiet ${ago(p.activity, now)}`
 }
 
 /** A pane's mark: parked, else the half circle turned by the second while it works, else its attention's, else the dotted ring. */
 export function markOf(p: Pane, now: number): string {
   if (p.later) return LATER
-  if (isWorking(p, now)) return TURN[now % 2]
+  if (isWorking(p)) return TURN[now % 2]
   if (p.attention) return MARK[p.attention]
   return NONE
 }

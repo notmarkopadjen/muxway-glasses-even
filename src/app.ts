@@ -447,8 +447,7 @@ export class App {
       }
       // A parked pane keeps the kind underneath and stays quiet: no toast. Nor does an idle on a
       // harness whose screen still moves: it is working, and the words follow once the screen stops.
-      const now = Math.floor(Date.now() / 1000)
-      if (!pane?.later && !(kind === 'idle' && pane && V.isWorking(pane, now))) {
+      if (!pane?.later && !(kind === 'idle' && pane && V.isWorking(pane))) {
         this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
         this.later(TOAST_MS)
       }

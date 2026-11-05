@@ -374,12 +374,12 @@ class Proxy:
                         pane("1.0", title="build", talk=[{"address": f"{HOST}/work/0.0", "way": "from"}], mail={"unread": -1}, cwd=123),
                         pane("2.0", title="lone", talk=[{"address": f"{HOST}/work/99.0"}], mail={"unread": "3"}, cwd="////", alias="a" * 300),
                     ]}).encode()
-                if proxy.mode == "lie-able" and bare == "/v1/hosts":
+                if proxy.mode == "lie-able" and self.command == "GET" and bare == "/v1/hosts":
                     # A host whose agent, the proxy says, starts sessions, closes panes and holds mail.
                     data = json.dumps({"hosts": [{"name": HOST, "online": True, "sessions": True, "close": True, "mail": True, "later": True, "keys": 2}]}).encode()
-                if proxy.mode == "lie-able" and bare == "/v1/panes":
+                if proxy.mode == "lie-able" and self.command == "GET" and bare == "/v1/panes":
                     data = data.replace(b'"mode":"read"', b'"mode":"write"')
-                if proxy.mode == "feed-hostile" and bare == "/v1/talk":
+                if proxy.mode == "feed-hostile" and self.command == "GET" and bare == "/v1/talk":
                     # A feed that breaks every rule: entries of 10 KiB, a destination that is no address, a seq that
                     # is a string, a reply to junk, an actor of 300 characters, a hundred and more of them.
                     now = int(time.time())

@@ -31,6 +31,8 @@ export interface Pane {
   choices: string[]
   /** The pane's last activity, seconds since the epoch; 0 when unknown. */
   activity: number
+  /** The screen changed in the ten seconds before the listing: the guideline's working, by the hub's clock. */
+  moving: boolean
   /** The harness said working in its last event. */
   working: boolean
   /** The panes this one talked with in the last ten minutes, by address; empty otherwise. */
@@ -123,6 +125,8 @@ const MAX_TALK = 32
 const MAX_MAIL = 999
 const MAX_CWD = 256
 const MAX_FOLDER = 32
+/** A screen change this recent, at the listing, counts as working. */
+export const WORKING_SECONDS = 10
 const MAX_FEED = 100
 const MAX_MAILBOX = 50
 const MAX_MAIL_TEXT = 4000
@@ -248,6 +252,7 @@ function parsePane(item: unknown, now: number): Pane | null {
     attentionText: att ? str(att.text, 200) : '',
     choices: kind === 'question' ? parseChoices(att?.choices) : [],
     activity: when(o.activity, now),
+    moving: when(o.activity, now) > 0 && now - when(o.activity, now) <= WORKING_SECONDS,
     working: false,
     talk: parseTalk(o.talk),
     mail: parseMail(o.mail),

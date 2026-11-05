@@ -11,8 +11,8 @@ import { groupsOf } from '../../src/groups.ts'
 const NOW = 1_000_000
 
 function pane(path: string, extra: Partial<Pane> = {}): Pane {
-  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 30, working: false, talk: [], mail: 0, later: false, laterAt: 0, id: '', session: 'w', window: 0, width: 80, height: 24, last: false, ...extra }
-  return { ...p, agent: extra.agent ?? agentOf(p.command, p.title) }
+  const p = { address: 'alice-laptop/' + path, host: 'alice-laptop', path, writable: true, command: 'claude', title: '', alias: '', cwd: '', agent: '' as const, attention: '' as const, attentionAt: 0, attentionText: '', choices: [], activity: NOW - 30, moving: false, working: false, talk: [], mail: 0, later: false, laterAt: 0, id: '', session: 'w', window: 0, width: 80, height: 24, last: false, ...extra }
+  return { ...p, agent: extra.agent ?? agentOf(p.command, p.title), moving: extra.moving ?? (p.activity > 0 && NOW - p.activity <= 10) }
 }
 
 function model(panes: Pane[], extra: Partial<Model> = {}): Model {
@@ -67,10 +67,10 @@ test('the state word says only what is known: a harness works while its screen m
   assert.equal(stateWord(pane('a/0.0', { attention: 'idle', activity: NOW - 5 }), NOW), 'working')
   assert.equal(stateWord(pane('a/0.0', { attention: 'idle', activity: NOW - 15 }), NOW), 'idle')
   assert.equal(stateWord(pane('a/0.0', { attention: 'question', activity: NOW - 5 }), NOW), 'asks a question')
-  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5 }), NOW), true)
-  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5, later: true }), NOW), false)
+  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5 })), true)
+  assert.equal(isWorking(pane('a/0.0', { attention: 'idle', activity: NOW - 5, later: true })), false)
   // A time ahead of now is clamped by the parser; here it must not go negative either.
-  assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500 }), NOW), 'working')
+  assert.equal(stateWord(pane('a/0.0', { activity: NOW + 500, moving: true }), NOW), 'working')
 })
 
 test('the marks: the attention\'s, the half circle turned by the second while working, the dotted ring otherwise', () => {

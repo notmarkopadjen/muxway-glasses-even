@@ -1292,7 +1292,9 @@ def titled(text):
 
 
 def posts(proxy, suffix):
-    return [(r["path"], json.loads(r["body"]) if r["body"] else {}) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith(suffix)]
+    """The app's POSTs with the path's suffix: the page's requests carry an Origin, a direct one does not."""
+    return [(r["path"], json.loads(r["body"]) if r["body"] else {}) for r in proxy.requests
+            if r["method"] == "POST" and r["path"].endswith(suffix) and r["headers"].get("Origin") is not None]
 
 
 def origin(core, target="work:0.0"):
@@ -1356,7 +1358,7 @@ def s61(run, name):
     core, proxy, sim, tok = setup(run, name, mode="feed-hostile", before=lambda c: c.new_window("build"))
     page = sim.expect(lambda p: listed(p) and rows(p)[0].startswith("» messages"), "the messages row", 20)
     sim.tap()
-    page = sim.head("messages · 96 ·", "the messages page", 10)
+    page = sim.head("messages · 97 ·", "the messages page", 10)
     items = allrows(page)
     check(len(items) == 9 and all(len(r.encode()) <= 63 for r in items), [len(r.encode()) for r in items])
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(page)), "control characters reached the page")
