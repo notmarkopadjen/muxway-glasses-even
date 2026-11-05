@@ -673,4 +673,12 @@ For the console's parity-docs branch, the glasses cell of each row:
 
 ## Test run
 
-The full suite on the pull request's tree: RUN_PLACEHOLDER
+The full suite on the pull request's tree (`b55af1a`, the store shots'
+commit): [#75](https://github.com/notmarkopadjen/muxway-glasses-even/issues/75),
+139 tests, one failed: S61 on its own check, which held the mail page's
+rows to the OS list's sixty-three bytes where the page is wrapped by
+pixels and was accepted; the check fixed in `1de223f` and S61 green on
+it: [#76](https://github.com/notmarkopadjen/muxway-glasses-even/issues/76).
+Both local runs against the core's main (`c26018c`); the logs,
+screenshots and traces are in the run directories on the machine that
+ran them, and the pull request's own run is the workflow's artifact.
