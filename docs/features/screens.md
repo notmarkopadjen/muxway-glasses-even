@@ -240,7 +240,10 @@ The selected panes in the list's order, two or three columns, each a
 title line with its mark, name and program, and the last eight lines
 through the lens wrapped to the column. All of them follow, each with
 its own ETag. Titles are text, so the page carries no pictures. A rule
-runs under the titles.
+runs under the titles with two columns; with three, the three titles,
+the three bodies, the unseen corner square that takes the gestures and
+the hint are the page's eight containers, so the gap between the
+columns is the separation. The last title ends short of that corner.
 
 Every screen ends the same way: the hint is a box with exactly one
 line inside, the banner's shape, and its top edge is the rule above the
@@ -275,7 +278,8 @@ open the columns too, with two panes and nothing marked.
 The **title** (the bar when the pane is in a group, mark, name, its
 mail, the folder while the title has room, program and status, as the
 list's row has them), a rule under it, with the pane's **state** beside
-it: the attention in words (`asks a question`, `needs permission`,
+it, ending short of the corner square that takes the gestures: the
+attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), on a parked pane `later` with the kind after it as the
 hub names it (`later · permission`: the state has room for a few words),
 else, while the pane follows at the bottom, its **place**,
