@@ -97,4 +97,4 @@ The fixtures are the harness's own (`alice-laptop`, `needs you`).
 
 ## Test run
 
-Pending.
+Run 20261106-221514-3b76129, recorded as [issue #88](https://github.com/notmarkopadjen/muxway-glasses-even/issues/88): 144 tests passed, none failed, at commit 3b76129, against the core at its main of the day, with S65 new and S64 reading a set that fits under the cap.
