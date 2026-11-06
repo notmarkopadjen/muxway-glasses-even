@@ -89,8 +89,9 @@ function rule(name: string, y: number): Block {
 const CATCH = 16
 /** Width left to a title row beside the catcher. */
 const BESIDE_W = CANVAS_W - CATCH - 4
-/** The pane's title block; the state sits beside it, and leaves the corner to the catcher. */
-const TITLE_W = 376
+/** The pane's title block, which gives the catcher's corner from its own room (the folder in it comes and goes by
+ * measure); the state beside it keeps the room its words were chosen for. */
+const TITLE_W = 376 - CATCH - 4
 const STATE_W = CANVAS_W - TITLE_W - 8 - CATCH - 4
 /** The rows' block leaves the corner to the catcher; a row's text is at most 490 px anyway. */
 const ROW_W = CANVAS_W - CATCH - 6

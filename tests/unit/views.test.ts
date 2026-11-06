@@ -117,7 +117,7 @@ test('a working pane is plain: its row and title are a quiet pane\'s but for the
 test('a named pane: the alias first, the program, then what the program says; the folder after the name while the line has room', () => {
   const review = pane('work/0.0', { alias: 'review', title: '✳ fixing the build', cwd: '/home/alice/src/muxway' })
   assert.equal(rowLabel(review, NOW), '◌ review · /muxway · Claude · fixing the build · quiet 30s')
-  // The title block is 376 px: this one is 395 with the folder, so the title goes without it.
+  // The title block is 356 px: this one is 395 with the folder, so the title goes without it.
   assert.equal(titleOf(review, groupsOf([review]), NOW), '◌ review · Claude · fixing the build')
   assert.equal(titleOf(review, groupsOf([review]), NOW, 400), '◌ review · /muxway · Claude · fixing the build')
   const notes = pane('work/1.0', { alias: 'notes', command: 'bash', title: 'notes.md', cwd: '/home/alice/src' })
@@ -356,16 +356,13 @@ test('the rule under the title: a bordered block with nothing in it, the body ri
   const upper = at(page, 'rule1')!
   assert.deepEqual([upper.y, upper.h, upper.border, upper.pad], [LINE_H - RULE_H, RULE_H, true, 0])
   assert.equal(at(page, 'body')!.y, LINE_H, 'the body starts under the rule')
-  // The state beside the title ends short of the corner, and its place word is measured by that room: a
-  // path that fit the old room and not the new one falls back to read-only.
+  // The title gives the corner to the catcher; the state beside it keeps the 192 px its words were chosen
+  // for and ends short of the corner. Its place word is measured by that room.
   const state = page.blocks.find((b) => b.name === 'state')!
-  assert.equal(state.x + state.w, 560 - 4)
-  const tight = Array.from({ length: 40 }, (_, n) => 'x'.repeat(n)).find((path) => {
-    const px = textWidth(`read-only · ${path}`)
-    return px > state.w - 4 && px <= state.w + 20 - 4
-  })!
+  assert.deepEqual([at(page, 'title')!.w, state.w, state.x + state.w], [356, 192, 560 - 4])
+  const tight = Array.from({ length: 40 }, (_, n) => 'x'.repeat(n)).find((path) => textWidth(`read-only · ${path}`) > state.w - 4)!
   assert.equal(placeWord(pane(tight, { writable: false })), 'read-only')
-  assert.equal(placeWord(pane('w/1.0', { writable: false })), 'read-only · w/1.0')
+  assert.equal(placeWord(pane('work/0.0', { writable: false })), 'read-only · work/0.0')
   // The columns too, eight lines each: with two the rule fits; three, their catcher and the hint are the
   // page's eight containers, so the rule goes.
   const two = splitPage(model(panes, { selected: panes.slice(0, 2).map((p) => p.address), reading: () => reading }))

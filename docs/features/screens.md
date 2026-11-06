@@ -277,9 +277,9 @@ open the columns too, with two panes and nothing marked.
 
 The **title** (the bar when the pane is in a group, mark, name, its
 mail, the folder while the title has room, program and status, as the
-list's row has them), a rule under it, with the pane's **state** beside
-it, ending short of the corner square that takes the gestures: the
-attention in words (`asks a question`, `needs permission`,
+list's row has them; the title ends short of the corner square that
+takes the gestures), a rule under it, with the pane's **state** beside
+it: the attention in words (`asks a question`, `needs permission`,
 `idle`, `done`), on a parked pane `later` with the kind after it as the
 hub names it (`later · permission`: the state has room for a few words),
 else, while the pane follows at the bottom, its **place**,

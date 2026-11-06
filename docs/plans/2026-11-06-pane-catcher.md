@@ -42,11 +42,12 @@ mark is an upgrade every second that a scroll's upgrade waits behind).
 
 `src/views.ts` only; `src/glasses.ts` is unchanged.
 
-- **The pane**: the state block beside the title gives the corner to the
-  catcher: its width is `CANVAS_W - TITLE_W - 8 - CATCH - 4` = 172 px
-  instead of 192, and `placeWord`'s room follows it, so `read-only ·
-  work/1.0` still falls back to `read-only` by measure. The rule stays,
-  `capture` off. Five blocks: title, state, rule, body, catcher.
+- **The pane**: the title gives the corner to the catcher: `TITLE_W` is
+  356 px instead of 376, and the folder in it comes and goes by measure
+  as before. The state beside it keeps its 192 px, the room its words
+  (`read-only · work/0.0`, `paused · 2 pages up`) were chosen for, and
+  ends 4 px short of the corner. The rule stays, `capture` off. Five
+  blocks: title, state, rule, body, catcher.
 - **The columns**: the last column's title ends `CATCH + 4` px short of
   the edge, like the boxes' titles (`BESIDE_W`), and the catcher sits in
   the corner. With two columns the rule stays: two titles, two bodies,
@@ -62,7 +63,7 @@ mark is an upgrade every second that a scroll's upgrade waits behind).
 
 ```
 ┌ pane ───────────────────────────────────────────────────────┐
-│ ◐ build · /muxway · Claude            following            ▪│ ← state 172 px, the corner's 16 × 16 is the catcher
+│ ◐ build · /muxway · Claude            following            ▪│ ← title 356 px, state 192 px, the corner's 16 × 16 is the catcher
 ├─────────────────────────────────────────────────────────────┤ ← the rule, a line only
 │ eight lines of the pane                                     │
 ├─────────────────────────────────────────────────────────────┤
@@ -111,7 +112,7 @@ the hosts or the pane names in it.
 | 1 | S30: two hundred panes | e2e-security | the list and a pane from it accepted, nine rows, the rows' budget unchanged |
 | 2 | the catcher | unit | on every page without an OS list exactly one block captures, named `gesture`, 16 × 16 in the corner, with no text; the rule never captures; nothing else reaches the corner |
 | 3 | the rule | unit | on the pane always; on the columns with two, not with three; the body right under the title row either way; every block above the banner |
-| 4 | the state and the last title | unit | the state block ends 20 px short of the edge; `placeWord` falls back to `read-only` by the narrower room; the last column's title block ends short of the corner, its folder measured by the narrower room |
+| 4 | the title, the state and the last title | unit | the title block is 356 px, the state 192 px ending 4 px short of the corner; `placeWord` keeps `read-only · work/0.0` and falls back to `read-only` by measure; the last column's title block ends short of the corner, its folder measured by the narrower room |
 | 5 | F11, F13, F42 (the pane), F32, F33, F62 (the columns) | UI | unchanged words and screenshots but for the corner; the simulator's scrolls arrive from the catcher |
 | 6 | the device | by hand, recorded here | the owner taps a row: the pane shows at once, the answers return to it; two and three side by side show at once; the footer stands still on a scroll; the phone log has no `rebuildPageContainer refused` |
 
@@ -142,9 +143,14 @@ columns' rule with two, not with three), this plan.
 - [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
 - [x] Docs and diagrams updated
 
-Deviations: none. The state's width is 172 px (the plan's draft said
-168: `576 - 376 - 8 - 16 - 4`), ending 4 px short of the corner as the
-boxes' titles do. On the columns the rule is pushed after the catcher
+Deviations: one. The first build narrowed the state to 172 px, and the
+pull request's run failed F65: `read-only · work/0.0` (175 px) no
+longer fit and fell back to `read-only`, and `paused · 2 pages up`
+(175 px) would have been cut. The state's words are fixed phrases
+chosen for 188 px of room, while the title's folder is optional by
+measure already, so the title gives the corner instead: 356 px, the
+state 192 px as before, ending 4 px short of the corner as the boxes'
+titles do. On the columns the rule is pushed after the catcher
 only while the page has a block to spare, which is the two-column case;
 the traces of F33 and F62 carry it, F32's three columns do not.
 
@@ -154,5 +160,10 @@ Run 20261106-125706-f3c59d6, local, before the pull request's run: S30,
 F11, F13, F42, F32, F33 and F62 passed with the secret scan, none
 failed, against the core's main; the unit suite (83) passed. The traces
 show the pane's catcher at 560,0 16 × 16 with no border, the rule
-without capture, the state 172 px wide, and no `refused` in any log.
+without capture, and no `refused` in any log. The pull request's first
+run failed F65 on the narrowed state (above). With the title giving the
+corner: run 20261106-141243-0e524b1, local, F11, F42, F33, F62 and F65
+passed (F43 failed there for the local core checkout's age alone: no
+folder in its listing), and run 20261106-141749-0e524b1 against the
+core's main, F43 and F65 passed; the unit suite (83) passed.
 The owner's device check (test 6) is recorded here when it is done.
