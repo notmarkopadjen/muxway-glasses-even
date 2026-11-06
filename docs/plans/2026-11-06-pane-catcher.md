@@ -1,6 +1,6 @@
 # Feature: the pane and the columns take the gestures in the corner, not on the rule
 
-> Status: implemented, awaiting the owner's device check. The owner's report of 2026-11-06 on the G2 with
+> Status: implemented; checked on the device by the owner on 2026-11-06. The owner's report of 2026-11-06 on the G2 with
 > 0.8.0: the same symptom as #41 (`2026-11-03-pages-above-the-banner.md`)
 > is back, on the pane and on the columns. On top of the gestures plan
 > (`2026-11-03-gestures.md`).
@@ -165,5 +165,7 @@ run failed F65 on the narrowed state (above). With the title giving the
 corner: run 20261106-141243-0e524b1, local, F11, F42, F33, F62 and F65
 passed (F43 failed there for the local core checkout's age alone: no
 folder in its listing), and run 20261106-141749-0e524b1 against the
-core's main, F43 and F65 passed; the unit suite (83) passed.
-The owner's device check (test 6) is recorded here when it is done.
+core's main, F43 and F65 passed; the unit suite (83) passed. The
+owner's device check (test 6) on 2026-11-06, with the build from
+61eb6f7 packed for the owner's hub: the pane and the columns show at
+once; it works on the glasses.
