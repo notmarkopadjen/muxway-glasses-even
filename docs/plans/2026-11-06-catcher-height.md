@@ -100,5 +100,7 @@ and do not overlap, as the body and the hint touch at the banner's top.
 
 Run 20261106-190602-f3c59d6, local, against the core's main: F10, F11
 and F33 passed with the secret scan, none failed; the unit suite (83)
-passed. The owner's device check (test 4) is recorded here when it is
+passed. After the rebase on #81 and the rule's end at the corner: run
+20261106-191111-d997826, F10, F11, F32 and F33 passed, the unit suite
+(83) passed. The owner's device check (test 4) is recorded here when it is
 done.
