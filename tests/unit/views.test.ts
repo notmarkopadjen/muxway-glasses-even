@@ -404,7 +404,11 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     assert.equal(catchers[0].lines.join(''), '', `${name}: the catcher shows nothing`)
     assert.equal(catchers[0].name, name === 'pane' || name === 'columns' ? 'rule1' : 'gesture', name)
     // Nothing else sits in the corner catcher's corner.
-    if (catchers[0].name === 'gesture') for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
+    if (catchers[0].name === 'gesture') {
+      // One blank line tall, so the device has nothing to scroll and reports every scroll; the corner is its alone.
+      assert.deepEqual([catchers[0].x, catchers[0].y, catchers[0].w, catchers[0].h], [560, 0, 16, LINE_H], name)
+      for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= LINE_H || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
+    }
   }
   for (const page of [answersPage(m, panes[0], [], null, false, null), confirmPage(m, panes[0], answer)]) {
     assert.equal(page.kind, 'list')

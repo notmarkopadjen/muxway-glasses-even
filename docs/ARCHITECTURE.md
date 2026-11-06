@@ -112,7 +112,11 @@ the whole design:
   however little room it has (the hint moved with every scroll on the
   device, 2026-11-03, boxed to one line or not), so on a page without
   an OS list a block with nothing to show takes them: the rule under a
-  title, or an unseen 16 px square in the top right corner; the hint is
+  title, or an unseen block of 16 × 28 px in the top right corner, as
+  tall as its one blank line, since the device reports a scroll only
+  when the text it scrolls is at an edge and a shorter box leaves room
+  for a silent one (the first scroll in a new direction was lost on the
+  device, 2026-11-06, with a 16 px square); the hint is
   a box with exactly one line inside, the banner's shape, and its top
   edge is the rule above the footer on every page;
 - a bordered text container two pixels high draws as a rule, and a
