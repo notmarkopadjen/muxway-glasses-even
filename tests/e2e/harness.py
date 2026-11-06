@@ -571,10 +571,16 @@ class Sim:
         # A home of its own: the WebView's storage must not carry one test's settings into the next.
         self.home = Path(run.tmp) / ("sim-" + secrets.token_hex(4))
         self.home.mkdir()
+        # No session bus: with one in reach, WebKitGTK asks the desktop portal for its settings, the
+        # portal's GTK backend dies without a display, and the simulator waits 25 s for the timeout
+        # before its first page. The runtime directory is the simulator's own, so no bus is found there.
+        runtime = self.home / "run"
+        runtime.mkdir(mode=0o700)
         env = {**os.environ, "DISPLAY": run.display, "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
                "WEBKIT_DISABLE_DMABUF_RENDERER": "1", "LIBGL_ALWAYS_SOFTWARE": "1", "HOME": str(self.home),
                "XDG_DATA_HOME": str(self.home / "data"), "XDG_CACHE_HOME": str(self.home / "cache"),
-               "XDG_CONFIG_HOME": str(self.home / "config")}
+               "XDG_CONFIG_HOME": str(self.home / "config"), "XDG_RUNTIME_DIR": str(runtime),
+               "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(runtime / "no-bus")}
         self.proc = subprocess.Popen([str(SIM), url, "--automation-port", str(self.port)], stdout=self.out,
                                      stderr=subprocess.STDOUT, env=env)
         wait_for("simulator", self.alive, 40, 0.5)
