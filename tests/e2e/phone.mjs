@@ -92,6 +92,8 @@ try {
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: APP_URL })
   const rows = await page.$$eval('#log > div', (els) => els.map((e) => e.textContent))
   await page.click('#copy')
+  // The click's handler writes the status after the clipboard answers; wait for it rather than read it at once.
+  await page.waitForFunction(() => document.querySelector('#copied').textContent !== '', null, { timeout: 5000 })
   const copied = await page.textContent('#copied')
   if (copied !== `copied ${rows.length} lines`) fail(`copy said: ${copied}`)
   const clip = await page.evaluate(() => navigator.clipboard.readText())
