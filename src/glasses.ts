@@ -26,7 +26,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { MAX_IMG_H, MAX_IMG_W, MIN_IMG } from './bitmap.ts'
 import type { Chart } from './raster.ts'
-import { CANVAS_W, LINE_PX, clampBytes, fitWidth } from './text.ts'
+import { CANVAS_W, LINE_PX, byteLength, clampBytes, fitWidth } from './text.ts'
 
 export const TOP = 0
 export const HINT_Y = 258
@@ -49,6 +49,11 @@ export const BANNER_PAD = 3
 export const BANNER_Y = HINT_Y - 2 * BANNER_PAD
 /** A rule: a bordered container this high draws as a line on the glasses (seen on the device, 2026-11-03). */
 export const RULE_H = 2
+
+/** A block whose text is one line of at most this many bytes goes into a create or rebuild whole; a longer one
+ * follows as an upgrade, since the device refused a rebuild with a pane's eight lines in it (2026-11-06) and
+ * takes the same text as an upgrade. */
+export const LIGHT_BYTES = 96
 
 const ID_HINT = 2
 const ID_LIST = 3
@@ -109,6 +114,12 @@ export function blockText(b: Block): string {
   return (b.lines.slice(0, rows).map((l) => fitWidth(l, inner)).join('\n') || ' ').slice(0, BLOCK_CHARS)
 }
 
+/** Whether the block's text is too long for a create or rebuild and follows as an upgrade; blank text never is. */
+export function heavy(b: Block): boolean {
+  const text = blockText(b)
+  return text.trim().length > 0 && (text.includes('\n') || byteLength(text) > LIGHT_BYTES)
+}
+
 export function listRow(s: string): string {
   return clampBytes(fitWidth(s, LIST_ROW_PX), LIST_ROW_BYTES)
 }
@@ -165,6 +176,7 @@ export class Glasses {
     })
   }
 
+  /** The create or rebuild payload: the heavy blocks hold a space, their text follows (fill). */
   private payload(p: Page) {
     // On a list page the list takes the gestures; on a dash page the block marked for it, one with
     // nothing to show, since the firmware scrolls the text of the container that takes them (the
@@ -174,7 +186,7 @@ export class Glasses {
     const blocks = p.blocks.slice(0, MAX_BLOCKS)
     const caught = p.kind === 'list' || blocks.some((b) => b.capture)
     const textObject = [this.text(ID_HINT, 'hint', 0, BANNER_Y, CANVAS_W, HINT_H + 2 * BANNER_PAD, hintText(p.hint), p.hintLevel, caught ? 0 : 1, 2, true, BANNER_PAD)]
-    blocks.forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, blockText(b), b.level, b.capture ? 1 : 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
+    blocks.forEach((b, i) => textObject.push(this.text(ID_BLOCK0 + i, 'b' + i, b.x, b.y, b.w, b.h, heavy(b) ? ' ' : blockText(b), b.level, b.capture ? 1 : 0, 3 + i, !!b.border, b.pad ?? BORDER_PAD)))
     const imageObject = this.fitting(p.charts).map(
       (c, i) => new ImageContainerProperty({ xPosition: c.x, yPosition: c.y, width: c.w, height: c.h, containerID: ID_CHART0 + i, containerName: 'c' + i, zOrderIndex: 12 + i }),
     )
@@ -285,7 +297,12 @@ export class Glasses {
       this.created = true
       this.dirty = r !== 0
       if (r !== 0) this.log('createStartUpPageContainer: ' + r)
-      else await this.pushCharts(p, true, gen)
+      else {
+        // The page is new on the glasses: its pictures are gone whatever fill does, so the next push sends them all.
+        this.pushed.clear()
+        await this.fill(p, gen)
+        await this.pushCharts(p, true, gen)
+      }
       return
     }
     const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(payload))
@@ -294,6 +311,8 @@ export class Glasses {
     this.dirty = !ok
     if (ok) {
       this.retryMs = 500
+      this.pushed.clear()
+      await this.fill(p, gen)
       await this.pushCharts(p, true, gen)
       return
     }
@@ -305,6 +324,26 @@ export class Glasses {
       if (this.dirty && !this.pending) void this.show(this.last)
     }, this.retryMs)
     this.retryMs = Math.min(5000, this.retryMs * 2)
+  }
+
+  /** The heavy blocks' text after a create or rebuild, in block order. One not sent, because the page moved on or
+   * the bridge threw, is left blank in `last`, so the next apply of the page sends it. */
+  private async fill(p: Page, gen: number) {
+    const blocks = p.blocks.slice(0, MAX_BLOCKS)
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i]
+      if (!heavy(b)) continue
+      if (gen !== this.gen) {
+        this.last.blocks[i] = { ...b, lines: [] }
+        continue
+      }
+      try {
+        await this.upgrade(ID_BLOCK0 + i, 'b' + i, blockText(b), b.level)
+      } catch (e) {
+        this.last.blocks[i] = { ...b, lines: [] }
+        throw e
+      }
+    }
   }
 
   /** Pictures after a rebuild (force) or those whose key changed; a page that moved on ends the loop. */
