@@ -103,6 +103,14 @@ the whole design:
 - a text change is a flicker-free in-place upgrade; a layout change is a
   rebuild during which input is dropped, so each page kind keeps one
   geometry;
+- a create or rebuild with a pane's eight lines in its body was refused
+  the same silent way (seen on the device on 2026-11-06: a pane the app
+  had read was refused, one it had not read was taken and its text
+  followed as an upgrade), so a create or rebuild carries only the
+  blocks that are one line of at most 96 bytes; every longer block goes
+  in as a space and its text follows as an in-place upgrade right after
+  the page is accepted, before the pictures; the limit's figure is not
+  known, the trace (the phone's switch) shows the sizes;
 - two containers that overlap reject the page the same silent way, and
   the simulator does not mind, so a page that is fine there can be
   refused on the glasses; a toast grows the hint upward by its padding,
