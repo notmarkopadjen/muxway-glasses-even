@@ -89,7 +89,12 @@ leaves room for a silent one), this plan.
 - [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
 - [x] Docs and diagrams updated
 
-Deviations: none.
+Deviations: one. The rule under the title is two pixels at y = 26 to
+28 across the whole width, and the catcher at 28 px tall now reaches
+y = 28 in the corner, which the unit test caught as an overlap once the
+branch was rebased on the pane fix (#81). The rule ends at the
+catcher's corner, `CANVAS_W - CATCH` = 560 px wide, so the two touch
+and do not overlap, as the body and the hint touch at the banner's top.
 
 ## Test run
 

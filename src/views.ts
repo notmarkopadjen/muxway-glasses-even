@@ -82,7 +82,8 @@ const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
 /** A rule across the page: a bordered block with nothing in it, as high as its line. A line only: with the
  * gestures on it the device refused the page (seen 2026-11-06). */
 function rule(name: string, y: number): Block {
-  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
+  // The rule ends at the catcher's corner, which is a line tall and would overlap it at the full width.
+  return { name, x: 0, y, w: CANVAS_W - CATCH, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
 }
 
 /** The catcher's side: an unseen square in the top right corner that takes the gestures on every dash page. */
