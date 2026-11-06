@@ -186,3 +186,44 @@ test('a working mark turns once a second, in place, and stops with the foregroun
   app.stop()
   await sleep(400)
 })
+
+test('the trace: off, the log is as before; on, every draw, view change and timer is a line, never the token or the pane', async () => {
+  const hub = fakeHub(false, true)
+  globalThis.fetch = hub.fetch as typeof fetch
+  const token = 'mxt_' + 'd'.repeat(43)
+  const lines: { m: string; cls: string }[] = []
+  const log = (m: string, cls = '') => void lines.push({ m, cls })
+  await saveSettings({ hub: 'http://127.0.0.1:1', token, every: 1, detail: false })
+  const bridge = fakeBridge()
+  const app = new App(bridge as never, log, null)
+  await app.start()
+  await sleep(300)
+  assert.equal(lines.filter((l) => l.cls === 'trace').length, 0, 'nothing traced while the switch is off')
+  await saveSettings({ detail: true })
+  await app.onSettingsChanged()
+  await sleep(300)
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+  await sleep(150)
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT)) // the pane
+  await sleep(300)
+  bridge.cb!(sys(OsEventTypeList.DOUBLE_CLICK_EVENT)) // back
+  await sleep(1500)
+  app.stop()
+  await sleep(400)
+  const traced = lines.filter((l) => l.cls === 'trace').map((l) => l.m)
+  const has = (re: RegExp) => assert.ok(traced.some((m) => re.test(m)), `${re}: ${traced.join(' | ')}`)
+  has(/^view: list → pane build \(2\)$/)
+  has(/^view: pane build → list \(1\) · back$/)
+  has(/^glasses: rebuild \d+ containers · \d+(\.\d+)? (B|KB) · \d+ ms · ok$/)
+  has(/^glasses: rebuild: .*changed$/)
+  has(/^glasses: upgrade \w+ · \d+(\.\d+)? (B|KB) · \d+ ms$/)
+  has(/^draw pane · \d+ ms$/)
+  has(/^draw list · \d+ ms$/)
+  has(/^spin on$/)
+  has(/^read now$/)
+  has(/^wake$/)
+  for (const m of lines.map((l) => l.m)) {
+    assert.ok(!m.includes(token) && !m.includes('mxt_'), 'the token in the log')
+    assert.ok(!m.includes('$ make') && !m.includes('make\n'), 'pane content in the log: ' + m)
+  }
+})

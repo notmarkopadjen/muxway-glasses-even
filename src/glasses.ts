@@ -124,9 +124,17 @@ function geometry(p: Page): string {
   ])
 }
 
+/** The JSON bytes of what is handed to the bridge, which is what crosses to the Even app. */
+function kb(o: unknown): string {
+  const n = new TextEncoder().encode(JSON.stringify(o)).length
+  return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`
+}
+
 export class Glasses {
   private bridge: EvenAppBridge
   private log: (m: string) => void
+  /** The trace: every bridge call with its size and time, why a rebuild, when a retry; nothing while the switch is off. */
+  private detail: (m: string) => void
   private trace: ((p: Page) => void) | null
   private created = false
   private dirty = false
@@ -140,10 +148,11 @@ export class Glasses {
   private pushed = new Map<number, string>()
   private gen = 0
 
-  constructor(bridge: EvenAppBridge, log: (m: string) => void, trace: ((p: Page) => void) | null) {
+  constructor(bridge: EvenAppBridge, log: (m: string) => void, trace: ((p: Page) => void) | null, detail: (m: string) => void = () => {}) {
     this.bridge = bridge
     this.log = log
     this.trace = trace
+    this.detail = detail
   }
 
   private text(id: number, name: string, x: number, y: number, w: number, h: number, content: string, lvl: number, capture: number, z: number, border = false, pad = BORDER_PAD) {
@@ -260,9 +269,25 @@ export class Glasses {
     }
   }
 
+  /** Which of the page's geometry differs from the last page's: the reason for a rebuild, for the trace. */
+  private changed(p: Page): string {
+    const a = p
+    const b = this.last
+    const parts: string[] = []
+    if (a.kind !== b.kind) parts.push('kind')
+    if (JSON.stringify(a.items) !== JSON.stringify(b.items)) parts.push('items')
+    if (JSON.stringify(a.blocks.map((x) => [x.x, x.y, x.w, x.h, !!x.border, x.pad, !!x.capture])) !== JSON.stringify(b.blocks.map((x) => [x.x, x.y, x.w, x.h, !!x.border, x.pad, !!x.capture]))) parts.push('blocks')
+    if (JSON.stringify(a.charts.map((c) => [c.x, c.y, c.w, c.h])) !== JSON.stringify(b.charts.map((c) => [c.x, c.y, c.w, c.h]))) parts.push('charts')
+    if (JSON.stringify(a.menu) !== JSON.stringify(b.menu)) parts.push('menu')
+    return parts.join(', ')
+  }
+
   private async apply(p: Page, gen: number): Promise<void> {
     this.trace?.({ ...p, items: p.items.map(listRow), charts: p.charts.map((c) => ({ ...c, bitmap: null })) })
-    if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) return this.draw(p, gen)
+    if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) {
+      this.detail(!this.created ? 'create: the first page' : this.dirty ? 'rebuild: the last one was refused' : 'rebuild: ' + this.changed(p) + ' changed')
+      return this.draw(p, gen)
+    }
     const prev = this.last
     this.last = clone(p)
     if (p.hint !== prev.hint || p.hintLevel !== prev.hintLevel) await this.upgrade(ID_HINT, 'hint', hintText(p.hint), p.hintLevel)
@@ -280,8 +305,10 @@ export class Glasses {
     const payload = this.payload(p)
     this.last = clone(p)
     this.dirty = false
+    const t0 = Date.now()
     if (!this.created) {
       const r = await this.bridge.createStartUpPageContainer(new CreateStartUpPageContainer(payload))
+      this.detail(`create ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${r === 0 ? 'ok' : 'code ' + r}`)
       this.created = true
       this.dirty = r !== 0
       if (r !== 0) this.log('createStartUpPageContainer: ' + r)
@@ -289,6 +316,7 @@ export class Glasses {
       return
     }
     const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(payload))
+    this.detail(`rebuild ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${ok ? 'ok' : 'refused'}`)
     // The OS refuses a rebuild while its own menu is on top, which is what
     // happens when a menu entry changes the page: try again when it is gone.
     this.dirty = !ok
@@ -299,6 +327,7 @@ export class Glasses {
     }
     // Also refused for a page the firmware will never take, so the retries slow down.
     this.log('rebuildPageContainer refused')
+    this.detail(`retry in ${this.retryMs} ms`)
     if (this.retry) clearTimeout(this.retry)
     this.retry = setTimeout(() => {
       this.retry = null
@@ -318,7 +347,9 @@ export class Glasses {
       if (gen !== this.gen) break
       const c = charts[i]
       if (!c.bitmap || this.pushed.get(ID_CHART0 + i) === c.key) continue
+      const t1 = Date.now()
       const r = await this.bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: ID_CHART0 + i, containerName: 'c' + i, imageData: c.bitmap.data() }))
+      this.detail(`picture c${i} · ${Math.round(c.bitmap.bytes / 1024)} KB · ${Date.now() - t1} ms · ${ImageRawDataUpdateResult.isSuccess(r) ? 'ok' : r}`)
       n++
       bytes += c.bitmap.bytes
       if (ImageRawDataUpdateResult.isSuccess(r)) this.pushed.set(ID_CHART0 + i, c.key)
@@ -328,9 +359,10 @@ export class Glasses {
   }
 
   private async upgrade(id: number, name: string, content: string, textColor?: number) {
-    await this.bridge.textContainerUpgrade(
-      new TextContainerUpgrade({ containerID: id, containerName: name, content, ...(textColor === undefined ? {} : { textColor: level(textColor) }) }),
-    )
+    const u = new TextContainerUpgrade({ containerID: id, containerName: name, content, ...(textColor === undefined ? {} : { textColor: level(textColor) }) })
+    const t0 = Date.now()
+    await this.bridge.textContainerUpgrade(u)
+    this.detail(`upgrade ${name} · ${kb(u)} · ${Date.now() - t0} ms`)
   }
 }
 
