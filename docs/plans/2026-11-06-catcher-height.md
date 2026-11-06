@@ -93,4 +93,7 @@ Deviations: none.
 
 ## Test run
 
-Pending.
+Run 20261106-190602-f3c59d6, local, against the core's main: F10, F11
+and F33 passed with the secret scan, none failed; the unit suite (83)
+passed. The owner's device check (test 4) is recorded here when it is
+done.
