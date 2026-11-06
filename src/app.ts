@@ -407,6 +407,13 @@ export class App {
           if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
           else this.recent(r.events)
           this.cursor = r.next
+          // An answer without a cursor, a body cut at the cap or garbled, restarts the poll without one: after
+          // the wait of a failed poll, never at once, or a hub that answers that way is asked two hundred times a second.
+          if (r.next === null) {
+            this.log(`GET events: no cursor, again in ${this.backoff / 1000} s`, 'bad')
+            await new Promise((r) => setTimeout(r, this.backoff))
+            this.backoff = Math.min(60_000, this.backoff * 2)
+          }
         } catch (e) {
           if (gen !== this.eventsGen) return
           const err = e instanceof ApiError ? e : new ApiError(0)

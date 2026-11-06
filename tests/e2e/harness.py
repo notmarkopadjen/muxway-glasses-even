@@ -301,10 +301,12 @@ class Proxy:
                     if self.command == "GET":
                         return self.reply(204, b"", CORS)
                     return self.reply(502, b'{"error":"provider_unavailable"}', {"Content-Type": "application/json", **CORS})
-                if proxy.mode == "recent-hostile" and self.command == "GET" and bare == "/v1/events" and "after=" not in path:
-                    # The recent events at start: bad kinds, escapes, 10 KiB texts, a working one for the pane and
-                    # a later one that is not, so the pane is not working after all.
-                    evs = [{"seq": i, "at": 1767225600 + i, "address": HOST + "/work/0.0", "kind": k, "text": "needs \x1b[1myou\x07 " + "y" * 10000}
+                if proxy.mode in ("recent-hostile", "recent-huge") and self.command == "GET" and bare == "/v1/events" and "after=" not in path:
+                    # The recent events at start: bad kinds, escapes, 4 KiB texts, a working one for the pane and
+                    # a later one that is not, so the pane is not working after all. The whole answer stays under
+                    # the app's 256 KiB cap, so it is read; recent-huge carries 10 KiB texts and is over it, cut.
+                    size = 10000 if proxy.mode == "recent-huge" else 4000
+                    evs = [{"seq": i, "at": 1767225600 + i, "address": HOST + "/work/0.0", "kind": k, "text": "needs \x1b[1myou\x07 " + "y" * size}
                            for i, k in enumerate(["working", "nonsense", "permission", "working", 7, "done"] * 8)]
                     evs.append({"seq": 48, "at": 1767225700, "address": HOST + "/work/1.0", "kind": "working", "text": ""})
                     evs.append({"seq": 49, "at": 1767225701, "address": "not an address", "kind": "working", "text": ""})

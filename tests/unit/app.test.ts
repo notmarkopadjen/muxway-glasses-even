@@ -67,6 +67,30 @@ function fakeHub(stt = false, working = false) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+test('a recent answer without a cursor is asked again after the wait of a failed poll, not at once', async () => {
+  const hub = fakeHub()
+  const garbled = async (url: string | URL, init?: RequestInit): Promise<Response> => {
+    if (String(url).includes('/v1/events')) {
+      hub.calls.push(String(url))
+      return new Response('{"events": [{"seq": 1, "at": 1, "address": "alice-laptop/work/0.0", "kind": "worki', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    return hub.fetch(url, init)
+  }
+  globalThis.fetch = garbled as typeof fetch
+  await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'a'.repeat(43), every: 1 })
+  const bridge = fakeBridge()
+  const lines: string[] = []
+  const app = new App(bridge as never, (m) => lines.push(m), null)
+  await app.start()
+  await sleep(800)
+  const recent = hub.calls.filter((c) => c.includes('/v1/events?limit=50'))
+  assert.equal(recent.length, 1, `the recent events were asked for ${recent.length} times in under a second`)
+  assert.ok(lines.some((l) => l.startsWith('GET events: no cursor, again in 5 s')), lines.join('\n'))
+  assert.ok(!hub.calls.some((c) => c.includes('/v1/events?after=')), 'a poll went on without a cursor')
+  bridge.cb!(sys(OsEventTypeList.FOREGROUND_EXIT_EVENT))
+  await sleep(100)
+})
 const sys = (eventType: OsEventTypeList): EvenHubEvent => ({ sysEvent: { eventType } as never })
 
 test('foreground exit stops the requests, enter and gestures resume them', async () => {
