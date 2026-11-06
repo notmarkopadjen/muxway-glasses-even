@@ -5,7 +5,7 @@
 import { ANSWERS, type Answer } from './answers.ts'
 import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
-import { BANNER_Y, LINE_H, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
+import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
 import { folder, paneName, program, programSays, type Attention, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
@@ -79,17 +79,20 @@ const FOOT_H = BANNER_Y - FOOT_Y
 const BOX_W = LINE_PX - 16
 const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
 
-/** A rule across the page: a bordered block with nothing in it, as high as its line. It takes the gestures. */
+/** A rule across the page: a bordered block with nothing in it, as high as its line. A line only: with the
+ * gestures on it the device refused the page (seen 2026-11-06). */
 function rule(name: string, y: number): Block {
-  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0, capture: true }
+  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
 }
 
-/** The catcher's side: an unseen square in the top right corner that takes the gestures where no rule does. */
+/** The catcher's side: an unseen square in the top right corner that takes the gestures on every dash page. */
 const CATCH = 16
 /** Width left to a title row beside the catcher. */
 const BESIDE_W = CANVAS_W - CATCH - 4
-/** The pane's title block; the state sits beside it. */
-const TITLE_W = 376
+/** The pane's title block, which gives the catcher's corner from its own room (the folder in it comes and goes by
+ * measure); the state beside it keeps the room its words were chosen for. */
+const TITLE_W = 376 - CATCH - 4
+const STATE_W = CANVAS_W - TITLE_W - 8 - CATCH - 4
 /** The rows' block leaves the corner to the catcher; a row's text is at most 490 px anyway. */
 const ROW_W = CANVAS_W - CATCH - 6
 /** What a block shows of a line: its width less the text's margin. */
@@ -369,9 +372,11 @@ export function splitPage(m: Model, now: number): Page {
   shown.forEach((p, i) => {
     const x = i * (colW + COL_GAP)
     const chosen = i === m.marked
-    // The folder is measured with the mark's room whether or not the column is marked, so it does not come and go.
-    const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now, colW - INNER - textWidth('» '))}`
-    blocks.push({ name: 'title' + i, x, y: TOP, w: colW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
+    // The last title leaves the corner to the catcher. The folder is measured with the mark's room whether or
+    // not the column is marked, so it does not come and go.
+    const titleW = i === shown.length - 1 ? colW - CATCH - 4 : colW
+    const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now, titleW - INNER - textWidth('» '))}`
+    blocks.push({ name: 'title' + i, x, y: TOP, w: titleW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
     const r = m.reading(p.address)
     let text: string[]
     if (r?.error) text = [r.error]
@@ -382,8 +387,11 @@ export function splitPage(m: Model, now: number): Page {
     }
     blocks.push({ name: 'col' + i, x, y: BODY_Y, w: colW, h: BODY_LINES * LINE_H, lines: text, level: chosen ? 4 : 2 })
   })
-  if (shown.length) blocks.push(rule('rule1', TOP + TITLE_H))
+  // The rule under the titles where the page has room for it: three columns, their catcher and the hint are
+  // the page's eight containers, so with three the gap between the columns is the separation.
+  if (shown.length) blocks.push(catcher())
   else blocks.push(footer(['the selected panes are gone', m.listError ?? '']))
+  if (shown.length && blocks.length < MAX_BLOCKS) blocks.push(rule('rule1', TOP + TITLE_H))
   const sel = m.marked >= 0 ? shown[m.marked] : undefined
   const base = sel ? `▽ next pane · ● open ${paneName(sel)} · ×× the list` : '▽ pick a pane · ● refresh · ×× the list'
   const menu: MenuSpec[] = [{ id: MENU.refresh, label: 'Refresh' }]
@@ -490,7 +498,7 @@ export function noticeLine(p: Pane): string {
 }
 
 /** The state beside the title while nothing else is to say: the place, with read-only in front where the token cannot write. */
-export function placeWord(p: Pane, room = CANVAS_W - TITLE_W - 8 - INNER): string {
+export function placeWord(p: Pane, room = STATE_W - INNER): string {
   if (p.writable) return p.path
   const both = `read-only · ${p.path}`
   return textWidth(both) <= room ? both : 'read-only'
@@ -500,7 +508,7 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   const title = titleOf(p, groupsOf(m.panes), now)
   const blocks: Block[] = []
   blocks.push({ name: 'title', x: 0, y: TOP, w: TITLE_W, h: TITLE_H, lines: [title], level: 4 })
-  blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: CANVAS_W - TITLE_W - 8, h: TITLE_H, lines: [st.state], level: 2 })
+  blocks.push({ name: 'state', x: TITLE_W + 8, y: TOP, w: STATE_W, h: TITLE_H, lines: [st.state], level: 2 })
   const { size } = pageSize(p, r, m.lens, st.reveal)
   const body = r && r.raw.length ? shaped(p, r.raw, BODY_W - 4, m.lens, st.reveal) : []
   const end = body.length - st.offset * size
@@ -510,7 +518,7 @@ export function panePage(m: Model, p: Pane, r: Reader | undefined, st: PaneState
   const notice = noticeLine(p)
   if (notice) lines.unshift(notice)
   blocks.push(rule('rule1', TOP + TITLE_H))
-  blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 })
+  blocks.push({ name: 'body', x: 0, y: BODY_Y, w: BODY_W, h: BODY_LINES * LINE_H, lines, level: 3 }, catcher())
   const menu = paneMenu(m, p, st.reveal)
   return {
     kind: 'dash',
