@@ -5,8 +5,9 @@ import assert from 'node:assert/strict'
 import { agentOf, type Mail, type Pane, type Talk } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, endName, heardPage, hostLine, involves, listedHosts, mailBackTo, mailEntries, mailLayout, mailPage, messagesLayout, messagesPage, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, underRows, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, endName, heardPage, hostLine, involves, listedHosts, mailBackTo, mailEntries, mailLayout, mailPage, messagesLayout, messagesPage, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, underRows, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, placeWord, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
+import { textWidth } from '../../src/text.ts'
 
 const NOW = 1_000_000
 
@@ -355,11 +356,24 @@ test('the rule under the title: a bordered block with nothing in it, the body ri
   const upper = at(page, 'rule1')!
   assert.deepEqual([upper.y, upper.h, upper.border, upper.pad], [LINE_H - RULE_H, RULE_H, true, 0])
   assert.equal(at(page, 'body')!.y, LINE_H, 'the body starts under the rule')
-  // The columns too, three of them within the page's containers, eight lines each.
+  // The state beside the title ends short of the corner, and its place word is measured by that room: a
+  // path that fit the old room and not the new one falls back to read-only.
+  const state = page.blocks.find((b) => b.name === 'state')!
+  assert.equal(state.x + state.w, 560 - 4)
+  const tight = Array.from({ length: 40 }, (_, n) => 'x'.repeat(n)).find((path) => {
+    const px = textWidth(`read-only · ${path}`)
+    return px > state.w - 4 && px <= state.w + 20 - 4
+  })!
+  assert.equal(placeWord(pane(tight, { writable: false })), 'read-only')
+  assert.equal(placeWord(pane('w/1.0', { writable: false })), 'read-only · w/1.0')
+  // The columns too, eight lines each: with two the rule fits; three, their catcher and the hint are the
+  // page's eight containers, so the rule goes.
+  const two = splitPage(model(panes, { selected: panes.slice(0, 2).map((p) => p.address), reading: () => reading }))
+  assert.deepEqual([at(two, 'rule1')!.y, at(two, 'col0')!.y, at(two, 'col0')!.lines.length], [LINE_H - RULE_H, LINE_H, 8])
   const cols = splitPage(model(panes, { selected: panes.map((p) => p.address), reading: () => reading }))
-  assert.ok(at(cols, 'rule1'))
-  assert.ok(cols.blocks.length <= MAX_BLOCKS, `${cols.blocks.length} blocks`)
-  assert.equal(at(cols, 'col0')!.lines.length, 8)
+  assert.equal(at(cols, 'rule1'), undefined)
+  assert.equal(cols.blocks.length, MAX_BLOCKS, `${cols.blocks.length} blocks`)
+  assert.deepEqual([at(cols, 'col0')!.y, at(cols, 'col0')!.lines.length], [LINE_H, 8])
   // No page carries a lower rule: the hint's own box edge is that line, on every screen alike.
   assert.equal(at(page, 'rule2'), undefined)
   assert.equal(listPage(m, NOW).blocks.length, 2)
@@ -402,10 +416,15 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     const catchers = page.blocks.filter((b) => b.capture)
     assert.equal(catchers.length, 1, `${name}: ${catchers.length} catchers`)
     assert.equal(catchers[0].lines.join(''), '', `${name}: the catcher shows nothing`)
-    assert.equal(catchers[0].name, name === 'pane' || name === 'columns' ? 'rule1' : 'gesture', name)
-    // Nothing else sits in the corner catcher's corner.
-    if (catchers[0].name === 'gesture') for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
+    // The unseen square in the corner on every one, the rule never: with the gestures on it the device refused the page.
+    assert.deepEqual([catchers[0].name, catchers[0].x, catchers[0].y, catchers[0].w, catchers[0].h, !!catchers[0].border], ['gesture', 560, 0, 16, 16, false], name)
+    // Nothing else sits in the corner.
+    for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
   }
+  // Three columns leave the corner to the catcher too.
+  const three = splitPage(model([...panes, pane('w/3.0', { title: 'three' })], { selected: [...panes.map((p) => p.address), 'w/3.0'], reading: () => reading }))
+  assert.equal(three.blocks.filter((b) => b.capture).length, 1)
+  for (const b of three.blocks) if (!b.capture) assert.ok(b.y >= 16 || b.x + b.w <= 560, `columns: ${b.name} reaches the corner`)
   for (const page of [answersPage(m, panes[0], [], null, false, null), confirmPage(m, panes[0], answer)]) {
     assert.equal(page.kind, 'list')
     assert.equal(page.blocks.filter((b) => b.capture).length, 0)
