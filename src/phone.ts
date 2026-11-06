@@ -7,7 +7,11 @@ import { checkHubUrl, checkToken, type Pane, paneName } from './protocol.ts'
 import { THEMES, forgetToken, getSettings, refusedQuery, saveSettings, type Settings, type Theme } from './settings.ts'
 import { typed } from './text.ts'
 
-export type Cls = '' | 'ok' | 'bad'
+export type Cls = '' | 'ok' | 'bad' | 'trace'
+
+/** Lines the log keeps: forty, four hundred with the trace switch on. */
+const LOG_LINES = 40
+const TRACE_LINES = 400
 
 const $ = (id: string) => document.getElementById(id)
 
@@ -22,7 +26,8 @@ export function plog(msg: string, cls: Cls = '') {
   const ss = String(t.getSeconds()).padStart(2, '0')
   line.textContent = `${hh}:${mm}:${ss} ${msg}`
   el.prepend(line)
-  while (el.childElementCount > 40) el.lastElementChild?.remove()
+  const keep = getSettings().detail ? TRACE_LINES : LOG_LINES
+  while (el.childElementCount > keep) el.lastElementChild?.remove()
 }
 
 function say(id: string, text: string, cls: Cls = '') {
@@ -52,9 +57,10 @@ export function mountPhone(hooks: PhoneHooks) {
   const charset = $('charset') as HTMLSelectElement | null
   const lens = $('lens') as HTMLInputElement | null
   const voice = $('voice') as HTMLInputElement | null
+  const detail = $('detail') as HTMLInputElement | null
   const theme = $('theme') as HTMLSelectElement | null
   const reply = $('reply') as HTMLTextAreaElement | null
-  if (!hub || !token || !every || !lines || !charset || !lens || !voice || !theme || !reply) return
+  if (!hub || !token || !every || !lines || !charset || !lens || !voice || !detail || !theme || !reply) return
 
   const fill = () => {
     const s = getSettings()
@@ -66,6 +72,7 @@ export function mountPhone(hooks: PhoneHooks) {
     charset.value = s.charset
     lens.checked = s.lens
     voice.checked = s.voice
+    detail.checked = s.detail
     theme.value = s.theme
     applyTheme(s.theme)
     say('conn', s.token ? 'token stored · not tested yet' : 'no token yet', s.token ? '' : 'bad')
@@ -76,7 +83,7 @@ export function mountPhone(hooks: PhoneHooks) {
   $('save')?.addEventListener('click', async () => {
     const u = checkHubUrl(hub.value)
     if ('error' in u) return say('conn', u.error, 'bad')
-    const next: Partial<Settings> = { hub: u.url, every: Number(every.value), lines: Number(lines.value), charset: charset.value === 'utf-8' ? 'utf-8' : 'latin1', lens: lens.checked, voice: voice.checked, theme: THEMES.includes(theme.value as Theme) ? (theme.value as Theme) : 'amber' }
+    const next: Partial<Settings> = { hub: u.url, every: Number(every.value), lines: Number(lines.value), charset: charset.value === 'utf-8' ? 'utf-8' : 'latin1', lens: lens.checked, voice: voice.checked, detail: detail.checked, theme: THEMES.includes(theme.value as Theme) ? (theme.value as Theme) : 'amber' }
     if (token.value.trim()) {
       const t = checkToken(token.value)
       if ('error' in t) return say('conn', t.error, 'bad')
@@ -91,6 +98,28 @@ export function mountPhone(hooks: PhoneHooks) {
     await test()
   })
   $('test')?.addEventListener('click', test)
+  // The log to the clipboard, oldest line first, from the click; the page's own copy command where the WebView has no clipboard API.
+  $('copy')?.addEventListener('click', async () => {
+    const el = $('log')
+    const rows = el ? [...el.children].map((c) => c.textContent ?? '').reverse() : []
+    if (!rows.length) return say('copied', 'nothing to copy', 'bad')
+    const text = rows.join('\n') + '\n'
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.left = '-1000px'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      if (!ok) return say('copied', 'copy failed: select the log by hand', 'bad')
+    }
+    say('copied', `copied ${rows.length} lines`, 'ok')
+  })
   $('forget')?.addEventListener('click', async () => {
     await forgetToken()
     fill()

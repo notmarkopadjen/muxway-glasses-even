@@ -1271,6 +1271,21 @@ def f16(run, name):
 
 
 
+@test("F70", "The trace switch on the glasses' build: a tap on a row and back, the phone pane's log with the draws, their sizes and times", "UI")
+def f70(run, name):
+    core, proxy, sim, tok = setup(run, name, params={"detail": "1"})
+    sim.expect(lambda p: listed(p) and len(rows(p)) == 1, "the list", 20)
+    sim.pick(0)
+    sim.expect(titled("test-pane"), "the pane", 10)
+    sim.web("phone-trace-pane")
+    sim.back()
+    sim.expect(listed, "the list again", 10)
+    sim.web("phone-trace-list")
+    # The phone pane is read by its screenshot alone here: the simulator's automation reads the console and the
+    # glasses, not the WebView's page. The lines themselves are the unit test's; nothing of the token in any log.
+    check(not any(tok in e["message"] for e in sim.console()), "the token in the console")
+
+
 # --- the parity pass of 2026-11-04: messages, mail, the list and the pane page ----------------
 
 def menu_labels(sim):

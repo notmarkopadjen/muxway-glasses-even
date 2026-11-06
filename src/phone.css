@@ -18,5 +18,5 @@ button:active { background: var(--fg); color: var(--bg); }
 .ok { color: var(--fg); } .bad { color: var(--bad); }
 .row { display: flex; gap: 12px; } .row > div { flex: 1; }
 label.check { display: flex; align-items: center; gap: 8px; } label.check input { width: auto; }
-#log { max-height: 220px; overflow: auto; color: var(--dim); } #log .ok { color: var(--fg); } #log .bad { color: var(--bad); }
+#log { max-height: 220px; overflow: auto; color: var(--dim); } #log .ok { color: var(--fg); } #log .bad { color: var(--bad); } #log .trace { opacity: 0.7; }
 .hint { color: var(--dim); }

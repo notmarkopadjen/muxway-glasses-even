@@ -26,6 +26,7 @@
         </div>
         <label class="check"><input id="lens" type="checkbox" /> Claude Code lens</label>
         <label class="check"><input id="voice" type="checkbox" /> Spoken replies (needs a transcriber on the hub)</label>
+        <label class="check"><input id="detail" type="checkbox" /> trace (more log lines: every draw, its size and time)</label>
         <label for="theme">theme</label>
         <select id="theme"><option value="amber">amber</option><option value="green">green</option><option value="paper">paper</option></select>
         <button id="save">save &amp; test</button>
@@ -56,6 +57,8 @@
       <div class="box">
         <h2>log</h2>
         <div id="log" class="status"></div>
+        <button id="copy">copy</button>
+        <div id="copied" class="status"></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
