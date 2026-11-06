@@ -140,4 +140,8 @@ fill that throws cannot leave a picture counted as on the glasses.
 
 ## Test run
 
-Pending.
+Run 20261106-171108-5f665fa, local, against the core's main, on the
+pull request's commit: S30, F10, F11, F13, F15, F42, F32, F33 and F62
+passed with the secret scan, none failed; the unit suite (86) passed,
+the three glasses tests among them. The owner's device check (test 6)
+is recorded here when it is done.
