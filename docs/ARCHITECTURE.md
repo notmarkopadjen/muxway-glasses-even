@@ -111,12 +111,16 @@ the whole design:
 - the container that takes the gestures scrolls its text on a scroll,
   however little room it has (the hint moved with every scroll on the
   device, 2026-11-03, boxed to one line or not), so on a page without
-  an OS list a block with nothing to show takes them: an unseen 16 px
-  square in the top right corner, on every such page; the rule under a
-  title took them from 2026-11-03 to 2026-11-06, when the device was
-  found refusing the pane and the columns for it (#41's symptom again,
+  an OS list a block with nothing to show takes them: an unseen block of
+  16 × 28 px in the top right corner, on every such page, as tall as its
+  one blank line, since the device reports a scroll only when the text
+  it scrolls is at an edge and a shorter box leaves room for a silent
+  one (the first scroll in a new direction was lost on the device,
+  2026-11-06, with a 16 px square); the rule under a title took them
+  from 2026-11-03 to 2026-11-06, when the device was found refusing the
+  pane and the columns for it (#41's symptom again,
   `rebuildPageContainer refused` on every move to them, while the list
-  with the corner square drew at once), so a bordered block two pixels
+  with the corner block drew at once), so a bordered block two pixels
   high is a line only; the hint is a box with exactly one line inside,
   the banner's shape, and its top edge is the rule above the footer on
   every page;

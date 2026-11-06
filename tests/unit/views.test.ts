@@ -413,15 +413,16 @@ test('the catcher: on every page without an OS list exactly one block with nothi
     const catchers = page.blocks.filter((b) => b.capture)
     assert.equal(catchers.length, 1, `${name}: ${catchers.length} catchers`)
     assert.equal(catchers[0].lines.join(''), '', `${name}: the catcher shows nothing`)
-    // The unseen square in the corner on every one, the rule never: with the gestures on it the device refused the page.
-    assert.deepEqual([catchers[0].name, catchers[0].x, catchers[0].y, catchers[0].w, catchers[0].h, !!catchers[0].border], ['gesture', 560, 0, 16, 16, false], name)
+    // The unseen block in the corner on every one, the rule never: with the gestures on it the device refused the page.
+    // One blank line tall, so the device has nothing to scroll and reports every scroll; the corner is its alone.
+    assert.deepEqual([catchers[0].name, catchers[0].x, catchers[0].y, catchers[0].w, catchers[0].h, !!catchers[0].border], ['gesture', 560, 0, 16, LINE_H, false], name)
     // Nothing else sits in the corner.
-    for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= 16 || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
+    for (const b of page.blocks) if (b !== catchers[0]) assert.ok(b.y >= LINE_H || b.x + b.w <= 560, `${name}: ${b.name} reaches the corner`)
   }
   // Three columns leave the corner to the catcher too.
   const three = splitPage(model([...panes, pane('w/3.0', { title: 'three' })], { selected: [...panes.map((p) => p.address), 'w/3.0'], reading: () => reading }))
   assert.equal(three.blocks.filter((b) => b.capture).length, 1)
-  for (const b of three.blocks) if (!b.capture) assert.ok(b.y >= 16 || b.x + b.w <= 560, `columns: ${b.name} reaches the corner`)
+  for (const b of three.blocks) if (!b.capture) assert.ok(b.y >= LINE_H || b.x + b.w <= 560, `columns: ${b.name} reaches the corner`)
   for (const page of [answersPage(m, panes[0], [], null, false, null), confirmPage(m, panes[0], answer)]) {
     assert.equal(page.kind, 'list')
     assert.equal(page.blocks.filter((b) => b.capture).length, 0)

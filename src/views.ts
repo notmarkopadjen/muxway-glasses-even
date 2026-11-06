@@ -97,8 +97,10 @@ const STATE_W = CANVAS_W - TITLE_W - 8 - CATCH - 4
 const ROW_W = CANVAS_W - CATCH - 6
 /** What a block shows of a line: its width less the text's margin. */
 const INNER = 4
+/** The catcher is as tall as its one blank line: the device reports a scroll only when the text it scrolls is at an
+ * edge, and a shorter box leaves room for a silent one (seen 2026-11-06: the first scroll in a new direction was lost). */
 function catcher(): Block {
-  return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: CATCH, lines: [''], level: 0, capture: true }
+  return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: LINE_H, lines: [''], level: 0, capture: true }
 }
 
 export function needs(p: Pane): boolean {
