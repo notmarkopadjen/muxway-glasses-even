@@ -144,7 +144,9 @@ export class App {
   constructor(bridge: EvenAppBridge, log: (m: string, cls?: '' | 'ok' | 'bad' | 'trace') => void, trace: ((p: Page) => void) | null) {
     this.bridge = bridge
     this.log = log
-    this.view = new Glasses(bridge, (m) => log('glasses: ' + m), trace, (m) => this.detail('glasses: ' + m))
+    this.view = new Glasses(bridge, (m) => log('glasses: ' + m), trace, (m) => {
+      if (getSettings().detail) this.detail('glasses: ' + m())
+    })
     this.recorder = new Recorder(bridge)
     this.unsubscribe = bridge.onEvenHubEvent((e) => void this.onEvent(e))
   }

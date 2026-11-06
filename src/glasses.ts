@@ -133,8 +133,9 @@ function kb(o: unknown): string {
 export class Glasses {
   private bridge: EvenAppBridge
   private log: (m: string) => void
-  /** The trace: every bridge call with its size and time, why a rebuild, when a retry; nothing while the switch is off. */
-  private detail: (m: string) => void
+  /** The trace: every bridge call with its size and time, why a rebuild, when a retry. The line is built only when
+   * the switch is on, so a page costs nothing more while it is off. */
+  private detail: (m: () => string) => void
   private trace: ((p: Page) => void) | null
   private created = false
   private dirty = false
@@ -148,7 +149,7 @@ export class Glasses {
   private pushed = new Map<number, string>()
   private gen = 0
 
-  constructor(bridge: EvenAppBridge, log: (m: string) => void, trace: ((p: Page) => void) | null, detail: (m: string) => void = () => {}) {
+  constructor(bridge: EvenAppBridge, log: (m: string) => void, trace: ((p: Page) => void) | null, detail: (m: () => string) => void = () => {}) {
     this.bridge = bridge
     this.log = log
     this.trace = trace
@@ -285,7 +286,7 @@ export class Glasses {
   private async apply(p: Page, gen: number): Promise<void> {
     this.trace?.({ ...p, items: p.items.map(listRow), charts: p.charts.map((c) => ({ ...c, bitmap: null })) })
     if (!this.created || this.dirty || geometry(p) !== geometry(this.last)) {
-      this.detail(!this.created ? 'create: the first page' : this.dirty ? 'rebuild: the last one was refused' : 'rebuild: ' + this.changed(p) + ' changed')
+      this.detail(() => (!this.created ? 'create: the first page' : this.dirty ? 'rebuild: the last one was refused' : 'rebuild: ' + this.changed(p) + ' changed'))
       return this.draw(p, gen)
     }
     const prev = this.last
@@ -308,7 +309,7 @@ export class Glasses {
     const t0 = Date.now()
     if (!this.created) {
       const r = await this.bridge.createStartUpPageContainer(new CreateStartUpPageContainer(payload))
-      this.detail(`create ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${r === 0 ? 'ok' : 'code ' + r}`)
+      this.detail(() => `create ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${r === 0 ? 'ok' : 'code ' + r}`)
       this.created = true
       this.dirty = r !== 0
       if (r !== 0) this.log('createStartUpPageContainer: ' + r)
@@ -316,7 +317,7 @@ export class Glasses {
       return
     }
     const ok = await this.bridge.rebuildPageContainer(new RebuildPageContainer(payload))
-    this.detail(`rebuild ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${ok ? 'ok' : 'refused'}`)
+    this.detail(() => `rebuild ${payload.containerTotalNum} containers · ${kb(payload)} · ${Date.now() - t0} ms · ${ok ? 'ok' : 'refused'}`)
     // The OS refuses a rebuild while its own menu is on top, which is what
     // happens when a menu entry changes the page: try again when it is gone.
     this.dirty = !ok
@@ -327,7 +328,7 @@ export class Glasses {
     }
     // Also refused for a page the firmware will never take, so the retries slow down.
     this.log('rebuildPageContainer refused')
-    this.detail(`retry in ${this.retryMs} ms`)
+    this.detail(() => `retry in ${this.retryMs} ms`)
     if (this.retry) clearTimeout(this.retry)
     this.retry = setTimeout(() => {
       this.retry = null
@@ -348,8 +349,9 @@ export class Glasses {
       const c = charts[i]
       if (!c.bitmap || this.pushed.get(ID_CHART0 + i) === c.key) continue
       const t1 = Date.now()
+      const size = c.bitmap.bytes
       const r = await this.bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: ID_CHART0 + i, containerName: 'c' + i, imageData: c.bitmap.data() }))
-      this.detail(`picture c${i} · ${Math.round(c.bitmap.bytes / 1024)} KB · ${Date.now() - t1} ms · ${ImageRawDataUpdateResult.isSuccess(r) ? 'ok' : r}`)
+      this.detail(() => `picture c${i} · ${Math.round(size / 1024)} KB · ${Date.now() - t1} ms · ${ImageRawDataUpdateResult.isSuccess(r) ? 'ok' : r}`)
       n++
       bytes += c.bitmap.bytes
       if (ImageRawDataUpdateResult.isSuccess(r)) this.pushed.set(ID_CHART0 + i, c.key)
@@ -362,7 +364,7 @@ export class Glasses {
     const u = new TextContainerUpgrade({ containerID: id, containerName: name, content, ...(textColor === undefined ? {} : { textColor: level(textColor) }) })
     const t0 = Date.now()
     await this.bridge.textContainerUpgrade(u)
-    this.detail(`upgrade ${name} · ${kb(u)} · ${Date.now() - t0} ms`)
+    this.detail(() => `upgrade ${name} · ${kb(u)} · ${Date.now() - t0} ms`)
   }
 }
 
