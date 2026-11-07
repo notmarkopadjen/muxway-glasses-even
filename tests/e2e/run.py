@@ -1271,6 +1271,21 @@ def f16(run, name):
 
 
 
+@test("F70", "The trace switch on the glasses' build: a tap on a row and back, the phone pane's log with the draws, their sizes and times", "UI")
+def f70(run, name):
+    core, proxy, sim, tok = setup(run, name, params={"detail": "1"})
+    sim.expect(lambda p: listed(p) and len(rows(p)) == 1, "the list", 20)
+    sim.pick(0)
+    sim.expect(titled("test-pane"), "the pane", 10)
+    sim.web("phone-trace-pane")
+    sim.back()
+    sim.expect(listed, "the list again", 10)
+    sim.web("phone-trace-list")
+    # The phone pane is read by its screenshot alone here: the simulator's automation reads the console and the
+    # glasses, not the WebView's page. The lines themselves are the unit test's; nothing of the token in any log.
+    check(not any(tok in e["message"] for e in sim.console()), "the token in the console")
+
+
 # --- the parity pass of 2026-11-04: messages, mail, the list and the pane page ----------------
 
 def menu_labels(sim):
@@ -1478,7 +1493,25 @@ def s64(run, name):
     wait_for("test-pane quiet", lambda: rows(sim.last())[0] == "◌ Codex · test-pane · quiet", 30)
     check(not any(p.get("hintBorder") for p in sim.trace()), "a toast from the recent events")
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(sim.last())), "control characters reached the page")
+    # The recent events were read once for the cursor, then the poll went on from it.
+    recent = proxy.paths("/v1/events?limit=50")
+    check(len(recent) <= 2, f"{len(recent)} reads of the recent events: the poll does not go on from the cursor")
+    check(len(proxy.paths("/v1/events?after=49")) >= 1, "the poll did not go on from the cursor the recent events gave")
     sim.shot("recent-working")
+
+
+@test("S65", "An oversized recent answer, over the 256 KiB cap: cut and unread, it sets nothing working and no toast, and the app asks again after the wait of a failed poll, never at once", "e2e-security")
+def s65(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="recent-huge", says="codex", before=lambda c: c.new_window("build"))
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "the list", 30)
+    # Nothing is working from an answer that could not be read; a fresh pane's own moving screen settles within ten seconds.
+    wait_for("both panes quiet", lambda: all(r.endswith("quiet") or "· quiet " in r for r in rows(sim.last())), 30)
+    time.sleep(6)
+    recent = proxy.paths("/v1/events?limit=50")
+    check(1 <= len(recent) <= 4, f"{len(recent)} reads of the recent events: the app spins on an answer it cannot read")
+    check(not any(p.get("hintBorder") for p in sim.trace()), "a toast from the recent events")
+    check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
+    sim.shot("recent-huge")
 
 
 @test("F60", "Messages: a write and a mail between panes make the row with the count; the page oldest first with the newest in view, the mail entry; the count cleared; a tap on a typed entry lays the two side by side", "UI")

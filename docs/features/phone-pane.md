@@ -19,6 +19,7 @@ Setting the hub and the token here is the last step of the
 | Claude Code lens | on by default; see [lenses](lenses.md) |
 | Spoken replies | on by default; offered on the glasses when the hub has a transcriber; see [spoken replies](spoken-replies.md) |
 | theme | amber (the default, as on every client), green or paper: the core's tokens (`docs/ui-guideline.md` §1.5) for the phone pane; the glasses are four greys and have no theme. The select applies at once; save keeps it |
+| trace | off by default; on, the log keeps what the app did with every gesture and timer (below), four hundred lines instead of forty. Saved with the rest; takes effect on save |
 
 **save & test** checks the URL and the token, stores them and calls
 `GET /v1/me`; the status line says how long the hub took, the token's
@@ -54,6 +55,23 @@ The last forty lines of what the app did: status codes, byte counts and
 timings (`GET pane 304 0 chars 80 ms`, `event permission on build`),
 what failed and in which words. Never a token, never pane content, never
 an event's text.
+
+With **trace** on, four hundred lines, and dimmer ones for what the app
+did in between, which is what a lag or a refused page is chased with:
+
+| line | meaning |
+|---|---|
+| `glasses: rebuild 5 containers · 1.4 KB · 280 ms · ok` (or `refused`), `glasses: create …`, `glasses: upgrade b0 · 212 B · 95 ms`, `glasses: picture c0 · 34 KB · 1200 ms · ok` | every call to the Even app's bridge: the JSON bytes handed to it and the time to its answer |
+| `glasses: rebuild: menu changed`, `glasses: rebuild: the last one was refused`, `glasses: retry in 1000 ms` | why a page was rebuilt rather than upgraded in place (kind, items, blocks, charts or menu), and when a refused one is tried again |
+| `view: list → pane build (2)`, `view: pane build → list (1) · back`, `… · home`, `… · settings saved` | every move between pages, with the stack's depth |
+| `draw pane · 290 ms`, `draw answers (OS list) · 120 ms` | every redraw, from the request to the bridge's answer |
+| `spin on`, `spin off`, `tick: 1 draw still in flight` | the working mark's once-a-second timer, and a tick that found the last draw unanswered |
+| `wake`, `sleep`, `read now`, `read in 3 s`, `list now`, `list in 10 s`, `toast done on build`, `clear in 10 s` | the timers set and the events shown, by kind and pane name, never the text |
+
+**copy** puts the whole log on the clipboard, oldest line first, and
+says `copied 212 lines`; where the WebView has no clipboard API the
+page's own copy command is used, and if that fails too the status says
+to select the log by hand.
 
 ## Security considerations
 
