@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { agentOf, type Mail, type Pane, type Talk } from '../../src/protocol.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H } from '../../src/glasses.ts'
 import { choiceAnswer } from '../../src/answers.ts'
-import { INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, endName, heardPage, hostLine, involves, listedHosts, mailBackTo, mailEntries, mailLayout, mailPage, messagesLayout, messagesPage, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, underRows, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, placeWord, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
+import { DESK, INBOX_ROWS, LIST_ROWS, MENU, OFFER_BYTES, answersPage, askPage, canClose, canPark, closeQuestion, confirmPage, defaultSession, deskPane, endName, heardPage, hostLine, involves, listedHosts, mailBackTo, mailEntries, mailLayout, mailPage, messagesLayout, messagesPage, paneMenu, partnerOf, sessionName, sessionPage, splitDirection, underRows, inboxLabel, inboxLayout, inboxPage, inboxWindow, isWorking, listLayout, listPage, listWindow, listenPage, markOf, moreAnswersPage, neighbour, noticeRow, offerOf, offerPage, panePage, placeWord, rowLabel, selectedPanes, sorted, splitPage, stateWord, titleOf, turning, waiting, type Model } from '../../src/views.ts'
 import { groupsOf } from '../../src/groups.ts'
 import { textWidth } from '../../src/text.ts'
 
@@ -39,6 +39,7 @@ function model(panes: Pane[], extra: Partial<Model> = {}): Model {
     inboxStart: 0,
     feed: false,
     unseen: 0,
+    desk: null,
     reading: () => undefined,
     ...extra,
   }
@@ -660,4 +661,41 @@ test('the mail page: what came in from the mailbox, what went out from the feed,
   assert.deepEqual(mailPage(m, { ...build, writable: false }, box, feed, 0, 0, NOW).menu.map((e) => e.label), ['Messages with build'])
   assert.deepEqual(mailPage(m, build, null, feed, 0, 0, NOW).blocks[0].lines[0], '  reading the mail…')
   assert.deepEqual(mailLayout(m, [], NOW).items, ['no mail'])
+})
+
+test('the selection holds panes by key: a pane with an id is held at any address, a pane without one by its address', () => {
+  const second = pane('work/0.1', { id: '%2', title: 'second', command: 'bash' })
+  const third = pane('work/0.2', { title: 'third', command: 'bash' })
+  const m = model([pane('work/0.0', { id: '%1', command: 'bash' }), second, third], { selected: ['alice-laptop:%2', 'alice-laptop/work/0.2'] })
+  assert.deepEqual(selectedPanes(m).map((p) => p.title), ['second', 'third'])
+  // The host renumbered: second is work/0.0 and a new pane %4 sits at work/0.1; third, without an id, is matched where its address is.
+  const moved = model([{ ...second, address: 'alice-laptop/work/0.0', path: 'work/0.0' }, pane('work/0.1', { id: '%4', title: 'stranger', command: 'bash' }), third], { selected: m.selected })
+  assert.deepEqual(selectedPanes(moved).map((p) => p.title), ['second', 'third'])
+  const reads: string[] = []
+  splitPage({ ...moved, reading: (p) => (reads.push(p.address), undefined) }, NOW)
+  assert.deepEqual(reads, ['alice-laptop/work/0.0', 'alice-laptop/work/0.2'], 'the columns read their panes where they are now')
+})
+
+test('the desk: the focused pane as the listing has it, else the first of its panes the listing has; a window desk its focused pane, else the window\'s first; nothing to open when none is listed; no row without a desk', () => {
+  const panes = sorted([pane('work/0.0', { title: 'one', alias: 'one' }), pane('work/1.0', { title: 'two', alias: 'two' }), pane('work/1.1', { title: 'three', alias: 'three' })])
+  const addr = (p: string) => 'alice-laptop/' + p
+  assert.equal(deskPane(null, panes), null)
+  assert.equal(deskPane({ view: 'panes', panes: [], focused: '', window: '' }, panes), null, 'the hub before any write: no row')
+  assert.equal(deskPane({ view: 'panes', panes: [addr('work/0.0'), addr('work/1.1')], focused: addr('work/1.1'), window: '' }, panes)?.pane?.alias, 'three')
+  assert.equal(deskPane({ view: 'panes', panes: [addr('work/9.0'), addr('work/1.0')], focused: addr('work/9.0'), window: '' }, panes)?.pane?.alias, 'two', 'the focused pane not listed: the first that is')
+  assert.deepEqual(deskPane({ view: 'panes', panes: ['bob-desktop/work/0.0'], focused: '', window: '' }, panes), { pane: null }, 'none listed: nothing to open')
+  assert.equal(deskPane({ view: 'window', panes: [], focused: addr('work/1.1'), window: addr('work/1') }, panes)?.pane?.alias, 'three')
+  assert.equal(deskPane({ view: 'window', panes: [], focused: '', window: addr('work/1') }, panes)?.pane?.alias, 'two', 'no focus: the window\'s first')
+  assert.deepEqual(deskPane({ view: 'window', panes: [], focused: '', window: addr('work/7') }, panes), { pane: null })
+  assert.equal(deskPane({ view: 'window', panes: [], focused: '', window: '' }, panes), null, 'a window desk without a window is none')
+  // The row: first, before the inbox, named by the pane; no box in selection mode.
+  const waiting = { ...panes[0], attention: 'done' as const, attentionAt: NOW - 5 }
+  let l = listLayout(model([waiting, panes[1], panes[2]], { desk: { pane: panes[2] } }), NOW)
+  assert.deepEqual(l.what.map((w) => w.kind), ['desk', 'inbox', 'host', 'pane', 'pane', 'pane'])
+  assert.equal(l.items[0], DESK + ' · three')
+  l = listLayout(model(panes, { desk: { pane: null }, selecting: true }), NOW)
+  assert.equal(l.items[0], DESK + ' · nothing to open')
+  assert.deepEqual(l.what.map((w) => w.kind), ['desk', 'host', 'pane', 'pane', 'pane', 'clear'])
+  l = listLayout(model(panes), NOW)
+  assert.deepEqual(l.what.map((w) => w.kind), ['host', 'pane', 'pane', 'pane'])
 })

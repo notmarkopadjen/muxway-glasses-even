@@ -103,6 +103,17 @@ export interface Mail {
   replied: boolean
 }
 
+/** The desk: the view the owner's clients share, as the hub keeps it; read here, never written. */
+export interface Desk {
+  view: 'panes' | 'window'
+  /** The panes open as tiles, at most four, by address; empty for a window desk. */
+  panes: string[]
+  /** The focused pane's address, or none. */
+  focused: string
+  /** The window the window view shows, host/session/window, or none. */
+  window: string
+}
+
 export interface Event {
   seq: number
   at: number
@@ -132,6 +143,7 @@ const MAX_MAILBOX = 50
 const MAX_MAIL_TEXT = 4000
 const MAX_ACTOR = 32
 const PANE_ID = /^%[0-9]{1,9}$/
+const MAX_DESK = 4
 const TALK_KINDS = ['text', 'key', 'answer', 'mail'] as const
 
 // The harnesses every client names, by command, and under an interpreter by their name in the title.
@@ -163,6 +175,11 @@ export function agentOf(command: string, title: string): Agent | '' {
 export function agentName(agent: Agent): string {
   if (agent === 'claude') return 'Claude'
   return AGENTS.find((a) => a[0] === agent)?.[1] ?? agent
+}
+
+/** What a pane is known by on the app: its host and id when the listing gave an id (an address is a position, and the host renumbers panes when one closes; ids are tmux's, one host's), else its address. */
+export function paneKey(p: Pick<Pane, 'host' | 'id' | 'address'>): string {
+  return p.id ? `${p.host}:${p.id}` : p.address
 }
 
 /** The program named for a person: the harness, else the command. */
@@ -420,28 +437,63 @@ export function folder(p: Pick<Pane, 'cwd'>): string {
 }
 
 /** The hub's JSON events, oldest first, and the cursor. */
-export function parseEvents(body: string): { events: Event[]; next: number | null } {
+/** The hub's events: the notifications, the cursor, and whether a `desk` event (it names no pane: the desk changed) was among them. */
+export function parseEvents(body: string): { events: Event[]; next: number | null; desk: boolean } {
   let raw: unknown
   try {
     raw = JSON.parse(body)
   } catch {
-    return { events: [], next: null }
+    return { events: [], next: null, desk: false }
   }
   const o = (raw ?? {}) as Record<string, unknown>
   const next = typeof o.next === 'number' && Number.isInteger(o.next) && o.next >= 0 ? o.next : null
   const events: Event[] = []
+  let desk = false
   if (Array.isArray(o.events)) {
     for (const item of o.events.slice(0, 100)) {
       if (!item || typeof item !== 'object') continue
       const e = item as Record<string, unknown>
       const kind = e.kind
+      if (kind === 'desk') {
+        desk = true
+        continue
+      }
       if (typeof e.seq !== 'number' || !address(e.address) || typeof kind !== 'string') continue
       if (!(ATTENTION as readonly string[]).includes(kind) && kind !== 'working') continue
       const choices = kind === 'question' ? parseChoices(e.choices) : []
       events.push({ seq: e.seq, at: typeof e.at === 'number' ? e.at : 0, address: e.address as string, kind: kind as EventKind, text: str(e.text, 200), choices })
     }
   }
-  return { events, next }
+  return { events, next, desk }
+}
+
+/** A window's address, host/session/window, by the grammar. */
+function windowAddress(s: unknown): boolean {
+  if (typeof s !== 'string' || s.length > 200) return false
+  const parts = s.split('/')
+  return parts.length === 3 && HOST.test(parts[0]) && NAME.test(parts[1]) && INDEX.test(parts[2])
+}
+
+/** The desk as the hub answers GET /v1/desk: the view, the first four distinct panes by the grammar, the focused pane and the window when they pass it; anything else is no desk. */
+export function parseDesk(body: string): Desk | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(body)
+  } catch {
+    return null
+  }
+  const d = (raw as Record<string, unknown>)?.desk
+  if (!d || typeof d !== 'object') return null
+  const o = d as Record<string, unknown>
+  if (o.view !== 'panes' && o.view !== 'window') return null
+  const panes: string[] = []
+  if (Array.isArray(o.panes)) {
+    for (const a of o.panes) {
+      if (panes.length >= MAX_DESK) break
+      if (address(a) && !panes.includes(a as string)) panes.push(a as string)
+    }
+  }
+  return { view: o.view, panes, focused: address(o.focused) ? (o.focused as string) : '', window: windowAddress(o.window) ? (o.window as string) : '' }
 }
 
 /** The hub's URL as the app will use it, or why it is refused. */

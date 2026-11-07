@@ -7,7 +7,7 @@ import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
 import { commandsFor } from './commands.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneName, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
+import { paneKey, paneName, parseDesk, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Desk, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -24,8 +24,8 @@ type View =
   | { kind: 'offer'; pane: Pane; answer: Answer }
   | { kind: 'listen'; target: VoiceTarget }
   | { kind: 'heard'; target: VoiceTarget }
-  /** Cancel / Confirm for what is not an answer; Confirm runs the act. */
-  | { kind: 'ask'; question: string; act: () => Promise<void> }
+  /** Cancel / Confirm for what is not an answer; Confirm runs the act. The pane it is about, when it is, so the question goes with the pane. */
+  | { kind: 'ask'; question: string; act: () => Promise<void>; pane?: Pane }
   /** The name for a new session on the host. */
   | { kind: 'session'; host: Host; dflt: string }
   /** The feed, whole or one pane's exchanges. */
@@ -84,16 +84,20 @@ export class App {
   private seenSeq = 0
   /** The hub answered 404 to the feed: an older hub, asked once. */
   private noFeed = false
+  /** The desk as last read with the listing, its ETag, and whether the hub has none (404, asked once). Read, never written. */
+  private desk: Desk | null = null
+  private deskEtag = ''
+  private noDesk = false
   private listError: string | null = null
   private listBusy = false
   private listTimer: ReturnType<typeof setTimeout> | null = null
-  /** What was read of each pane, by address; the pages wrap it to their width. */
+  /** What was read of each pane, by key (paneKey: the host and the id, so a reader is one pane's whatever its address); the pages wrap it to their width. */
   private readers = new Map<string, V.Reader & { etag: string }>()
   private readBusy = false
   private readTimer: ReturnType<typeof setTimeout> | null = null
   private offset = 0
   private reveal = false
-  /** The panes held on the list, by address, at most three. */
+  /** The panes held on the list, by key, at most three. */
   private selected: string[] = []
   /** Selection mode on the list: a tap selects the row under the cursor instead of opening it. */
   private selecting = false
@@ -169,6 +173,9 @@ export class App {
     this.listError = null
     this.readers.clear()
     this.loaded = false
+    this.desk = null
+    this.deskEtag = ''
+    this.noDesk = false
     this.selected = []
     this.selecting = false
     this.marked = -1
@@ -261,12 +268,13 @@ export class App {
         }
         p.working = this.working.has(p.address)
       }
-      await Promise.all([this.readInbox(), this.readFeed(), this.readMailbox()])
+      await Promise.all([this.readInbox(), this.readFeed(), this.readMailbox(), this.readDesk()])
       this.listError = null
       this.loaded = true
       this.stopDots()
-      // A pane that left the listing leaves the selection too.
-      this.selected = this.selected.filter((addr) => this.panes.some((p) => p.address === addr))
+      // A pane that left the listing leaves the selection too; one that moved is followed, by its key.
+      this.selected = this.selected.filter((key) => this.panes.some((p) => paneKey(p) === key))
+      this.reconcile()
       this.log(`GET panes ${a.status} ${this.panes.length} panes ${Date.now() - t0} ms`)
       if (!this.probed) {
         this.probed = true
@@ -348,7 +356,7 @@ export class App {
     const t0 = Date.now()
     try {
       for (const p of panes) {
-        const r = this.readers.get(p.address) ?? { raw: [], error: null, etag: '' }
+        const r = this.readers.get(paneKey(p)) ?? { raw: [], error: null, etag: '' }
         try {
           const a = await api.pane(p.address, r.etag)
           if (a.status !== 304) {
@@ -360,8 +368,11 @@ export class App {
         } catch (e) {
           r.error = await this.failed(e, 'GET pane')
           if (!this.foreground) return
+          // No pane at the address while the listing names one there: the window changed since. The listing says
+          // where the pane is now, or that it is gone; a listing that does not name it has said its word already.
+          if (e instanceof ApiError && e.status === 404 && this.panes.some((x) => paneKey(x) === paneKey(p))) this.scheduleList(0)
         }
-        this.readers.set(p.address, r)
+        this.readers.set(paneKey(p), r)
       }
     } finally {
       this.readBusy = false
@@ -405,6 +416,11 @@ export class App {
           const r = parseEvents(a.body)
           if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
           else this.recent(r.events)
+          // Another client changed the desk: the row follows with the listing, which reads the desk.
+          if (this.cursor !== null && r.desk) {
+            this.log('event desk')
+            this.scheduleList(0)
+          }
           this.cursor = r.next
           // An answer without a cursor, a body cut at the cap or garbled, restarts the poll without one: after
           // the wait of a failed poll, never at once, or a hub that answers that way is asked two hundred times a second.
@@ -647,7 +663,7 @@ export class App {
       return
     }
     if (v.kind !== 'pane') return
-    const { size, total } = V.pageSize(v.pane, this.readers.get(v.pane.address), getSettings().lens, this.reveal)
+    const { size, total } = V.pageSize(v.pane, this.readers.get(paneKey(v.pane)), getSettings().lens, this.reveal)
     const pages = Math.max(1, Math.ceil(total / size))
     const was = this.offset
     if (dir < 0) this.offset = Math.min(pages - 1, this.offset + 1)
@@ -682,6 +698,13 @@ export class App {
           if (this.selecting) await this.toggle(row.pane)
           else await this.openPane(row.pane, false)
           break
+        case 'desk': {
+          if (this.selecting) break
+          const d = V.deskPane(this.desk, this.sorted)
+          if (d?.pane) await this.openPane(d.pane, false)
+          else this.note("the desk's panes are not in the listing")
+          break
+        }
         case 'inbox':
           await this.openInbox()
           break
@@ -743,7 +766,7 @@ export class App {
 
   /** The answers, with a question's choices and Claude's suggestion as they stand now: the confirmation sends these, not a later reading. */
   private async openAnswers(pane: Pane) {
-    const offer = V.offerOf(pane, this.readers.get(pane.address)?.raw ?? [], getSettings().lens)
+    const offer = V.offerOf(pane, this.readers.get(paneKey(pane))?.raw ?? [], getSettings().lens)
     const choices = this.choicesOf(pane).map(choiceAnswer)
     await this.push({ kind: 'answers', pane, choices, offer })
   }
@@ -752,8 +775,8 @@ export class App {
   private choicesOf(pane: Pane): string[] {
     const a = this.attention.get(pane.address)
     if (a?.kind === 'question' && a.choices.length) return a.choices
-    const p = this.panes.find((x) => x.address === pane.address)
-    return p?.attention === 'question' ? p.choices : []
+    const p = this.current(pane)
+    return p.attention === 'question' ? p.choices : []
   }
 
   /** The inbox page over the list, read again as it opens. */
@@ -789,6 +812,23 @@ export class App {
       this.toast = { text: await this.failed(e, 'GET mail'), until: Date.now() + NOTE_MS }
       this.later(NOTE_MS)
       if (this.mailbox === null) this.mailbox = []
+    }
+  }
+
+  /** The desk comes with every listing: the view the owner's clients share, read here and never written; a 304 keeps what was read. */
+  private async readDesk() {
+    if (this.noDesk) return
+    try {
+      const a = await api.desk(this.deskEtag)
+      if (a.status === 304) return
+      this.desk = parseDesk(a.body)
+      this.deskEtag = a.etag
+      this.log(`GET desk ${a.status} ${this.desk ? `${this.desk.view} ${this.desk.panes.length} panes` : 'no desk'}`)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        this.noDesk = true
+        this.log('GET desk: not on this hub')
+      } else await this.failed(e, 'GET desk')
     }
   }
 
@@ -886,12 +926,12 @@ export class App {
 
   /** The pane joins the selection or leaves it, three at most. */
   private async toggle(pane: Pane) {
-    const addr = pane.address
-    if (this.selected.includes(addr)) this.selected = this.selected.filter((a) => a !== addr)
+    const key = paneKey(pane)
+    if (this.selected.includes(key)) this.selected = this.selected.filter((k) => k !== key)
     else if (this.selected.length >= V.MAX_SELECTED) {
       this.toast = { text: `${V.MAX_SELECTED} panes at most · tap one to unselect it`, until: Date.now() + NOTE_MS }
       this.later(NOTE_MS)
-    } else this.selected = this.selected.concat(addr)
+    } else this.selected = this.selected.concat(key)
     this.log(`${paneName(pane)}: ${this.selected.length} selected`)
     await this.redraw()
   }
@@ -914,17 +954,122 @@ export class App {
     this.aim()
   }
 
-  /** The pane as the last listing has it, else as it was opened. */
+  /** The pane as the last listing has it, found by its key (so at its address now, after a renumber), else as it was opened. */
   private current(pane: Pane): Pane {
-    return this.panes.find((x) => x.address === pane.address) ?? pane
+    const key = paneKey(pane)
+    return this.panes.find((x) => paneKey(x) === key) ?? pane
+  }
+
+  /** The pane a view is about, for the follow and the word when it is gone; none for the list, the inbox, the columns, the whole feed and a session's name. */
+  private viewPane(v: View): Pane | undefined {
+    switch (v.kind) {
+      case 'pane':
+      case 'answers':
+      case 'more':
+      case 'confirm':
+      case 'offer':
+      case 'mail':
+      case 'ask':
+        return v.pane
+      case 'messages':
+        return v.about ?? undefined
+      case 'listen':
+      case 'heard':
+        return v.target.kind === 'session' ? undefined : v.target.pane
+      default:
+        return undefined
+    }
+  }
+
+  /** The view with its pane as the listing has it now, after a follow. */
+  private withPane(v: View, q: Pane): View {
+    switch (v.kind) {
+      case 'pane':
+      case 'answers':
+      case 'more':
+      case 'confirm':
+      case 'offer':
+      case 'mail':
+      case 'ask':
+        return { ...v, pane: q }
+      case 'messages':
+        return { ...v, about: q }
+      case 'listen':
+      case 'heard': {
+        const t = v.target
+        if (t.kind === 'session') return v
+        return { ...v, target: t.kind === 'mail' ? { ...t, pane: q, to: paneKey(t.to) === paneKey(q) ? q : t.to } : { ...t, pane: q } }
+      }
+      default:
+        return v
+    }
+  }
+
+  /**
+   * After a listing, the panes the pages hold are found by key. One the host moved (it renumbers when a pane
+   * closes) is followed: the pages keep it at its new address, and what was read at the old one is dropped,
+   * since after the renumber those rows may be another pane's. One that is gone while its host is there closes
+   * its pages with a word; a pane whose host is away stays, and the reads say so.
+   */
+  private reconcile() {
+    const hostThere = (p: Pane) => this.hosts.some((h) => h.name === p.host && h.online) || this.panes.some((x) => x.host === p.host)
+    let followed = false
+    let gone: Pane | undefined
+    for (let i = 1; i < this.stack.length; i++) {
+      const held = this.viewPane(this.stack[i])
+      if (!held?.id) continue
+      const key = paneKey(held)
+      const now = this.panes.find((x) => paneKey(x) === key)
+      if (!now) {
+        if (hostThere(held)) gone = held
+        continue
+      }
+      if (now.address === held.address) continue
+      const r = this.readers.get(key)
+      if (r) {
+        r.raw = []
+        r.etag = ''
+        r.error = null
+      }
+      for (let j = 1; j < this.stack.length; j++) {
+        const held2 = this.viewPane(this.stack[j])
+        if (held2 && paneKey(held2) === key) this.stack[j] = this.withPane(this.stack[j], now)
+      }
+      this.log(`followed ${paneName(now)} to ${now.path}`)
+      followed = true
+    }
+    if (gone) {
+      const key = paneKey(gone)
+      const about = (v: View) => {
+        const p = this.viewPane(v)
+        return !!p && paneKey(p) === key
+      }
+      // Every page about the pane, from the top; the page under them comes back.
+      while (this.stack.length > 1 && about(this.top)) {
+        const left = this.stack.pop()!
+        if (left.kind === 'listen' || left.kind === 'heard') void this.endVoice()
+        if (left.kind === 'pane') {
+          this.offset = 0
+          this.reveal = false
+        }
+      }
+      this.detail(`view: pane ${paneName(gone)} → ${this.viewName(this.top)} (${this.stack.length}) · gone`)
+      this.log(`${paneName(gone)} is gone`)
+      this.toast = { text: `${paneName(gone)} is gone`, until: Date.now() + NOTE_MS }
+      this.later(NOTE_MS)
+      this.scheduleRead(0)
+    }
+    if (followed || gone) this.aim()
   }
 
   /** Parks the open pane for later, or wakes it; the host keeps the mark and every client sees it. */
-  private async park(pane: Pane, on: boolean) {
+  private async park(held: Pane, on: boolean) {
+    const pane = this.current(held)
     let words = on ? 'parked' : 'woken'
     try {
       await api.later(pane.address, on)
-      pane.later = on
+      // The listing's pane and the one the page holds (an inbox entry, say) both show it before the next listing.
+      pane.later = held.later = on
       this.log(`${words} ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST later')
@@ -999,11 +1144,11 @@ export class App {
       case V.MENU.close:
         if (v.kind === 'pane') {
           const p = this.current(v.pane)
-          if (V.canClose({ hosts: this.hosts }, p)) await this.push({ kind: 'ask', question: V.closeQuestion(p), act: () => this.close(p) })
+          if (V.canClose({ hosts: this.hosts }, p)) await this.push({ kind: 'ask', question: V.closeQuestion(p), act: () => this.close(p), pane: p })
         }
         break
       case V.MENU.split:
-        if (v.kind === 'pane' && v.pane.writable) await this.push({ kind: 'ask', question: `one more pane beside ${paneName(v.pane)}?`, act: () => this.split(this.current(v.pane)) })
+        if (v.kind === 'pane' && v.pane.writable) await this.push({ kind: 'ask', question: `one more pane beside ${paneName(v.pane)}?`, act: () => this.split(v.pane), pane: v.pane })
         break
     }
   }
@@ -1072,18 +1217,20 @@ export class App {
     const t = typed(text).slice(0, 4000)
     if (!t) return 'nothing to mail'
     const peek = t.length > 40 ? t.slice(0, 39) + '…' : t
-    await this.push({ kind: 'ask', question: `mail this to ${paneName(to)}? "${peek}"`, act: () => this.mail(to, t) })
+    await this.push({ kind: 'ask', question: `mail this to ${paneName(to)}? "${peek}"`, act: () => this.mail(to, t), pane: to })
     return ''
   }
 
   /** The columns with the pane and its partner, the pane first, nothing marked; the pair is the selection from here. */
   private async beside(p: Pane, partner: Pane) {
-    this.selected = [p.address, partner.address]
+    this.selected = [paneKey(p), paneKey(partner)]
     this.marked = -1
     await this.push({ kind: 'split' })
   }
 
-  private async close(p: Pane) {
+  /** Closes the pane where the latest listing has it: a confirmation taken after a renumber reaches the pane, not its old address. */
+  private async close(held: Pane) {
+    const p = this.current(held)
     try {
       await api.close(p.address)
       this.log(`closed ${paneName(p)}`, 'ok')
@@ -1098,7 +1245,8 @@ export class App {
     this.scheduleList(0)
   }
 
-  private async split(p: Pane) {
+  private async split(held: Pane) {
+    const p = this.current(held)
     try {
       const a = await api.split(p.host, p.session, p.window, V.splitDirection(p))
       const q = parseOne(a.body)
@@ -1126,7 +1274,8 @@ export class App {
   }
 
   /** A message for the pane's process, held by its host and never typed; the words land on the pane page or the hint. */
-  private async mail(to: Pane, text: string) {
+  private async mail(held: Pane, text: string) {
+    const to = this.current(held)
     let words = `mailed ${paneName(to)}`
     try {
       await api.mail(to.address, text)
@@ -1170,7 +1319,9 @@ export class App {
     this.scheduleRead(0)
   }
 
-  private async send(pane: Pane, answer: Answer) {
+  /** An answer to the pane where the latest listing has it. */
+  private async send(held: Pane, answer: Answer) {
+    const pane = this.current(held)
     if (answer.choice !== undefined) {
       await this.answer(pane, answer.choice)
       return
@@ -1195,7 +1346,8 @@ export class App {
   }
 
   /** A question's choice to the process that asked; the hub refuses one that is not on offer or no longer asked. */
-  private async answer(pane: Pane, choice: string) {
+  private async answer(held: Pane, choice: string) {
+    const pane = this.current(held)
     let words = 'answered ' + choice
     try {
       await api.answer(pane.address, choice)
@@ -1221,8 +1373,9 @@ export class App {
       await this.askSession(v.host, text)
       return V.sessionName(text) ? '' : 'not a session name'
     }
-    const pane = this.focus()
-    if (!pane) return 'open a pane on the glasses first'
+    const held = this.focus()
+    if (!held) return 'open a pane on the glasses first'
+    const pane = this.current(held)
     if (!pane.writable) return 'that pane is read-only'
     try {
       await api.text(pane.address, text)
@@ -1352,7 +1505,8 @@ export class App {
     await this.push({ kind: 'ask', question: `mail this to ${paneName(target.to)}?`, act: () => this.mail(target.to, text) })
   }
 
-  private async sendVoice(pane: Pane, text: string, enter: boolean) {
+  private async sendVoice(held: Pane, text: string, enter: boolean) {
+    const pane = this.current(held)
     this.voice = null
     this.stack.pop()
     let words = enter ? 'sent what you said, Enter' : 'typed what you said'
@@ -1375,7 +1529,7 @@ export class App {
   private needsYou(): Pane | null {
     const first = this.inbox?.find((p) => p.attention && !p.later)
     if (!first) return null
-    return this.panes.find((p) => p.address === first.address) ?? first
+    return this.current(first)
   }
 
   private model(): V.Model {
@@ -1402,7 +1556,8 @@ export class App {
       inboxStart: this.inboxStart,
       feed: this.talk.length > 0,
       unseen: this.talk.filter((t) => t.seq > this.seenSeq).length,
-      reading: (address) => this.readers.get(address),
+      desk: V.deskPane(this.desk, this.sorted),
+      reading: (p) => this.readers.get(paneKey(p)),
     }
   }
 
@@ -1446,9 +1601,9 @@ export class App {
       case 'split':
         return V.splitPage(m, now)
       case 'pane': {
-        const r = this.readers.get(v.pane.address)
-        const a = this.attention.get(v.pane.address)
         const p = this.current(v.pane)
+        const r = this.readers.get(paneKey(p))
+        const a = this.attention.get(p.address)
         let state: string
         if (m.flash) state = m.flash
         else if (r?.error) state = r.error

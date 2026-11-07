@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneName, parseChoices, programSays, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parsePanes } from '../../src/protocol.ts'
+import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneKey, paneName, parseChoices, parseDesk, programSays, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parsePanes } from '../../src/protocol.ts'
 import { errorCode } from '../../src/api.ts'
 
 const NOW = 1_800_000_000
@@ -174,7 +174,7 @@ test('parseEvents: events and the cursor, hostile text, bad cursors', () => {
   assert.deepEqual(r.events.slice(3).map((e) => e.choices), [['yes', 'no'], [], []])
   assert.equal(parseEvents('{"next":"abc"}').next, null)
   assert.equal(parseEvents('{"next":-1}').next, null)
-  assert.deepEqual(parseEvents('garbage'), { events: [], next: null })
+  assert.deepEqual(parseEvents('garbage'), { events: [], next: null, desk: false })
 })
 
 test('checkHubUrl', () => {
@@ -279,4 +279,34 @@ test('parsePanes: talk partners and unread mail within their caps, junk ignored'
   // A pane without the fields is a pane without talk or mail.
   const plain = parsePanes(JSON.stringify({ panes: [pane({})] }), NOW)[0]
   assert.deepEqual([plain.talk, plain.mail], [[], 0])
+})
+
+test('paneKey: the host and the id when the listing gave one, else the address; one id on two hosts is two keys', () => {
+  const [a, b] = parsePanes(JSON.stringify({ panes: [pane({ pane_id: '%3' }), pane({ address: 'bob-desktop/work/0.0', pane_id: '%3' })] }), NOW)
+  assert.equal(paneKey(a), 'alice-laptop:%3')
+  assert.equal(paneKey(b), 'bob-desktop:%3')
+  assert.equal(paneKey({ ...a, address: 'alice-laptop/work/1.0' }), 'alice-laptop:%3', 'the key follows the pane, not its address')
+  const [c] = parsePanes(JSON.stringify({ panes: [pane({ pane_id: 'nonsense' })] }), NOW)
+  assert.equal(c.id, '')
+  assert.equal(paneKey(c), 'alice-laptop/work/0.0', 'without an id the address is the key')
+})
+
+test('parseDesk: both views; the first four distinct panes by the grammar; a focused pane and a window by the grammar; junk is no desk', () => {
+  const d = parseDesk(JSON.stringify({ desk: { view: 'panes', panes: ['alice-laptop/work/0.0', 'alice-laptop/work/1.1', 'alice-laptop/work/0.0', 'bad', 7, 'alice-laptop/work/2.0', 'alice-laptop/work/3.0', 'alice-laptop/work/4.0'], focused: 'alice-laptop/work/1.1', arrangement: 'row', rev: 12 } }))
+  assert.deepEqual(d, { view: 'panes', panes: ['alice-laptop/work/0.0', 'alice-laptop/work/1.1', 'alice-laptop/work/2.0', 'alice-laptop/work/3.0'], focused: 'alice-laptop/work/1.1', window: '' })
+  const w = parseDesk(JSON.stringify({ desk: { view: 'window', window: 'alice-laptop/work/1', focused: 'alice-laptop/work/1.0' } }))
+  assert.deepEqual(w, { view: 'window', panes: [], focused: 'alice-laptop/work/1.0', window: 'alice-laptop/work/1' })
+  assert.deepEqual(parseDesk(JSON.stringify({ desk: { view: 'window', window: 'alice-laptop/work/1.0', focused: 'nonsense' } })), { view: 'window', panes: [], focused: '', window: '' }, 'a pane address is no window, junk no focus')
+  assert.deepEqual(parseDesk(JSON.stringify({ desk: { view: 'panes' } })), { view: 'panes', panes: [], focused: '', window: '' }, 'the hub before any write')
+  assert.equal(parseDesk(JSON.stringify({ desk: { view: 'x'.repeat(300), panes: ['alice-laptop/work/0.0'] } })), null)
+  assert.equal(parseDesk(JSON.stringify({ desk: 'nonsense' })), null)
+  assert.equal(parseDesk('{"desk": {"view": "panes", "panes": [' + '"alice-laptop/work/0.0",'.repeat(1000) + '"alice-laptop/work/9.0"]}}')?.panes.length, 2, 'a thousand repeats are one')
+  assert.equal(parseDesk('not json'), null)
+})
+
+test('parseEvents: a desk event names no pane and is reported apart from the notifications', () => {
+  const r = parseEvents(JSON.stringify({ events: [{ seq: 3, at: 1, kind: 'desk', text: '12' }, { seq: 4, at: 1, address: 'alice-laptop/work/0.0', kind: 'done', text: '' }], next: 4 }))
+  assert.equal(r.desk, true)
+  assert.deepEqual(r.events.map((e) => e.kind), ['done'])
+  assert.equal(parseEvents('{"events":[],"next":1}').desk, false)
 })

@@ -287,6 +287,17 @@ class Proxy:
                                                 "❯ fix the typo in README · then " + " && ".join(f"echo step {i}" for i in range(30)))
                     data, headers = spelt(screen, path)
                     return self.reply(200, data, {**headers, **CORS})
+                if proxy.mode == "desk-hostile" and bare == "/v1/desk" and self.command == "GET":
+                    # A desk of a thousand panes, junk among them, a focused pane the listing lacks, a long view: the
+                    # row names a pane of the listing or nothing, and the app sends the desk nowhere.
+                    panes = ["not an address", 7, HOST + "/work/0.0/../x", None] + [f"{HOST}/work/{i}.0" for i in range(999)]
+                    body_json = {"desk": {"view": "panes", "panes": panes, "focused": HOST + "/work/777.0",
+                                          "arrangement": "x" * 300, "tree": {"a": {"b": {"c": [1, 2, 3]}}}, "rev": "nine"}}
+                    return self.reply(200, json.dumps(body_json).encode(), {"Content-Type": "application/json", **CORS})
+                if proxy.mode == "desk-elsewhere" and bare == "/v1/desk" and self.command == "GET":
+                    # A sound desk whose panes the listing does not have.
+                    body_json = {"desk": {"view": "panes", "panes": ["bob-desktop/work/0.0"], "focused": "bob-desktop/work/0.0", "rev": 3}}
+                    return self.reply(200, json.dumps(body_json).encode(), {"Content-Type": "application/json", **CORS})
                 if proxy.mode == "shell-rules" and is_read:
                     data, headers = spelt(shell_rules_screen(), path)
                     return self.reply(200, data, {**headers, **CORS})
@@ -734,7 +745,7 @@ class Sim:
                 for i, l in enumerate(lines):
                     if start + i != i:
                         break
-                    if l.startswith("◆ inbox") or l.startswith("» messages"):
+                    if l.startswith("◆ inbox") or l.startswith("» messages") or l.startswith("» desk"):
                         special = i + 1
                     else:
                         break
