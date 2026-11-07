@@ -440,8 +440,9 @@ class Proxy:
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
-    def paths(self, prefix):
-        return [r for r in self.requests if r["path"].startswith(prefix)]
+    def paths(self, prefix, method=None):
+        """The requests under the prefix, oldest first; by method when given (a read is a GET, its CORS preflight an OPTIONS)."""
+        return [r for r in self.requests if r["path"].startswith(prefix) and (method is None or r["method"] == method)]
 
     def close(self):
         self.server.shutdown()
@@ -796,10 +797,11 @@ class Sim:
     def close(self):
         try:
             entries = self.console()
-            with open(self.run.logs(self.test) / "console.log", "w") as f:
+            # Appended: a test that restarts the app opens a second simulator, whose log follows the first's.
+            with open(self.run.logs(self.test) / "console.log", "a") as f:
                 for e in entries:
                     f.write(f"{e['id']} {e['level']} {e['message']}\n")
-            with open(self.run.logs(self.test) / "trace.log", "w") as f:
+            with open(self.run.logs(self.test) / "trace.log", "a") as f:
                 for p in self.trace():
                     f.write(json.dumps(p, ensure_ascii=False) + "\n")
         except Exception:

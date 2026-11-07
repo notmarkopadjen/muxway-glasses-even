@@ -104,3 +104,33 @@ passed. After the rebase on #81 and the rule's end at the corner: run
 20261106-191111-d997826, F10, F11, F32 and F33 passed, the unit suite
 (83) passed. The owner's device check (test 4) is recorded here when it is
 done.
+
+## The pull request's run
+
+Run 42353697404 on the pull request failed S65 and F68, both exposed by
+the simulator's fast start (the no-session-bus fix in this branch): with
+its first page 25 s earlier, the app's first listing comes within ten
+seconds of the test panes' creation, when a fresh pane's own screen reads
+as working, and reads as quiet only at the second listing.
+
+- F68 waited for the pane quiet, typed its loop, and then accepted a page
+  drawn before the loop: `Sim.expect` reads every page since the mark,
+  newest first, and the first listing's working pages were still there.
+  The idle then landed on a pane no listing had seen move and drew its
+  banner. The test marks the trace after the quiet page, so only a page
+  drawn after the loop counts as working from the screen.
+- S65 counted the CORS preflight as a read, and the wait after an
+  unreadable recent answer never doubled: a `200` reset it to five
+  seconds before the cursor was checked, so the app asked every five
+  seconds and a fourth read fell in the test's window. `runEvents` resets
+  the wait only on an answer with a cursor, as
+  `docs/features/notifications.md` says (five seconds, doubling); the
+  proxy's `paths` takes a method and S64 and S65 count `GET`s.
+- The trace and console logs of a test that restarts the app are
+  appended, so a second simulator's no longer replace the first's (F68's
+  trace in the run directory was the restart's alone).
+
+Run 20261107-093123-d4e10b4, local, against the core's main: S06, S64,
+S65 and F68 passed. Run 20261107-093311-d4e10b4, the full suite: 147
+tests passed, none failed; S65 read the recent events after five and then
+ten seconds. The unit suite (89) passed.
