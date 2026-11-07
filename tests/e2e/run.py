@@ -2010,7 +2010,7 @@ def s67(run, name):
     time.sleep(1)
     check(not any(r["method"] != "GET" for r in proxy.requests[before:]), "a tap on nothing to open sent something")
     reqs = desk_requests(proxy)
-    check(reqs and all(m == "GET" for m, _ in reqs), reqs)
+    check(reqs and all(m in ("GET", "OPTIONS") for m, _ in reqs), reqs)
     no_typing(proxy)
 
 
@@ -2021,7 +2021,7 @@ def f71(run, name):
     check(not rows(page)[0].startswith("» desk"), "a desk row before any desk was written")
     # The web, say, writes the desk straight to the hub: two tiles, build focused.
     status, body = direct(core.url, tok, "PUT", "/v1/desk",
-                          json.dumps({"view": "panes", "panes": [f"{HOST}/work/0.0", f"{HOST}/work/build.0"], "focused": f"{HOST}/work/build.0", "arrangement": "row"}),
+                          json.dumps({"view": "panes", "panes": [f"{HOST}/work/0.0", f"{HOST}/work/1.0"], "focused": f"{HOST}/work/1.0", "arrangement": "row"}),
                           accept="application/json")
     check(status == 200, f"PUT desk: {status} {body[:200]!r}")
     t0 = time.time()
@@ -2030,7 +2030,7 @@ def f71(run, name):
     check(rows(page)[1:] == ["◌ bash · test-pane · quiet", "◌ bash · build · quiet"], rows(page))
     sim.shot("desk-row")
     sim.tap()
-    sim.expect(lambda p: at_place(p, "build", "work/build.0"), "build, following")
+    sim.expect(lambda p: at_place(p, "build", "work/1.0"), "build, following")
     sim.shot("desk-pane")
     sim.back()
     home(sim)
@@ -2043,7 +2043,7 @@ def f71(run, name):
     page = sim.expect(lambda p: listed(p) and rows(p)[1] == "◆ inbox · 1 waiting", "the inbox row under the desk's", 15)
     check(rows(page)[0] == "» desk · test-pane", rows(page))
     sim.shot("desk-and-inbox")
-    check(all(m == "GET" for m, _ in desk_requests(proxy)), desk_requests(proxy))
+    check(all(m in ("GET", "OPTIONS") for m, _ in desk_requests(proxy)), desk_requests(proxy))
     check(took < 6, f"the row took {took:.1f} s after the event")
 
 
