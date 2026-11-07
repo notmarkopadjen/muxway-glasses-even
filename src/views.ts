@@ -7,7 +7,7 @@ import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
-import { folder, paneKey, paneName, program, programSays, type Attention, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
+import { folder, paneKey, paneName, program, programSays, type Attention, type Desk, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, byteLength, fitWidth, textWidth, typed, wrapRows } from './text.ts'
 
@@ -56,6 +56,8 @@ export interface Model {
   /** Whether the hub's feed holds anything, and how many entries arrived since the messages page was last opened. */
   feed: boolean
   unseen: number
+  /** The desk row: the pane it opens, or none to open; null without a desk (deskPane). */
+  desk: { pane: Pane | null } | null
   reading: (p: Pane) => Reader | undefined
 }
 
@@ -257,9 +259,26 @@ export function rowLabel(p: Pane, now: number, box: 'none' | 'on' | 'off' = 'non
 export const LIST_ROWS = Math.floor((BANNER_Y - TOP) / LINE_H)
 export const MAX_SELECTED = 3
 
-export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'inbox' } | { kind: 'messages' } | { kind: 'host'; host: Host } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
+export type ListItem = { kind: 'pane'; pane: Pane } | { kind: 'desk' } | { kind: 'inbox' } | { kind: 'messages' } | { kind: 'host'; host: Host } | { kind: 'open' } | { kind: 'clear' } | { kind: 'none' }
 
 export const MESSAGES = '» messages'
+export const DESK = '» desk'
+
+/**
+ * What the desk row opens: the desk's focused pane as the listing has it, else the first of its panes the listing
+ * has; for a window desk its focused pane, else the window's first pane in the list's order. Null without a desk
+ * (none written, or nothing in it); a desk whose panes are none of the listing's has nothing to open.
+ */
+export function deskPane(desk: Desk | null, panes: Pane[]): { pane: Pane | null } | null {
+  if (!desk) return null
+  const at = (a: string) => (a ? panes.find((p) => p.address === a) : undefined)
+  if (desk.view === 'window') {
+    if (!desk.window) return null
+    return { pane: at(desk.focused) ?? panes.find((p) => p.address.startsWith(desk.window + '.')) ?? null }
+  }
+  if (!desk.panes.length) return null
+  return { pane: at(desk.focused) ?? desk.panes.map(at).find((p) => p) ?? null }
+}
 
 /** A host's line: its name and state, and + session where its agent starts them. */
 export function hostLine(h: Host, panes: Pane[]): string {
@@ -289,6 +308,11 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
   if (!m.panes.length) return { items: ['no panes exposed to this token'], what: [{ kind: 'none' }] }
   const items: string[] = []
   const what: ListItem[] = []
+  // The desk first: the view the other clients share, as a row that opens its focused pane; no box in selection mode.
+  if (m.desk) {
+    items.push(`${DESK} · ${m.desk.pane ? paneName(m.desk.pane) : 'nothing to open'}`)
+    what.push({ kind: 'desk' })
+  }
   // While anything waits the first row is the way to the inbox; it has no box in selection mode.
   const n0 = waiting(m.panes).length
   if (n0) {

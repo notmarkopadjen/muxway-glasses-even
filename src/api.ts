@@ -142,6 +142,8 @@ export const api = {
   answer: (address: string, choice: string) => call('POST', `/v1/panes/${at(address)}/answer`, { body: JSON.stringify({ choice }) }),
   /** Parks the pane for later, or wakes it: the owner's own mark on the host. */
   later: (address: string, on: boolean) => call('POST', `/v1/panes/${at(address)}/later`, { body: JSON.stringify({ later: on }) }),
+  /** The desk the owner's clients share, read only: a 304 with the ETag costs nothing. */
+  desk: (etag: string) => call('GET', '/v1/desk', { json: true, etag }),
   /** Every pane that waits, oldest first. */
   inbox: () => call('GET', '/v1/inbox', { json: true }),
   /** The feed: who said what to whom. Without a cursor the hub's most recent entries. */

@@ -26,6 +26,7 @@ preflight such a page needs. The glasses see only what the page draws.
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
 | `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices` and its `text`), `activity` (working within ten seconds), `talk` (the partners of the last ten minutes, for the group's bar and Beside), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list), `pane_id` (with the host, what the app knows a pane by: the page and the columns follow it when the host renumbers and close when it is gone), `session`, `window_index`, `width`, `height` and `last` (a split's window and direction, the close confirmation's words); hosts online or not, each with `later`, `sessions`, `close`, `mail` and `keys` where its agent parks, starts sessions, closes panes, holds mail or takes the key grammar |
+| `GET /v1/desk` | JSON, `If-None-Match` / `ETag` | the **desk row** at the top of the list: the view the owner's other clients share, read with every listing and never written here; the row opens the desk's focused pane (the first of its panes the listing has when none is focused; a window desk's focused pane, else the window's first), or says `nothing to open` |
 | `GET /v1/inbox` | JSON | the inbox page, every pane that waits, oldest first, then the parked ones, and *Go to*, its first awake entry; read with every listing |
 | `GET /v1/talk` | JSON, `?limit=50` once, then `?after=N&limit=100` | the messages page and the `» messages · mail n` row; read with every listing |
 | `GET /v1/panes/{address}/mail` | JSON | the mail page, read when it opens and with every listing while it is open |
@@ -37,7 +38,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
 | `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
 | `POST /v1/panes/{address}/later` | JSON `{"later": true}` or `false` | the menu's Later and Wake; the wake when a parked pane is opened |
-| `GET /v1/events` | JSON long poll: `?limit=50` for the cursor and the recent events, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices`; what was working at start |
+| `GET /v1/events` | JSON long poll: `?limit=50` for the cursor and the recent events, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices`; what was working at start; a `desk` event asks for the listing, which reads the desk |
 | `GET /v1/transcribe` | `204` or `404` | whether **Say it** is offered |
 | `POST /v1/transcribe` | `audio/wav`, 16 kHz mono, up to 60 s | the spoken reply's text |
 
@@ -157,6 +158,7 @@ A 240 x 140 bar chart is 34 KB of pixels.
 stateDiagram-v2
     [*] --> Loading
     Loading --> Panes: the first listing
+    Panes --> Pane: tap the desk row, the desk's focused pane
     Panes --> Inbox: tap the inbox row
     Panes --> Messages: tap the messages row
     Panes --> Session: tap a host's line with + session

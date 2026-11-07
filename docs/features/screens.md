@@ -19,6 +19,7 @@ result of an answer flashes on the pane for four.
 stateDiagram-v2
     [*] --> Loading
     Loading --> List: the first listing
+    List --> Pane: tap the desk row
     List --> Inbox: tap the inbox row
     Inbox --> PaneI: tap an entry
     PaneI --> Inbox: double tap
@@ -123,7 +124,20 @@ codename costs the folder before the state word is cut. The place,
 `host/session/window.pane`, has no room in a row of 63 bytes: the host
 is its line, and the [pane page](#the-pane) shows the rest.
 
-While anything waits the first row is the way to the
+The first row is the **desk** while the hub holds one, `» desk · build`:
+the view the owner's other clients share (the web and the phone write
+it as their view changes, `GET /v1/desk`), named by the pane a tap
+opens: the desk's focused pane, else the first of its panes the
+listing has; for a window desk its focused pane, else the window's
+first pane in the list's order. The glasses read the desk with every
+listing and never write it; a `desk` event from the hub (another
+client changed it) brings the listing at once, so the row follows
+within a second or two. A desk whose panes are none of the listing's
+(another token's panes, a host away) reads `» desk · nothing to open`
+and a tap says so in the hint. Before any client wrote a desk there is
+no row: the nine rows are the panes'. The row has no box in selection
+mode and a tap on it does nothing there. While anything waits the
+next row is the way to the
 [inbox](#the-inbox), `◆ inbox · 2 waiting`, and the hint starts with
 the count, `◆ 2`. While the hub's feed holds anything the next row is
 the way to the [messages](messages.md), `» messages`, with ` · mail 3`
@@ -481,6 +495,14 @@ send this to build?
   writable; a proxy that lies about that earns a `403 read only`.
 - The inbox shows what the token may read, as the pane list does, and
   is read with the same bearer header and caps.
+- The desk is read, never written: no request but `GET` ever goes to
+  `/v1/desk` (S67). The hub answers only the panes the token may read;
+  the app takes the first four addresses that pass the grammar and
+  names the row by a pane of the *listing* the desk points at, never
+  by a string of the desk's, so a hostile desk of a thousand panes or
+  of junk is a row naming a listed pane, or `nothing to open`, and
+  opens nothing else. The log keeps the view and the count, not the
+  addresses.
 - The suggestion is the pane's own text sent back to the same pane, only
   when the wearer picks it and confirms it on a page that shows every
   word: what is shown is what is sent, with no cut in between, and a text

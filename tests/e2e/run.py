@@ -1978,6 +1978,75 @@ def f69(run, name):
     check(took < 15, f"the follow took {took:.1f} s")
 
 
+# --- the desk row (2026-11-07): the view the other clients share, read and never written ----------------------
+
+
+def desk_requests(proxy):
+    return [(r["method"], r["path"]) for r in proxy.requests if r["path"].split("?")[0] == "/v1/desk"]
+
+
+@test("S67", "A hostile desk from the proxy under a read-only token: a thousand panes with junk and a focused pane the listing lacks name a pane of the listing; a desk of panes elsewhere says nothing to open and a tap sends nothing; the desk is only ever read", "e2e-security")
+def s67(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="desk-hostile", write=None)
+    page = sim.expect(lambda p: listed(p) and rows(p) and rows(p)[0].startswith("» desk · "), "the desk row", 20)
+    check(rows(page)[0] == "» desk · test-pane", rows(page))
+    sim.shot("hostile-desk")
+    sim.tap()
+    sim.expect(lambda p: at_place(p, "test-pane", "read-only · work/0.0"), "the pane the desk points at")
+    sim.shot("opened")
+    sim.back()
+    home(sim)
+    proxy.mode = "desk-elsewhere"
+    core.notify("done", "finished", "work:0.0")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0] == "» desk · nothing to open", "a desk of panes the listing lacks", 15)
+    check(rows(page)[1] == "◆ inbox · 1 waiting", rows(page))
+    sim.shot("nothing-to-open")
+    before = len(proxy.requests)
+    sim.move(0)
+    sim.tap()
+    page = sim.expect(lambda p: p.get("hintBorder") and p["hint"] == "the desk's panes are not in the listing", "the note", 5)
+    check(listed(page), "a tap on nothing to open left the list")
+    sim.shot("note")
+    time.sleep(1)
+    check(not any(r["method"] != "GET" for r in proxy.requests[before:]), "a tap on nothing to open sent something")
+    reqs = desk_requests(proxy)
+    check(reqs and all(m == "GET" for m, _ in reqs), reqs)
+    no_typing(proxy)
+
+
+@test("F71", "The desk row: a desk written by another client names its focused pane within seconds of the event and opens it; a window desk names the window's focused pane; the inbox row sits under it", "UI")
+def f71(run, name):
+    core, proxy, sim, tok = setup(run, name, before=lambda core: core.new_window("build"))
+    page = sim.expect(lambda p: listed(p) and len(rows(p)) == 2, "two rows", 20)
+    check(not rows(page)[0].startswith("» desk"), "a desk row before any desk was written")
+    # The web, say, writes the desk straight to the hub: two tiles, build focused.
+    status, body = direct(core.url, tok, "PUT", "/v1/desk",
+                          json.dumps({"view": "panes", "panes": [f"{HOST}/work/0.0", f"{HOST}/work/build.0"], "focused": f"{HOST}/work/build.0", "arrangement": "row"}),
+                          accept="application/json")
+    check(status == 200, f"PUT desk: {status} {body[:200]!r}")
+    t0 = time.time()
+    page = sim.expect(lambda p: listed(p) and rows(p)[0] == "» desk · build", "the desk row", 15)
+    took = time.time() - t0
+    check(rows(page)[1:] == ["◌ bash · test-pane · quiet", "◌ bash · build · quiet"], rows(page))
+    sim.shot("desk-row")
+    sim.tap()
+    sim.expect(lambda p: at_place(p, "build", "work/build.0"), "build, following")
+    sim.shot("desk-pane")
+    sim.back()
+    home(sim)
+    # The window view on the web: the desk names the window and its focused pane.
+    status, body = direct(core.url, tok, "PUT", "/v1/desk", json.dumps({"view": "window", "window": f"{HOST}/work/0", "focused": f"{HOST}/work/0.0"}), accept="application/json")
+    check(status == 200, f"PUT window desk: {status} {body[:200]!r}")
+    page = sim.expect(lambda p: listed(p) and rows(p)[0] == "» desk · test-pane", "the window desk's row", 15)
+    sim.shot("window-desk")
+    core.notify("permission", "Claude needs your permission to use Bash", "work:build.0")
+    page = sim.expect(lambda p: listed(p) and rows(p)[1] == "◆ inbox · 1 waiting", "the inbox row under the desk's", 15)
+    check(rows(page)[0] == "» desk · test-pane", rows(page))
+    sim.shot("desk-and-inbox")
+    check(all(m == "GET" for m, _ in desk_requests(proxy)), desk_requests(proxy))
+    check(took < 6, f"the row took {took:.1f} s after the event")
+
+
 def unit_tests(run, results):
     start = time.time()
     r = subprocess.run(["node", "--test", "--test-reporter=tap", *sorted(str(p) for p in (harness.ROOT / "tests" / "unit").glob("*.test.ts"))],

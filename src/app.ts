@@ -7,7 +7,7 @@ import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
 import { commandsFor } from './commands.ts'
 import { ApiError, api } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
-import { paneKey, paneName, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
+import { paneKey, paneName, parseDesk, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Desk, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
 import { rows as splitRows, typed } from './text.ts'
 import * as V from './views.ts'
@@ -84,6 +84,10 @@ export class App {
   private seenSeq = 0
   /** The hub answered 404 to the feed: an older hub, asked once. */
   private noFeed = false
+  /** The desk as last read with the listing, its ETag, and whether the hub has none (404, asked once). Read, never written. */
+  private desk: Desk | null = null
+  private deskEtag = ''
+  private noDesk = false
   private listError: string | null = null
   private listBusy = false
   private listTimer: ReturnType<typeof setTimeout> | null = null
@@ -169,6 +173,9 @@ export class App {
     this.listError = null
     this.readers.clear()
     this.loaded = false
+    this.desk = null
+    this.deskEtag = ''
+    this.noDesk = false
     this.selected = []
     this.selecting = false
     this.marked = -1
@@ -261,7 +268,7 @@ export class App {
         }
         p.working = this.working.has(p.address)
       }
-      await Promise.all([this.readInbox(), this.readFeed(), this.readMailbox()])
+      await Promise.all([this.readInbox(), this.readFeed(), this.readMailbox(), this.readDesk()])
       this.listError = null
       this.loaded = true
       this.stopDots()
@@ -409,6 +416,11 @@ export class App {
           const r = parseEvents(a.body)
           if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
           else this.recent(r.events)
+          // Another client changed the desk: the row follows with the listing, which reads the desk.
+          if (this.cursor !== null && r.desk) {
+            this.log('event desk')
+            this.scheduleList(0)
+          }
           this.cursor = r.next
           // An answer without a cursor, a body cut at the cap or garbled, restarts the poll without one: after
           // the wait of a failed poll, never at once, or a hub that answers that way is asked two hundred times a second.
@@ -686,6 +698,13 @@ export class App {
           if (this.selecting) await this.toggle(row.pane)
           else await this.openPane(row.pane, false)
           break
+        case 'desk': {
+          if (this.selecting) break
+          const d = V.deskPane(this.desk, this.sorted)
+          if (d?.pane) await this.openPane(d.pane, false)
+          else this.note("the desk's panes are not in the listing")
+          break
+        }
         case 'inbox':
           await this.openInbox()
           break
@@ -793,6 +812,23 @@ export class App {
       this.toast = { text: await this.failed(e, 'GET mail'), until: Date.now() + NOTE_MS }
       this.later(NOTE_MS)
       if (this.mailbox === null) this.mailbox = []
+    }
+  }
+
+  /** The desk comes with every listing: the view the owner's clients share, read here and never written; a 304 keeps what was read. */
+  private async readDesk() {
+    if (this.noDesk) return
+    try {
+      const a = await api.desk(this.deskEtag)
+      if (a.status === 304) return
+      this.desk = parseDesk(a.body)
+      this.deskEtag = a.etag
+      this.log(`GET desk ${a.status} ${this.desk ? `${this.desk.view} ${this.desk.panes.length} panes` : 'no desk'}`)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        this.noDesk = true
+        this.log('GET desk: not on this hub')
+      } else await this.failed(e, 'GET desk')
     }
   }
 
@@ -1519,6 +1555,7 @@ export class App {
       inboxStart: this.inboxStart,
       feed: this.talk.length > 0,
       unseen: this.talk.filter((t) => t.seq > this.seenSeq).length,
+      desk: V.deskPane(this.desk, this.sorted),
       reading: (p) => this.readers.get(paneKey(p)),
     }
   }
