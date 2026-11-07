@@ -1914,10 +1914,10 @@ def s66(run, name):
     time.sleep(3)
     pages = sim.trace()
     first = next(i for i, p in enumerate(pages) if i >= mark and at_place(p, "second", "work/0.0"))
-    # From the follow on, nothing of third under second's title; before it the body went blank (the rows read at the
-    # old address were dropped) or straight to second's own.
-    for p in pages[first:]:
-        check(not any("THIRD-MARK" in l for l in (sim.block("body", p) or [])), "third's rows under second's title after the follow")
+    # From the kill on, nothing of third under second's title: a read at the old address answers third's rows named
+    # as third's (Muxway-Pane), so they are not taken, and the follow comes from the listing asked at once.
+    for p in pages[mark:]:
+        check(not any("THIRD-MARK" in l for l in (sim.block("body", p) or [])), "third's rows under second's title after the kill")
     check(any("second" in t for t in titles(pages[-1])), titles(pages[-1]))
     check(sim.state() == "work/0.0", sim.state())
     # An answer confirmed after the renumber reaches second, where it is now; third, at the old address, gets nothing.
@@ -1933,7 +1933,37 @@ def s66(run, name):
     check(inputs and all(f"/{HOST}/work/0.0/input" in path for path in inputs), inputs)
     sim.shot("answered")
     pages = sim.trace()
-    check(not any("THIRD-MARK" in l for p in pages[first:] for l in (sim.block("body", p) or [])), "third's rows after the answer")
+    check(not any("THIRD-MARK" in l for p in pages[mark:] for l in (sim.block("body", p) or [])), "third's rows after the answer")
+    check(first >= mark, "the follow")
+
+
+@test("S72", "A hostile answer to a pane read, another pane's rows named as another pane: nothing of them is drawn, the state stays reading…, and the listing is asked for at once after each such read; without the header the rows are drawn, as on a hub before it", "e2e-security")
+def s72(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="stranger")
+    sim.expect(lambda p: listed(p) and len(rows(p)) == 1, "the list", 20)
+    sim.pick(0)
+    # With nothing of its own to draw, the state says reading…, not the place.
+    sim.expect(lambda p: at_place(p, "test-pane", "reading…"), "the page")
+    opened = time.time()
+    time.sleep(4)
+    sim.shot("stranger")
+    pages = [p for p in sim.trace() if any(b.get("name") == "title" and "test-pane" in b["lines"][0] for b in p["blocks"])]
+    check(pages, "no pane page")
+    for p in pages:
+        check(not any("STRANGER-ROW" in l for l in (sim.block("body", p) or [])), "a stranger's rows under the pane's title")
+    check(sim.state() == "reading…", sim.state())
+    # Every such read was followed by a listing within a second and a half.
+    reads = [r["at"] for r in proxy.requests if r["method"] == "GET" and r["path"].startswith(f"/v1/panes/{HOST}/") and r["at"] > opened]
+    lists = [r["at"] for r in proxy.requests if r["method"] == "GET" and r["path"].split("?")[0] == "/v1/panes" and r["at"] > opened]
+    check(len(reads) >= 2, f"{len(reads)} reads")
+    for t in reads[:-1]:
+        check(any(t < l < t + 1.5 for l in lists), f"no listing after the read at {t - opened:.1f} s")
+    # The same hub without the header: the rows are taken, as before the header existed.
+    proxy.mode = "no-pane-header"
+    core.keys("echo PLAIN-MARK", "Enter", target="work:0.0")
+    sim.expect(lambda p: any("PLAIN-MARK" in l for l in (sim.block("body", p) or [])), "the pane's rows without the header", 15)
+    sim.shot("plain")
+    check(not any("STRANGER-ROW" in l for p in sim.trace() for l in (sim.block("body", p) or [])), "a stranger's rows drawn at any time")
 
 
 @test("F69", "A pane page follows its pane when the host renumbers, with a blank body until its own rows, and closes with a word when the pane is gone; the columns follow too", "UI")

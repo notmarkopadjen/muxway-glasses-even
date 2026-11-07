@@ -359,6 +359,13 @@ export class App {
         const r = this.readers.get(paneKey(p)) ?? { raw: [], error: null, etag: '' }
         try {
           const a = await api.pane(p.address, r.etag)
+          if (a.pane && p.id && a.pane !== p.id) {
+            // Another pane answered at the address: the host renumbered since the listing named the pane there.
+            // Nothing of it is taken, the rows held are the pane's own; the listing says where the pane is now.
+            this.log(`GET pane ${a.status}: ${a.pane} answered at ${p.path}, not ${p.id}`)
+            if (this.panes.some((x) => paneKey(x) === paneKey(p))) this.scheduleList(0)
+            continue
+          }
           if (a.status !== 304) {
             r.raw = splitRows(a.body)
             r.etag = a.etag

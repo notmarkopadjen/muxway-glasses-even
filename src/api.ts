@@ -5,7 +5,7 @@
 // as it says.
 
 import { getSettings } from './settings.ts'
-import { errorWords } from './protocol.ts'
+import { errorWords, paneId } from './protocol.ts'
 
 export const MAX_BODY = 256 * 1024
 const TIMEOUT_MS = 20_000
@@ -15,6 +15,8 @@ export interface Answer {
   status: number
   body: string
   etag: string
+  /** The pane that answered a read (the hub's Muxway-Pane header, `%<digits>`), '' when the hub gave none or something else. */
+  pane: string
 }
 
 export class ApiError extends Error {
@@ -116,7 +118,7 @@ async function call(method: 'GET' | 'POST', path: string, opts: { body?: string 
   clearTimeout(timer)
   const body = decode(bytes, res.headers.get('Content-Type') ?? '')
   if (res.status >= 400) throw new ApiError(res.status, errorCode(body))
-  return { status: res.status, body, etag: res.headers.get('ETag') ?? '' }
+  return { status: res.status, body, etag: res.headers.get('ETag') ?? '', pane: paneId(res.headers.get('Muxway-Pane')) }
 }
 
 function q(params: Record<string, string | number>): string {

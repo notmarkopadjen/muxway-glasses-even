@@ -284,7 +284,8 @@ function parsePane(item: unknown, now: number): Pane | null {
   }
 }
 
-function paneId(v: unknown): string {
+/** A pane id as the hub writes it, `%<digits>`; anything else is ''. */
+export function paneId(v: unknown): string {
   return typeof v === 'string' && PANE_ID.test(v) ? v : ''
 }
 

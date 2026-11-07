@@ -234,7 +234,7 @@ def hostile_claude_screen():
     return ("\n".join(rows) + "\n").encode()
 
 
-CORS = {"Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "ETag"}
+CORS = {"Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "ETag, Muxway-Pane"}
 
 
 class Proxy:
@@ -274,6 +274,10 @@ class Proxy:
                     time.sleep(4)
                 if proxy.mode == "big" and is_read:
                     return self.reply(200, b"x" * (1 << 20) + b"\n", {"Content-Type": "text/plain; charset=utf-8", **CORS})
+                if proxy.mode == "stranger" and is_read:
+                    # Another pane's rows, named as another pane: the app draws nothing of them.
+                    return self.reply(200, b"$ echo STRANGER-ROW\nSTRANGER-ROW\n$ \n",
+                                      {"Content-Type": "text/plain; charset=utf-8", "ETag": '"stranger"', "Muxway-Pane": "%4242", **CORS})
                 if proxy.mode == "garbage" and is_read:
                     return self.reply(200, b"ok \xff\xfe\xc3 \x1b[31mred\x1b[0m \x07bell \x00nul\r\nend\n",
                                       {"Content-Type": "text/plain; charset=utf-8", **CORS})
@@ -429,8 +433,11 @@ class Proxy:
                     ] + [pane(f"{i}.0", title=f"p{i}", later=True, later_at=now - i) for i in range(5, 205)]
                     awake = [pane("0.0", title="test-pane", later="yes", later_at=now), pane("1.0", title="build", later=1)]
                     data = json.dumps({"panes": awake + parked} if bare == "/v1/panes" else {"inbox": parked, "count": len(parked)}).encode()
-                keep = ("etag", "content-type", "access-control-allow-origin", "access-control-allow-methods",
+                keep = ("etag", "muxway-pane", "content-type", "access-control-allow-origin", "access-control-allow-methods",
                         "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age")
+                if proxy.mode == "no-pane-header":
+                    # A hub before Muxway-Pane: the read names no pane.
+                    keep = tuple(k for k in keep if k != "muxway-pane")
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})
 
             def reply(self, status, data, headers):
