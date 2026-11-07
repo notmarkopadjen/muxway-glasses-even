@@ -1068,7 +1068,8 @@ export class App {
     let words = on ? 'parked' : 'woken'
     try {
       await api.later(pane.address, on)
-      pane.later = on
+      // The listing's pane and the one the page holds (an inbox entry, say) both show it before the next listing.
+      pane.later = held.later = on
       this.log(`${words} ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST later')
