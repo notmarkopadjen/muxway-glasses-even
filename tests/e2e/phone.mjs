@@ -79,6 +79,29 @@ try {
   const log = await page.textContent('#log')
   if (log.includes(TOKEN)) fail('the token is in the phone log')
 
+  // The trace switch: off by default, kept with save. Copy: the log on the clipboard, oldest line first.
+  if (await page.isChecked('#detail')) fail('trace is on by default')
+  await shot(page, 'trace-off')
+  await page.check('#detail')
+  await page.click('#save')
+  await page.waitForFunction(() => /hub answered/.test(document.querySelector('#conn').textContent), null, { timeout: 15000 })
+  await page.reload()
+  await page.waitForTimeout(4500)
+  if (!(await page.isChecked('#detail'))) fail('trace was not kept')
+  await shot(page, 'trace-on')
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: APP_URL })
+  const rows = await page.$$eval('#log > div', (els) => els.map((e) => e.textContent))
+  await page.click('#copy')
+  // The click's handler writes the status after the clipboard answers; wait for it rather than read it at once.
+  await page.waitForFunction(() => document.querySelector('#copied').textContent !== '', null, { timeout: 5000 })
+  const copied = await page.textContent('#copied')
+  if (copied !== `copied ${rows.length} lines`) fail(`copy said: ${copied}`)
+  const clip = await page.evaluate(() => navigator.clipboard.readText())
+  const expected = rows.slice().reverse().join('\n') + '\n'
+  if (clip !== expected) fail(`the clipboard holds:\n${clip}\nnot:\n${expected}`)
+  if (clip.includes(TOKEN)) fail('the token is on the clipboard')
+  await shot(page, 'copied')
+
   // Settings in the URL on a public origin are ignored, and said so.
   await ctx.route('https://glasses.example/**', async (route) => {
     const u = new URL(route.request().url())

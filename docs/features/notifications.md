@@ -106,9 +106,14 @@ stateDiagram-v2
   10 KiB line is one toast. Choices are taken only from a `question`,
   two to eight of them, each 1 to 40 clean characters without `|`,
   distinct; a list that breaks a rule is no list.
-- The cursor is a number; anything else restarts the poll without one.
+- The cursor is a number; anything else restarts the poll without one,
+  after the wait of a failed poll (five seconds, doubling): an answer
+  the app cannot read, a body over the 256 KiB cap or a garbled one,
+  is asked again in five seconds, never at once, so a hub that answers
+  that way is not asked two hundred times a second (S65).
 - The recent events at start only set what is working: a hostile fifty
-  of them with bad kinds, bad addresses and 10 KiB texts set nothing
-  else and draw nothing (S64).
+  of them with bad kinds, bad addresses and 4 KiB texts set nothing
+  else and draw nothing (S64); fifty with 10 KiB texts are over the cap
+  and set nothing at all (S65).
 - A failed poll waits five seconds and doubles up to a minute; `401`
   forgets the token and stops.
