@@ -12,7 +12,10 @@ keys and tokens, and synthetic panes. Nothing from a developer's own
 environment is read.
 
 The glasses are the **Even Hub simulator** (`@evenrealities/evenhub-simulator`,
-a native binary on WebKitGTK) on a headless X display, started with
+a native binary on WebKitGTK) on a headless X display, with a home and
+runtime directory of its own and no session bus (with one in reach,
+WebKitGTK asks the desktop portal for its settings and waits 25 s for the
+portal's GTK backend, which has no display), started with
 `--automation-port`: the harness sends gestures (`up`, `down`, `click`,
 `double_click`, `context_menu`), takes glasses screenshots (576 x 288 PNG)
 and reads the console for errors. The app, started with `?trace=<id>`

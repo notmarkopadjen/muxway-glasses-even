@@ -82,7 +82,8 @@ const BOX_ROWS = Math.floor((BANNER_Y - 4 - BODY_Y - 12) / LINE_H)
 /** A rule across the page: a bordered block with nothing in it, as high as its line. A line only: with the
  * gestures on it the device refused the page (seen 2026-11-06). */
 function rule(name: string, y: number): Block {
-  return { name, x: 0, y, w: CANVAS_W, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
+  // The rule ends at the catcher's corner, which is a line tall and would overlap it at the full width.
+  return { name, x: 0, y, w: CANVAS_W - CATCH, h: RULE_H, lines: [''], level: 4, border: true, pad: 0 }
 }
 
 /** The catcher's side: an unseen square in the top right corner that takes the gestures on every dash page. */
@@ -97,8 +98,10 @@ const STATE_W = CANVAS_W - TITLE_W - 8 - CATCH - 4
 const ROW_W = CANVAS_W - CATCH - 6
 /** What a block shows of a line: its width less the text's margin. */
 const INNER = 4
+/** The catcher is as tall as its one blank line: the device reports a scroll only when the text it scrolls is at an
+ * edge, and a shorter box leaves room for a silent one (seen 2026-11-06: the first scroll in a new direction was lost). */
 function catcher(): Block {
-  return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: CATCH, lines: [''], level: 0, capture: true }
+  return { name: 'gesture', x: CANVAS_W - CATCH, y: TOP, w: CATCH, h: LINE_H, lines: [''], level: 0, capture: true }
 }
 
 export function needs(p: Pane): boolean {

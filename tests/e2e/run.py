@@ -1494,7 +1494,7 @@ def s64(run, name):
     check(not any(p.get("hintBorder") for p in sim.trace()), "a toast from the recent events")
     check(not re.search(r"[\x00-\x08\x0a-\x1f\x7f]", json.dumps(sim.last())), "control characters reached the page")
     # The recent events were read once for the cursor, then the poll went on from it.
-    recent = proxy.paths("/v1/events?limit=50")
+    recent = proxy.paths("/v1/events?limit=50", "GET")
     check(len(recent) <= 2, f"{len(recent)} reads of the recent events: the poll does not go on from the cursor")
     check(len(proxy.paths("/v1/events?after=49")) >= 1, "the poll did not go on from the cursor the recent events gave")
     sim.shot("recent-working")
@@ -1507,7 +1507,8 @@ def s65(run, name):
     # Nothing is working from an answer that could not be read; a fresh pane's own moving screen settles within ten seconds.
     wait_for("both panes quiet", lambda: all(r.endswith("quiet") or "· quiet " in r for r in rows(sim.last())), 30)
     time.sleep(6)
-    recent = proxy.paths("/v1/events?limit=50")
+    # Asked again after five seconds, then ten: three reads at most in the twenty seconds since the start, four with a slow one.
+    recent = proxy.paths("/v1/events?limit=50", "GET")
     check(1 <= len(recent) <= 4, f"{len(recent)} reads of the recent events: the app spins on an answer it cannot read")
     check(not any(p.get("hintBorder") for p in sim.trace()), "a toast from the recent events")
     check(not any(e["level"] == "error" and "uncaught" in e["message"] for e in sim.console()), "an uncaught error")
@@ -1847,6 +1848,8 @@ def f67(run, name):
 def f68(run, name):
     core, proxy, sim, tok = setup(run, name, says="codex")
     page = sim.expect(lambda p: listed(p) and rows(p)[0] == "◌ Codex · test-pane · quiet", "quiet", 40)
+    # The fresh pane's own screen read as working for its first ten seconds; only a page drawn from here on says the loop moves it.
+    sim.mark = len(sim.trace())
     core.keys("while true; do echo tick; read -t 2 x; done", "Enter")
     page = sim.expect(lambda p: listed(p) and rows(p)[0] in ("◐ Codex · test-pane · working", "◑ Codex · test-pane · working"), "working from the screen", 25)
     sim.shot("lens-working")

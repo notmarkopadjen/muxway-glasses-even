@@ -440,8 +440,9 @@ class Proxy:
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
-    def paths(self, prefix):
-        return [r for r in self.requests if r["path"].startswith(prefix)]
+    def paths(self, prefix, method=None):
+        """The requests under the prefix, oldest first; by method when given (a read is a GET, its CORS preflight an OPTIONS)."""
+        return [r for r in self.requests if r["path"].startswith(prefix) and (method is None or r["method"] == method)]
 
     def close(self):
         self.server.shutdown()
@@ -573,10 +574,16 @@ class Sim:
         # A home of its own: the WebView's storage must not carry one test's settings into the next.
         self.home = Path(run.tmp) / ("sim-" + secrets.token_hex(4))
         self.home.mkdir()
+        # No session bus: with one in reach, WebKitGTK asks the desktop portal for its settings, the
+        # portal's GTK backend dies without a display, and the simulator waits 25 s for the timeout
+        # before its first page. The runtime directory is the simulator's own, so no bus is found there.
+        runtime = self.home / "run"
+        runtime.mkdir(mode=0o700)
         env = {**os.environ, "DISPLAY": run.display, "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
                "WEBKIT_DISABLE_DMABUF_RENDERER": "1", "LIBGL_ALWAYS_SOFTWARE": "1", "HOME": str(self.home),
                "XDG_DATA_HOME": str(self.home / "data"), "XDG_CACHE_HOME": str(self.home / "cache"),
-               "XDG_CONFIG_HOME": str(self.home / "config")}
+               "XDG_CONFIG_HOME": str(self.home / "config"), "XDG_RUNTIME_DIR": str(runtime),
+               "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(runtime / "no-bus")}
         self.proc = subprocess.Popen([str(SIM), url, "--automation-port", str(self.port)], stdout=self.out,
                                      stderr=subprocess.STDOUT, env=env)
         wait_for("simulator", self.alive, 40, 0.5)
@@ -790,10 +797,11 @@ class Sim:
     def close(self):
         try:
             entries = self.console()
-            with open(self.run.logs(self.test) / "console.log", "w") as f:
+            # Appended: a test that restarts the app opens a second simulator, whose log follows the first's.
+            with open(self.run.logs(self.test) / "console.log", "a") as f:
                 for e in entries:
                     f.write(f"{e['id']} {e['level']} {e['message']}\n")
-            with open(self.run.logs(self.test) / "trace.log", "w") as f:
+            with open(self.run.logs(self.test) / "trace.log", "a") as f:
                 for p in self.trace():
                     f.write(json.dumps(p, ensure_ascii=False) + "\n")
         except Exception:
