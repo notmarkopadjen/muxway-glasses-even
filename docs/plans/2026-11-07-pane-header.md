@@ -132,11 +132,20 @@ points here), this plan.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: none in the behaviour. S72 first expected the page's state
+to say the place; with nothing of its own to draw the state says
+`reading…`, as the page always has, and the test expects that.
 
 ## Test run
 
-Not yet run.
+Run 20261107-202056-d3c34d7, local, the full suite against the core at
+7d8fcec: 160 tests, none failed, the unit suite (97) and the secret
+scan among them, recorded as
+[#95](https://github.com/notmarkopadjen/muxway-glasses-even/issues/95).
+Before it, the chosen run 20261107-201902-3bfb589 failed S72 alone, on
+the predicate above; S66 and F69 passed in it.
