@@ -661,3 +661,16 @@ test('the mail page: what came in from the mailbox, what went out from the feed,
   assert.deepEqual(mailPage(m, build, null, feed, 0, 0, NOW).blocks[0].lines[0], '  reading the mail…')
   assert.deepEqual(mailLayout(m, [], NOW).items, ['no mail'])
 })
+
+test('the selection holds panes by key: a pane with an id is held at any address, a pane without one by its address', () => {
+  const second = pane('work/0.1', { id: '%2', title: 'second', command: 'bash' })
+  const third = pane('work/0.2', { title: 'third', command: 'bash' })
+  const m = model([pane('work/0.0', { id: '%1', command: 'bash' }), second, third], { selected: ['alice-laptop:%2', 'alice-laptop/work/0.2'] })
+  assert.deepEqual(selectedPanes(m).map((p) => p.title), ['second', 'third'])
+  // The host renumbered: second is work/0.0 and a new pane %4 sits at work/0.1; third, without an id, is matched where its address is.
+  const moved = model([{ ...second, address: 'alice-laptop/work/0.0', path: 'work/0.0' }, pane('work/0.1', { id: '%4', title: 'stranger', command: 'bash' }), third], { selected: m.selected })
+  assert.deepEqual(selectedPanes(moved).map((p) => p.title), ['second', 'third'])
+  const reads: string[] = []
+  splitPage({ ...moved, reading: (p) => (reads.push(p.address), undefined) }, NOW)
+  assert.deepEqual(reads, ['alice-laptop/work/0.0', 'alice-laptop/work/0.2'], 'the columns read their panes where they are now')
+})

@@ -165,6 +165,11 @@ export function agentName(agent: Agent): string {
   return AGENTS.find((a) => a[0] === agent)?.[1] ?? agent
 }
 
+/** What a pane is known by on the app: its host and id when the listing gave an id (an address is a position, and the host renumbers panes when one closes; ids are tmux's, one host's), else its address. */
+export function paneKey(p: Pick<Pane, 'host' | 'id' | 'address'>): string {
+  return p.id ? `${p.host}:${p.id}` : p.address
+}
+
 /** The program named for a person: the harness, else the command. */
 export function program(p: Pick<Pane, 'agent' | 'command'>): string {
   return p.agent ? agentName(p.agent) : p.command

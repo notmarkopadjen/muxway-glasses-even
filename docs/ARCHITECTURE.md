@@ -25,7 +25,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | Call | How | For |
 |---|---|---|
 | `GET /v1/me` | `Accept: application/json` | the phone pane's **test**: the token's name, whether the hub has a transcriber |
-| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices` and its `text`), `activity` (working within ten seconds), `talk` (the partners of the last ten minutes, for the group's bar and Beside), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list), `pane_id`, `session`, `window_index`, `width`, `height` and `last` (a split's window and direction, the close confirmation's words); hosts online or not, each with `later`, `sessions`, `close`, `mail` and `keys` where its agent parks, starts sessions, closes panes, holds mail or takes the key grammar |
+| `GET /v1/panes`, `GET /v1/hosts` | JSON | the pane list every 10 s and on every event: `mode`, `command`, `title`, `alias`, `cwd` (for a writer under a preview root: the folder after the name), `attention` (with a question's `choices` and its `text`), `activity` (working within ten seconds), `talk` (the partners of the last ten minutes, for the group's bar and Beside), `mail` (the unread count after the name), `later` and `later_at` (the owner parked the pane: `zz`, last in the list), `pane_id` (with the host, what the app knows a pane by: the page and the columns follow it when the host renumbers and close when it is gone), `session`, `window_index`, `width`, `height` and `last` (a split's window and direction, the close confirmation's words); hosts online or not, each with `later`, `sessions`, `close`, `mail` and `keys` where its agent parks, starts sessions, closes panes, holds mail or takes the key grammar |
 | `GET /v1/inbox` | JSON | the inbox page, every pane that waits, oldest first, then the parked ones, and *Go to*, its first awake entry; read with every listing |
 | `GET /v1/talk` | JSON, `?limit=50` once, then `?after=N&limit=100` | the messages page and the `» messages · mail n` row; read with every listing |
 | `GET /v1/panes/{address}/mail` | JSON | the mail page, read when it opens and with every listing while it is open |
@@ -211,8 +211,12 @@ sequenceDiagram
 - One read of the pane and one of the list in flight at a time. The pane
   is read every *follow* seconds (1 to 30, default 3) while the view is at
   the bottom and the app is in the foreground; paused, it is not read
-  until the view is at the bottom again. The list is read every 10 s and
-  on every event.
+  until the view is at the bottom again. The list is read every 10 s,
+  on every event, and at once when a read answers `404` for a pane the
+  listing still names there (the host renumbered). What is read is held
+  by the pane's key (`paneKey`: the host and `pane_id`), and after every
+  listing the pages are reconciled: a pane at a new address is followed,
+  a pane gone while its host is there closes its pages with a word.
 - A spoken clip goes to `POST /v1/transcribe` as a 16 kHz mono WAV, at
   most 60 s, and the text comes back for review before it is typed.
 - `401` forgets the token at once and stops polling: a refused token is

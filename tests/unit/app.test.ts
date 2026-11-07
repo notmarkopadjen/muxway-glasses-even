@@ -251,3 +251,133 @@ test('the trace: off, the log is as before; on, every draw, view change and time
     assert.ok(!m.includes('$ make') && !m.includes('make\n'), 'pane content in the log: ' + m)
   }
 })
+
+/** Three panes of one window as tmux has them, and the host renumbering when one closes: the listing names each pane by id at its address, a read at an address gives the rows of whoever sits there. */
+function renumberingHub() {
+  const calls: string[] = []
+  // address → the pane there: its id and name; the rows name the pane.
+  let at = new Map([
+    ['work/0.0', { id: '%1', name: 'test-pane' }],
+    ['work/0.1', { id: '%2', name: 'second' }],
+    ['work/0.2', { id: '%3', name: 'third' }],
+  ])
+  let kept = at
+  let online = true
+  let pending: string | null = null
+  const listing = () =>
+    JSON.stringify({ panes: [...at].map(([path, p]) => ({ address: 'alice-laptop/' + path, mode: 'write', command: 'bash', title: p.name, pane_id: p.id, activity: 1 })) })
+  const fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
+    const u = String(url)
+    calls.push(u)
+    const json = (body: string) => new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    if (u.includes('/v1/events')) {
+      if (u.includes('wait=')) {
+        await new Promise((r) => setTimeout(r, 200))
+        if (pending) {
+          const ev = pending
+          pending = null
+          return json(JSON.stringify({ events: [{ seq: 2, at: 1, address: 'alice-laptop/' + ev, kind: 'done', text: '' }], next: 2 }))
+        }
+      }
+      return json('{"events":[],"next":1}')
+    }
+    if (u.includes('/v1/hosts')) return json(JSON.stringify({ hosts: [{ name: 'alice-laptop', online }] }))
+    const m = /\/v1\/panes\/alice-laptop\/(work\/\d\.\d)\?/.exec(u)
+    if (m) {
+      const p = at.get(m[1])
+      if (!p) return new Response('{"error":"not_found"}', { status: 404, headers: { 'Content-Type': 'application/json' } })
+      const etag = `"${p.id}-rows"`
+      if ((init?.headers as Record<string, string>)?.['If-None-Match'] === etag) return new Response(null, { status: 304 })
+      return new Response(`$ echo ${p.name}-rows\n${p.name}-rows\n$ \n`, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', ETag: etag } })
+    }
+    if (u.includes('/v1/panes')) return json(listing())
+    return new Response(null, { status: 204 })
+  }
+  return {
+    calls,
+    fetch,
+    /** The pane at the address closes: the ones after it move up one. */
+    kill(path: string) {
+      const rest = [...at].filter(([p]) => p !== path).map(([, p]) => p)
+      at = new Map(rest.map((p, i) => [`work/0.${i}`, p]))
+    },
+    /** An event the app reads as a reason to list again. */
+    poke(path: string) {
+      pending = path
+    },
+    /** The host is away: offline, nothing listed, every read refused. */
+    away() {
+      kept = at
+      at = new Map()
+      online = false
+    },
+    back() {
+      at = kept
+      online = true
+    },
+  }
+}
+
+test('a pane page shows its own pane or nothing: the host renumbers, the page follows by id with a blank body first, then the pane goes and the page closes with a word; a host away closes nothing', async () => {
+  const hub = renumberingHub()
+  globalThis.fetch = hub.fetch as typeof fetch
+  await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'b'.repeat(43), every: 1 })
+  const bridge = fakeBridge()
+  const lines: string[] = []
+  const app = new App(bridge as never, (m) => lines.push(m), null)
+  try {
+    await own(app, bridge, hub, lines)
+  } finally {
+    app.stop()
+    await sleep(400)
+  }
+})
+
+async function own(app: App, bridge: ReturnType<typeof fakeBridge>, hub: ReturnType<typeof renumberingHub>, lines: string[]) {
+  await app.start()
+  await sleep(300)
+  // The host's line, test-pane, second: two down and a tap opens second (work/0.1).
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+  await sleep(150)
+  bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+  await sleep(150)
+  bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
+  await sleep(600)
+  const reads = (path: string) => hub.calls.filter((c) => c.includes('/v1/panes/alice-laptop/' + path + '?')).length
+  assert.ok(reads('work/0.1') >= 1, 'second was read at work/0.1')
+  assert.ok(bridge.upgrades.some((c) => c.includes('second-rows')), 'its rows were drawn')
+  const drawn = () => bridge.upgrades.concat(bridge.pages.map((p) => JSON.stringify(p)))
+
+  // test-pane closes: second is work/0.0 and third sits at work/0.1, where the page still reads.
+  hub.kill('work/0.0')
+  hub.poke('work/0.1')
+  await sleep(1500)
+  const followed = lines.findIndex((l) => l === 'followed second to work/0.0')
+  assert.ok(followed >= 0, lines.join('\n'))
+  const before = reads('work/0.0')
+  await sleep(1300)
+  assert.ok(reads('work/0.0') > before, 'the page reads second where it is now')
+  assert.ok(bridge.upgrades.some((c) => c === 'work/0.0'), 'the state shows the new place')
+  // From the follow on, nothing of third is drawn under second's title: the rows read at the old address were dropped and the body was blank until the first read at the new one.
+  const strangers = drawn().filter((c) => c.includes('third-rows')).length
+  await sleep(1200)
+  assert.equal(drawn().filter((c) => c.includes('third-rows')).length, strangers, 'a stranger\'s rows were drawn after the follow')
+  assert.ok(bridge.upgrades.some((c) => c.includes('second-rows')), 'second\'s own rows came back')
+  assert.ok(!lines.some((l) => l.includes('is gone')), 'nothing was gone yet')
+
+  // The host goes away: the page stays and the reads say so.
+  hub.away()
+  hub.poke('work/0.0')
+  await sleep(1500)
+  assert.ok(!lines.some((l) => l.includes('is gone')), 'a pane whose host is away was given up: ' + lines.filter((l) => l.includes('gone')).join(', '))
+  assert.ok(hub.calls.some((c) => c.includes('/v1/panes/alice-laptop/work/0.0?')), 'the page kept reading')
+
+  // The host is back without second: the page closes with a word, the list is drawn.
+  hub.back()
+  hub.kill('work/0.0')
+  hub.poke('work/0.0')
+  await sleep(1500)
+  assert.ok(lines.includes('second is gone'), lines.join('\n'))
+  assert.ok(drawn().some((c) => c.includes('second is gone')), 'the word was not drawn')
+  assert.ok(drawn().some((c) => c.includes('third') && c.includes('alice-laptop')), 'the list did not come back')
+}

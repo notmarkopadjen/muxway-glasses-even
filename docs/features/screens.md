@@ -239,7 +239,9 @@ question, a permission, idle or done alike, parked panes skipped.
 The selected panes in the list's order, two or three columns, each a
 title line with its mark, name and program, and the last eight lines
 through the lens wrapped to the column. All of them follow, each with
-its own ETag. Titles are text, so the page carries no pictures. A rule
+its own ETag, and each is held by its id as [the pane](#the-pane) is:
+a column follows its pane when the host renumbers, and a pane that is
+gone leaves the columns. Titles are text, so the page carries no pictures. A rule
 runs under the titles with two columns; with three, the three titles,
 the three bodies, the unseen corner square that takes the gestures and
 the hint are the page's eight containers, so the gap between the
@@ -323,6 +325,38 @@ input box is not drawn; what it holds is the first answer.
   rule, and the new pane opens.
 - **Double tap** goes back where the pane was opened from: the columns
   or the list.
+
+The page shows **its own pane or nothing**. A tmux address is a
+position, and the host renumbers panes when one closes (`work/1.1`
+becomes `work/1.0`), so the app knows the pane by the listing's
+`pane_id`, with its host, from the moment it opens, and what it reads
+is held under that key, never under an address: a pane opened at an
+address another pane had before starts blank, not with the other's
+rows. After every listing (ten seconds, on every event, and at once
+when a read answers `not found` while the listing still names the
+pane there) the page **follows** its pane to its new address: the
+title stays, the state shows the new place, what was read at the old
+address is dropped, and the body is blank with `reading…` until the
+pane's own rows arrive at the new address. That blank is the glasses'
+form of the web's CRT warm-up (an animation would be several text
+upgrades over Bluetooth for a box the wearer glances at). When the
+listing no longer has the pane while its host is there, the page and
+every page over it (the answers, a confirmation, the voice pages, the
+mail) close with a word in the hint, `build is gone`, and the page
+under them comes back: the columns the pane was opened from, or the
+list. A pane whose host is away stays, and the state says `host
+offline`, as before. Every write confirmed on the glasses, an answer,
+a mail, Later, Close pane, + pane, goes to the address the latest
+listing gives the pane, so a confirmation taken after a renumber
+reaches the pane, not its old address.
+
+What text mode cannot give: a text-mode read carries the rows and an
+`ETag`, no pane id, so between a renumber and the next listing the
+app cannot tell a stranger's rows from its pane's. In one case,
+another pane moving *into* the open pane's address while the open
+pane moved too and no event came, the stranger's rows can show for up
+to ten seconds; a pane id in the read's headers would close that gap
+on the hub's side.
 
 ## New panes and sessions
 
@@ -475,9 +509,18 @@ send this to build?
   box come from the listing's fields and the wearer's gestures, never
   from the title; a listing of hundreds of panes is nine rows and a
   cursor.
-- The selection is a list of addresses the hub returned, held in memory
+- The selection is a list of pane keys (the host and the listing's
+  `pane_id`, or the address for a hub without ids), held in memory
   only and pruned to every listing; a hostile listing cannot select
   anything.
+- The pane page, the columns and every write know the pane by that
+  key: what is read is held under it, never under an address, so a
+  pane opened where another pane was never starts with the other's
+  rows, and an answer confirmed after the host renumbered reaches the
+  pane where the latest listing has it (S66). A text-mode read names
+  no pane, so a stranger's rows can still show for a listing's wait
+  after a renumber ([the pane](#the-pane)); the token could read them
+  anyway, the hub checks every read.
 - Pictures are drawn by the app from numbers it computed; nothing from
   the network is read as an image. The only one left is the loudness
   graph while listening.

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneName, parseChoices, programSays, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parsePanes } from '../../src/protocol.ts'
+import { agentOf, agentName, checkHubUrl, checkToken, errorWords, folder, paneKey, paneName, parseChoices, programSays, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parsePanes } from '../../src/protocol.ts'
 import { errorCode } from '../../src/api.ts'
 
 const NOW = 1_800_000_000
@@ -279,4 +279,14 @@ test('parsePanes: talk partners and unread mail within their caps, junk ignored'
   // A pane without the fields is a pane without talk or mail.
   const plain = parsePanes(JSON.stringify({ panes: [pane({})] }), NOW)[0]
   assert.deepEqual([plain.talk, plain.mail], [[], 0])
+})
+
+test('paneKey: the host and the id when the listing gave one, else the address; one id on two hosts is two keys', () => {
+  const [a, b] = parsePanes(JSON.stringify({ panes: [pane({ pane_id: '%3' }), pane({ address: 'bob-desktop/work/0.0', pane_id: '%3' })] }), NOW)
+  assert.equal(paneKey(a), 'alice-laptop:%3')
+  assert.equal(paneKey(b), 'bob-desktop:%3')
+  assert.equal(paneKey({ ...a, address: 'alice-laptop/work/1.0' }), 'alice-laptop:%3', 'the key follows the pane, not its address')
+  const [c] = parsePanes(JSON.stringify({ panes: [pane({ pane_id: 'nonsense' })] }), NOW)
+  assert.equal(c.id, '')
+  assert.equal(paneKey(c), 'alice-laptop/work/0.0', 'without an id the address is the key')
 })

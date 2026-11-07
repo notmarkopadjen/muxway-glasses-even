@@ -7,7 +7,7 @@ import { sparkline } from './charts.ts'
 import { groupsOf, pullTogether, type Groups } from './groups.ts'
 import { BANNER_Y, LINE_H, MAX_BLOCKS, RULE_H, TOP, type Block, type MenuSpec, type Page } from './glasses.ts'
 import { runsClaude, shapeClaude } from './lens.ts'
-import { folder, paneName, program, programSays, type Attention, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
+import { folder, paneKey, paneName, program, programSays, type Attention, type Host, type Mail, type Pane, type Talk, type TalkEnd } from './protocol.ts'
 import { tiles, type Chart } from './raster.ts'
 import { CANVAS_W, LINE_PX, byteLength, fitWidth, textWidth, typed, wrapRows } from './text.ts'
 
@@ -38,7 +38,7 @@ export interface Model {
   loaded: boolean
   /** The dots after "reading the hub" while it has not, 1 to 3. */
   dots: number
-  /** The panes held on the list, by address, at most three. */
+  /** The panes held on the list, by key (paneKey), at most three. */
   selected: string[]
   /** Selection mode: a tap on a row selects it instead of opening it. */
   selecting: boolean
@@ -56,7 +56,7 @@ export interface Model {
   /** Whether the hub's feed holds anything, and how many entries arrived since the messages page was last opened. */
   feed: boolean
   unseen: number
-  reading: (address: string) => Reader | undefined
+  reading: (p: Pane) => Reader | undefined
 }
 
 export interface Reader {
@@ -306,7 +306,7 @@ export function listLayout(m: Model, now: number): { items: string[]; what: List
     what.push({ kind: 'host', host: h })
     for (const p of m.panes) {
       if (p.host !== h.name) continue
-      items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(p.address) ? 'on' : 'off') : 'none', groups.has(p.address)))
+      items.push(rowLabel(p, now, m.selecting ? (m.selected.includes(paneKey(p)) ? 'on' : 'off') : 'none', groups.has(p.address)))
       what.push({ kind: 'pane', pane: p })
     }
   }
@@ -331,9 +331,9 @@ export function listWindow(count: number, cursor: number, start: number): number
   return Math.max(0, s)
 }
 
-/** The selected panes in the list's order; a pane that left the listing is not among them. */
-export function selectedPanes(m: Model): Pane[] {
-  return m.panes.filter((p) => m.selected.includes(p.address))
+/** The selected panes in the list's order, by key; a pane that left the listing is not among them. */
+export function selectedPanes(m: Pick<Model, 'panes' | 'selected'>): Pane[] {
+  return m.panes.filter((p) => m.selected.includes(paneKey(p)))
 }
 
 /**
@@ -380,7 +380,7 @@ export function splitPage(m: Model, now: number): Page {
     const titleW = i === shown.length - 1 ? colW - CATCH - 4 : colW
     const title = `${chosen ? '» ' : ''}${titleOf(p, groups, now, titleW - INNER - textWidth('» '))}`
     blocks.push({ name: 'title' + i, x, y: TOP, w: titleW, h: TITLE_H, lines: [title], level: chosen ? 4 : 2 })
-    const r = m.reading(p.address)
+    const r = m.reading(p)
     let text: string[]
     if (r?.error) text = [r.error]
     else if (!r || !r.raw.length) text = ['reading…']
