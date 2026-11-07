@@ -135,7 +135,11 @@ client changed it) brings the listing at once, so the row follows
 within a second or two. A desk whose panes are none of the listing's
 (another token's panes, a host away) reads `» desk · nothing to open`
 and a tap says so in the hint. Before any client wrote a desk there is
-no row: the nine rows are the panes'. The row has no box in selection
+no row: the nine rows are the panes'. The page reads the desk across
+origins like everything else, so the hub has to answer the browser's
+preflight for `/v1/desk` as it does for the listing; a hub that does
+not (the core before its CORS list named the desk, 2026-11-07) shows no
+row either. The row has no box in selection
 mode and a tap on it does nothing there. While anything waits the
 next row is the way to the
 [inbox](#the-inbox), `◆ inbox · 2 waiting`, and the hint starts with
