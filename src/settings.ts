@@ -21,6 +21,8 @@ export interface Settings {
   voice: boolean
   /** the phone pane's theme: amber, as on every client, green or paper */
   theme: Theme
+  /** the trace switch: the phone's log keeps what the app did with every gesture, and ten times as many lines */
+  detail: boolean
 }
 
 export type Theme = 'amber' | 'green' | 'paper'
@@ -32,7 +34,7 @@ const KEY = 'muxway.settings.v1'
 declare const __MX_TEST__: boolean
 export const TEST_BUILD = typeof __MX_TEST__ !== 'undefined' && __MX_TEST__
 
-const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true, theme: 'amber' }
+const DEFAULTS: Settings = { hub: '', token: '', every: 3, lines: 200, charset: 'latin1', lens: true, voice: true, theme: 'amber', detail: false }
 
 let current: Settings = { ...DEFAULTS }
 let bridge: EvenAppBridge | null = null
@@ -54,6 +56,7 @@ function normalize(s: Partial<Settings> | null | undefined): Settings {
     lens: s?.lens !== false,
     voice: s?.voice !== false,
     theme: THEMES.includes(s?.theme as Theme) ? (s!.theme as Theme) : 'amber',
+    detail: s?.detail === true,
   }
 }
 
@@ -98,7 +101,7 @@ export function fromQuery(loc: { hostname: string; search: string }): Partial<Se
     const v = q.get(k)
     if (v !== null) out[k] = Number(v)
   }
-  for (const k of ['lens', 'voice'] as const) {
+  for (const k of ['lens', 'voice', 'detail'] as const) {
     const v = q.get(k)
     if (v !== null) out[k] = v !== '0' && v !== 'false'
   }

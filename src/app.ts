@@ -61,7 +61,13 @@ const FEED_KEPT = 200
 
 export class App {
   private bridge: EvenAppBridge
-  private log: (m: string, cls?: '' | 'ok' | 'bad') => void
+  private log: (m: string, cls?: '' | 'ok' | 'bad' | 'trace') => void
+  /** The trace: what the app did with every gesture and timer, written only while the phone's switch is on. */
+  private detail = (m: string) => {
+    if (getSettings().detail) this.log(m, 'trace')
+  }
+  /** Draws in flight: more than none when the spinner's tick finds the last one unanswered. */
+  private drawing = 0
   private view: Glasses
   private stack: View[] = [{ kind: 'list' }]
   private panes: Pane[] = []
@@ -135,10 +141,12 @@ export class App {
   /** The phone pane is told which pane is open, for its reply box, and which one a mail from it would go to. */
   onPane: ((pane: Pane | null, mailTo: Pane | null) => void) | null = null
 
-  constructor(bridge: EvenAppBridge, log: (m: string, cls?: '' | 'ok' | 'bad') => void, trace: ((p: Page) => void) | null) {
+  constructor(bridge: EvenAppBridge, log: (m: string, cls?: '' | 'ok' | 'bad' | 'trace') => void, trace: ((p: Page) => void) | null) {
     this.bridge = bridge
     this.log = log
-    this.view = new Glasses(bridge, (m) => log('glasses: ' + m), trace)
+    this.view = new Glasses(bridge, (m) => log('glasses: ' + m), trace, (m) => {
+      if (getSettings().detail) this.detail('glasses: ' + m())
+    })
     this.recorder = new Recorder(bridge)
     this.unsubscribe = bridge.onEvenHubEvent((e) => void this.onEvent(e))
   }
@@ -164,7 +172,7 @@ export class App {
     this.selected = []
     this.selecting = false
     this.marked = -1
-    this.stack = [{ kind: 'list' }]
+    this.setStack('settings saved')
     this.canSpeak = false
     this.probed = false
     this.sleep()
@@ -173,6 +181,7 @@ export class App {
   }
 
   private wake() {
+    this.detail('wake')
     this.foreground = true
     if (!this.tickTimer) this.tickTimer = setInterval(() => void this.redraw(), 30_000)
     if (!isConfigured()) return
@@ -188,6 +197,7 @@ export class App {
   }
 
   private sleep() {
+    this.detail('sleep')
     this.foreground = false
     if (this.listTimer) clearTimeout(this.listTimer)
     if (this.readTimer) clearTimeout(this.readTimer)
@@ -227,6 +237,7 @@ export class App {
   }
 
   private scheduleList(ms: number) {
+    this.detail(ms ? `list in ${ms / 1000} s` : 'list now')
     if (this.listTimer) clearTimeout(this.listTimer)
     this.listTimer = setTimeout(() => void this.readList(), ms)
   }
@@ -322,6 +333,7 @@ export class App {
   }
 
   private scheduleRead(ms: number) {
+    this.detail(ms ? `read in ${ms / 1000} s` : 'read now')
     if (this.readTimer) clearTimeout(this.readTimer)
     this.readTimer = setTimeout(() => void this.readPanes(), ms)
   }
@@ -365,7 +377,7 @@ export class App {
     if (err.status === 401) {
       await forgetToken()
       this.sleep()
-      this.stack = [{ kind: 'list' }]
+      this.setStack('token refused')
       this.panes = []
       this.selected = []
       this.marked = -1
@@ -395,6 +407,13 @@ export class App {
           if (this.cursor !== null) for (const ev of r.events) this.onNotify(ev.address, ev.kind, ev.text, ev.choices)
           else this.recent(r.events)
           this.cursor = r.next
+          // An answer without a cursor, a body cut at the cap or garbled, restarts the poll without one: after
+          // the wait of a failed poll, never at once, or a hub that answers that way is asked two hundred times a second.
+          if (r.next === null) {
+            this.log(`GET events: no cursor, again in ${this.backoff / 1000} s`, 'bad')
+            await new Promise((r) => setTimeout(r, this.backoff))
+            this.backoff = Math.min(60_000, this.backoff * 2)
+          }
         } catch (e) {
           if (gen !== this.eventsGen) return
           const err = e instanceof ApiError ? e : new ApiError(0)
@@ -449,6 +468,7 @@ export class App {
       // harness whose screen still moves: it is working, and the words follow once the screen stops.
       if (!pane?.later && !(kind === 'idle' && pane && V.isWorking(pane))) {
         this.toast = { text: `${V.MARK[kind]} ${name}: ${text || V.WORDS[kind]}`, until: Date.now() + TOAST_MS }
+        this.detail(`toast ${kind} on ${name}`)
         this.later(TOAST_MS)
       }
     }
@@ -459,6 +479,7 @@ export class App {
   }
 
   private later(ms: number) {
+    this.detail(`clear in ${ms / 1000} s`)
     if (this.clearTimer) clearTimeout(this.clearTimer)
     this.clearTimer = setTimeout(() => void this.redraw(), ms + 50)
   }
@@ -528,8 +549,20 @@ export class App {
     return this.stack[this.stack.length - 1]
   }
 
+  /** A view's name for the trace: its kind and the pane it is about. */
+  private viewName(v: View): string {
+    return 'pane' in v && v.pane ? `${v.kind} ${paneName(v.pane)}` : v.kind
+  }
+
+  /** The stack starts over at the list, for the trace's sake in one place. */
+  private setStack(why: string) {
+    this.detail(`view: ${this.viewName(this.top)} → list (1) · ${why}`)
+    this.stack = [{ kind: 'list' }]
+  }
+
   private async push(v: View) {
     this.flash = null
+    this.detail(`view: ${this.viewName(this.top)} → ${this.viewName(v)} (${this.stack.length + 1})`)
     this.stack.push(v)
     await this.redraw()
     this.scheduleRead(0)
@@ -551,6 +584,7 @@ export class App {
       return
     }
     this.stack.pop()
+    this.detail(`view: ${this.viewName(v)} → ${this.viewName(this.top)} (${this.stack.length}) · back`)
     this.flash = null
     if (v.kind === 'listen' || v.kind === 'heard') await this.endVoice()
     if (v.kind === 'split') this.marked = -1
@@ -1131,7 +1165,7 @@ export class App {
     this.offset = 0
     this.reveal = false
     this.marked = -1
-    this.stack = [{ kind: 'list' }]
+    this.setStack('home')
     await this.redraw()
     this.scheduleRead(0)
   }
@@ -1374,13 +1408,27 @@ export class App {
 
   private async redraw() {
     const page = this.page()
-    await this.view.show(page)
+    const t0 = Date.now()
+    this.drawing++
+    try {
+      await this.view.show(page)
+    } finally {
+      this.drawing--
+    }
+    this.detail(`draw ${page.kind === 'list' ? this.top.kind + ' (OS list)' : this.top.kind} · ${Date.now() - t0} ms`)
     this.spin(this.foreground && V.turning(page))
   }
 
   private spin(on: boolean) {
-    if (on && !this.spinTimer) this.spinTimer = setInterval(() => void this.redraw(), 1000)
+    if (on && !this.spinTimer) {
+      this.detail('spin on')
+      this.spinTimer = setInterval(() => {
+        if (this.drawing) this.detail(`tick: ${this.drawing} draw${this.drawing === 1 ? '' : 's'} still in flight`)
+        void this.redraw()
+      }, 1000)
+    }
     if (!on && this.spinTimer) {
+      this.detail('spin off')
       clearInterval(this.spinTimer)
       this.spinTimer = null
     }
