@@ -252,8 +252,9 @@ test('the trace: off, the log is as before; on, every draw, view change and time
   }
 })
 
-/** Three panes of one window as tmux has them, and the host renumbering when one closes: the listing names each pane by id at its address, a read at an address gives the rows of whoever sits there. */
-function renumberingHub() {
+/** Three panes of one window as tmux has them, and the host renumbering when one closes: the listing names each pane by id at its address, a read at an address gives the rows of whoever sits there, and names them in Muxway-Pane as the core does since #315 (`header: false` is a hub before that). */
+function renumberingHub(opts: { header?: boolean } = {}) {
+  const header = opts.header ?? true
   const calls: string[] = []
   // address → the pane there: its id and name; the rows name the pane.
   let at = new Map([
@@ -264,8 +265,10 @@ function renumberingHub() {
   let kept = at
   let online = true
   let pending: string | null = null
+  // The listing the hub still gives while lagging: the reads answer the new map before the listing says so.
+  let lagging: typeof at | null = null
   const listing = () =>
-    JSON.stringify({ panes: [...at].map(([path, p]) => ({ address: 'alice-laptop/' + path, mode: 'write', command: 'bash', title: p.name, pane_id: p.id, activity: 1 })) })
+    JSON.stringify({ panes: [...(lagging ?? at)].map(([path, p]) => ({ address: 'alice-laptop/' + path, mode: 'write', command: 'bash', title: p.name, pane_id: p.id, activity: 1 })) })
   const fetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
     const u = String(url)
     calls.push(u)
@@ -287,8 +290,9 @@ function renumberingHub() {
       const p = at.get(m[1])
       if (!p) return new Response('{"error":"not_found"}', { status: 404, headers: { 'Content-Type': 'application/json' } })
       const etag = `"${p.id}-rows"`
-      if ((init?.headers as Record<string, string>)?.['If-None-Match'] === etag) return new Response(null, { status: 304 })
-      return new Response(`$ echo ${p.name}-rows\n${p.name}-rows\n$ \n`, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', ETag: etag } })
+      const named = header ? { 'Muxway-Pane': p.id } : {}
+      if ((init?.headers as Record<string, string>)?.['If-None-Match'] === etag) return new Response(null, { status: 304, headers: named })
+      return new Response(`$ echo ${p.name}-rows\n${p.name}-rows\n$ \n`, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', ETag: etag, ...named } })
     }
     if (u.includes('/v1/panes')) return json(listing())
     return new Response(null, { status: 204 })
@@ -300,6 +304,13 @@ function renumberingHub() {
     kill(path: string) {
       const rest = [...at].filter(([p]) => p !== path).map(([, p]) => p)
       at = new Map(rest.map((p, i) => [`work/0.${i}`, p]))
+    },
+    /** The listing keeps saying what it said until catchUp: the reads are ahead of it. */
+    lag() {
+      lagging = at
+    },
+    catchUp() {
+      lagging = null
     },
     /** An event the app reads as a reason to list again. */
     poke(path: string) {
@@ -318,7 +329,24 @@ function renumberingHub() {
   }
 }
 
-test('a pane page shows its own pane or nothing: the host renumbers, the page follows by id with a blank body first, then the pane goes and the page closes with a word; a host away closes nothing', async () => {
+for (const header of [true, false]) {
+  test(`a pane page shows its own pane or nothing (reads ${header ? 'with' : 'without'} Muxway-Pane): the host renumbers, the page follows by id with a blank body first, then the pane goes and the page closes with a word; a host away closes nothing`, async () => {
+    const hub = renumberingHub({ header })
+    globalThis.fetch = hub.fetch as typeof fetch
+    await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'b'.repeat(43), every: 1 })
+    const bridge = fakeBridge()
+    const lines: string[] = []
+    const app = new App(bridge as never, (m) => lines.push(m), null)
+    try {
+      await own(app, bridge, hub, lines)
+    } finally {
+      app.stop()
+      await sleep(400)
+    }
+  })
+}
+
+test('a read that names another pane is not drawn: the host renumbers before the listing says so, the stranger\'s rows never show under the pane\'s title, the listing is asked for at once, and the pane\'s own rows come back where it is now', async () => {
   const hub = renumberingHub()
   globalThis.fetch = hub.fetch as typeof fetch
   await saveSettings({ hub: 'http://127.0.0.1:1', token: 'mxt_' + 'b'.repeat(43), every: 1 })
@@ -326,7 +354,37 @@ test('a pane page shows its own pane or nothing: the host renumbers, the page fo
   const lines: string[] = []
   const app = new App(bridge as never, (m) => lines.push(m), null)
   try {
-    await own(app, bridge, hub, lines)
+    await app.start()
+    await sleep(300)
+    bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+    await sleep(150)
+    bridge.cb!({ textEvent: { eventType: OsEventTypeList.SCROLL_BOTTOM_EVENT } as never })
+    await sleep(150)
+    bridge.cb!(sys(OsEventTypeList.CLICK_EVENT))
+    await sleep(600)
+    assert.ok(bridge.upgrades.some((c) => c.includes('second-rows')), 'second\'s rows were drawn')
+    const drawn = () => bridge.upgrades.concat(bridge.pages.map((p) => JSON.stringify(p)))
+    const listings = () => hub.calls.filter((c) => /\/v1\/panes(\?|$)/.test(c)).length
+    // test-pane closes and the listing lags behind: the read at work/0.1 answers third's rows, named %3, while the
+    // listing still names second (%2) there. No event comes.
+    hub.lag()
+    hub.kill('work/0.0')
+    const before = listings()
+    await sleep(1500)
+    assert.ok(lines.some((l) => l.includes('%3 answered at work/0.1, not %2')), lines.join('\n'))
+    assert.ok(listings() > before, 'the listing was not asked for after the stranger answered')
+    assert.ok(!lines.some((l) => l.startsWith('followed')), 'nothing to follow while the listing lags')
+    assert.equal(drawn().filter((c) => c.includes('third-rows')).length, 0, 'a stranger\'s rows were drawn')
+    assert.ok(bridge.upgrades.some((c) => c.includes('second-rows')), 'the rows held, second\'s own, stayed')
+    // The listing catches up: the page follows second to work/0.0 and its own rows come back there.
+    hub.catchUp()
+    hub.poke('work/0.0')
+    await sleep(2500)
+    assert.ok(lines.includes('followed second to work/0.0'), lines.join('\n'))
+    assert.equal(drawn().filter((c) => c.includes('third-rows')).length, 0, 'a stranger\'s rows were drawn after the follow')
+    assert.ok(hub.calls.some((c) => c.includes('/v1/panes/alice-laptop/work/0.0?')), 'second was not read where it is now')
+    const own2 = bridge.upgrades.filter((c) => c.includes('second-rows')).length
+    assert.ok(own2 >= 2, 'second\'s rows did not come back at the new address')
   } finally {
     app.stop()
     await sleep(400)

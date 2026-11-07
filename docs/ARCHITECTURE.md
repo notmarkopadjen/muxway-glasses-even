@@ -34,7 +34,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | `POST /v1/panes/{address}/close` | `{}` | *Close pane*, confirmed |
 | `POST /v1/windows/{host}/{session}/{window}/panes` | JSON `{"direction"}` | *+ pane*, confirmed; the new pane opens from the answer |
 | `POST /v1/hosts/{host}/sessions` | JSON `{"name"}` | a session from the host's line, confirmed; its first pane opens |
-| `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain` | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has |
+| `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain`; the answer's `Muxway-Pane` names the pane that answered | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has; rows named as another pane's are not drawn and the listing is asked for at once |
 | `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
 | `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
 | `POST /v1/panes/{address}/later` | JSON `{"later": true}` or `false` | the menu's Later and Wake; the wake when a parked pane is opened |
@@ -218,7 +218,10 @@ sequenceDiagram
   listing still names there (the host renumbered). What is read is held
   by the pane's key (`paneKey`: the host and `pane_id`), and after every
   listing the pages are reconciled: a pane at a new address is followed,
-  a pane gone while its host is there closes its pages with a word.
+  a pane gone while its host is there closes its pages with a word. A
+  read whose `Muxway-Pane` is not the pane's id is a stranger's answer
+  (the host renumbered since the listing): nothing of it is taken, and
+  the listing is asked for at once.
 - A spoken clip goes to `POST /v1/transcribe` as a 16 kHz mono WAV, at
   most 60 s, and the text comes back for review before it is typed.
 - `401` forgets the token at once and stops polling: a refused token is

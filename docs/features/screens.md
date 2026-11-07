@@ -368,13 +368,25 @@ a mail, Later, Close pane, + pane, goes to the address the latest
 listing gives the pane, so a confirmation taken after a renumber
 reaches the pane, not its old address.
 
-What text mode cannot give: a text-mode read carries the rows and an
-`ETag`, no pane id, so between a renumber and the next listing the
-app cannot tell a stranger's rows from its pane's. In one case,
-another pane moving *into* the open pane's address while the open
-pane moved too and no event came, the stranger's rows can show for up
-to ten seconds; a pane id in the read's headers would close that gap
-on the hub's side.
+A read names its pane: the hub answers every read, `200` or `304`,
+with `Muxway-Pane`, the id of the pane that answered. The page checks
+it against the pane it holds; when another pane answers (the host
+renumbered since the listing, and another pane sits at the address
+now), nothing of those rows is drawn or kept, and the listing is asked
+for at once, so the page follows its pane within a second. A hub
+without the header is read as before.
+
+```mermaid
+sequenceDiagram
+    participant G as Glasses app
+    participant H as Hub
+    G->>H: GET /v1/panes/alice-laptop/work/0.1 (text)
+    H-->>G: 200, rows, Muxway-Pane: %7
+    G->>G: the page holds %3: nothing taken
+    G->>H: GET /v1/panes (at once)
+    H-->>G: work/0.0 is %3
+    G->>G: follow to work/0.0, blank until its own rows
+```
 
 ## New panes and sessions
 
@@ -543,10 +555,11 @@ send this to build?
   key: what is read is held under it, never under an address, so a
   pane opened where another pane was never starts with the other's
   rows, and an answer confirmed after the host renumbered reaches the
-  pane where the latest listing has it (S66). A text-mode read names
-  no pane, so a stranger's rows can still show for a listing's wait
-  after a renumber ([the pane](#the-pane)); the token could read them
-  anyway, the hub checks every read.
+  pane where the latest listing has it (S66). Every read names the
+  pane that answered (`Muxway-Pane`), and rows named as another pane's
+  are never drawn under a pane's title, whatever the hub or anything
+  between answers (S72); a read without the header is taken as before,
+  so a hub that drops it can only make the app show as much as it did.
 - Pictures are drawn by the app from numbers it computed; nothing from
   the network is read as an image. The only one left is the loudness
   graph while listening.
