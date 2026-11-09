@@ -191,4 +191,11 @@ each.
 
 ## Test run
 
-Link to the recorded run: result, commit, logs, screenshots.
+Run 20261109-184158-69a3155, local, the full suite against the core at
+7239d54 (the head of core PR #329): 165 tests, none failed, the unit
+suite (101) and the secret scan among them, recorded as
+[#99](https://github.com/notmarkopadjen/muxway-glasses-even/issues/99).
+Before it, the full run 20261109-182150-c4882a2 passed the same 165 on
+the commit before the review's log-line change, and the chosen run
+20261109-181756-cb4e64d failed S73 alone, on the per-input listing
+check described under the review.
