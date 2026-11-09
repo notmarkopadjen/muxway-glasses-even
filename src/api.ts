@@ -125,6 +125,11 @@ function q(params: Record<string, string | number>): string {
   return new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
 }
 
+/** The screen as the glasses want it: the last rows by the setting, unwrapped (width 400), in the charset the font has. */
+function screen(): string {
+  return q({ lines: getSettings().lines, width: 400, charset: getSettings().charset })
+}
+
 /** The address in a path, each segment escaped; the listing parser has already checked its grammar. */
 function at(address: string): string {
   return address.split('/').map(encodeURIComponent).join('/')
@@ -136,10 +141,10 @@ export const api = {
   panes: () => call('GET', '/v1/panes', { json: true }),
   hosts: () => call('GET', '/v1/hosts', { json: true }),
   /** The last rows, unwrapped (width 400): the glasses wrap by pixels themselves. */
-  pane: (address: string, etag: string) =>
-    call('GET', `/v1/panes/${at(address)}?` + q({ lines: getSettings().lines, width: 400, charset: getSettings().charset }), { etag }),
-  text: (address: string, text: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ text }) }),
-  key: (address: string, key: string) => call('POST', `/v1/panes/${at(address)}/input`, { body: JSON.stringify({ key }) }),
+  pane: (address: string, etag: string) => call('GET', `/v1/panes/${at(address)}?` + screen(), { etag }),
+  /** A piece of input, with the screen once it landed: 200 with the rows as a read gives them, 204 from a hub before the echo. */
+  text: (address: string, text: string) => call('POST', `/v1/panes/${at(address)}/input?read=1&` + screen(), { body: JSON.stringify({ text }) }),
+  key: (address: string, key: string) => call('POST', `/v1/panes/${at(address)}/input?read=1&` + screen(), { body: JSON.stringify({ key }) }),
   /** A question's choice back to the process that asked; nothing is typed into the pane. */
   answer: (address: string, choice: string) => call('POST', `/v1/panes/${at(address)}/answer`, { body: JSON.stringify({ choice }) }),
   /** Parks the pane for later, or wakes it: the owner's own mark on the host. */

@@ -3,9 +3,9 @@
 // and the long poll for events.
 
 import { OsEventTypeList, type EvenAppBridge, type EvenHubEvent } from '@evenrealities/even_hub_sdk'
-import { ANSWERS, choiceAnswer, keysFor, type Answer } from './answers.ts'
+import { ANSWERS, choiceAnswer, keysFor, type Answer, type Piece } from './answers.ts'
 import { commandsFor } from './commands.ts'
-import { ApiError, api } from './api.ts'
+import { ApiError, api, type Answer as Reply } from './api.ts'
 import { Glasses, type Page } from './glasses.ts'
 import { paneKey, paneName, parseDesk, parseEvents, parseFeed, parseHosts, parseInbox, parseMailbox, parseOne, parsePanes, type Attention, type Desk, type Host, type Mail, type Pane, type Talk } from './protocol.ts'
 import { forgetToken, getSettings, isConfigured } from './settings.ts'
@@ -356,36 +356,59 @@ export class App {
     const t0 = Date.now()
     try {
       for (const p of panes) {
-        const r = this.readers.get(paneKey(p)) ?? { raw: [], error: null, etag: '' }
         try {
-          const a = await api.pane(p.address, r.etag)
-          if (a.pane && p.id && a.pane !== p.id) {
-            // Another pane answered at the address: the host renumbered since the listing named the pane there.
-            // Nothing of it is taken, the rows held are the pane's own; the listing says where the pane is now.
-            this.log(`GET pane ${a.status}: ${a.pane} answered at ${p.path}, not ${p.id}`)
-            if (this.panes.some((x) => paneKey(x) === paneKey(p))) this.scheduleList(0)
-            continue
-          }
-          if (a.status !== 304) {
-            r.raw = splitRows(a.body)
-            r.etag = a.etag
-          }
-          r.error = null
-          this.log(`GET pane ${a.status} ${a.body.length} chars ${Date.now() - t0} ms`)
+          const a = await api.pane(p.address, this.readers.get(paneKey(p))?.etag ?? '')
+          if (this.took(p, a, 'GET pane')) this.log(`GET pane ${a.status} ${a.body.length} chars ${Date.now() - t0} ms`)
         } catch (e) {
+          const r = this.readers.get(paneKey(p)) ?? { raw: [], error: null, etag: '' }
           r.error = await this.failed(e, 'GET pane')
+          this.readers.set(paneKey(p), r)
           if (!this.foreground) return
           // No pane at the address while the listing names one there: the window changed since. The listing says
           // where the pane is now, or that it is gone; a listing that does not name it has said its word already.
           if (e instanceof ApiError && e.status === 404 && this.panes.some((x) => paneKey(x) === paneKey(p))) this.scheduleList(0)
         }
-        this.readers.set(paneKey(p), r)
       }
     } finally {
       this.readBusy = false
     }
     if (panes.length) await this.redraw()
     if (this.foreground) this.scheduleRead(getSettings().every * 1000)
+  }
+
+  /**
+   * The pane's screen from an answer that carries one: a read's, or an input's with the echo (200; a 204 from a hub
+   * before the echo carries nothing and is not looked at). Rows the hub names as another pane's (Muxway-Pane) are
+   * not taken: the host renumbered since the listing named the pane at the address, the rows held are the pane's
+   * own, and the listing says where the pane is now. Returns whether the answer was the pane's.
+   */
+  private took(p: Pane, a: Reply, what: string): boolean {
+    if (a.status === 204) return false
+    if (a.pane && p.id && a.pane !== p.id) {
+      this.log(`${what} ${a.status}: ${a.pane} answered at ${p.path}, not ${p.id}`)
+      if (this.panes.some((x) => paneKey(x) === paneKey(p))) this.scheduleList(0)
+      return false
+    }
+    const r = this.readers.get(paneKey(p)) ?? { raw: [], error: null, etag: '' }
+    if (a.status !== 304) {
+      r.raw = splitRows(a.body)
+      r.etag = a.etag
+    }
+    r.error = null
+    this.readers.set(paneKey(p), r)
+    return true
+  }
+
+  /** The pieces of an input, each with the screen once it landed; whether the last one's screen was drawn in. */
+  private async type(pane: Pane, pieces: Piece[]): Promise<boolean> {
+    let echoed = false
+    for (const p of pieces) {
+      if (p.text === undefined && p.key === undefined) continue
+      const a = p.text !== undefined ? await api.text(pane.address, p.text) : await api.key(pane.address, p.key!)
+      echoed = a.status === 200 && this.took(pane, a, 'POST input')
+      if (a.status === 200) this.log(`POST input 200 ${a.body.length} chars`)
+    }
+    return echoed
   }
 
   /** A failed request in a few words; a refused token is forgotten at once. */
@@ -1334,22 +1357,25 @@ export class App {
       return
     }
     let words = 'sent ' + answer.short
+    let echoed = false
     try {
-      for (const p of answer.pieces) {
-        if (p.text !== undefined) await api.text(pane.address, p.text)
-        else if (p.key !== undefined) await api.key(pane.address, p.key)
-      }
+      echoed = await this.type(pane, answer.pieces)
       // The suggestion is pane text: the log keeps its size only.
       const what = answer.secret ? `the suggestion, ${new TextEncoder().encode(answer.pieces[0]?.text ?? '').length} bytes` : answer.short
       this.log(`sent ${what} to ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST input')
     }
+    await this.sent(words, echoed)
+  }
+
+  /** After an input: the flash, the view at the bottom, one draw; the pane read at once unless its screen came with the answer. */
+  private async sent(words: string, echoed: boolean) {
     this.flash = { text: words, until: Date.now() + FLASH_MS }
     this.later(FLASH_MS)
     this.offset = 0
     await this.redraw()
-    await this.readPanes(true)
+    if (!echoed) await this.readPanes(true)
   }
 
   /** A question's choice to the process that asked; the hub refuses one that is not on offer or no longer asked. */
@@ -1384,17 +1410,13 @@ export class App {
     if (!held) return 'open a pane on the glasses first'
     const pane = this.current(held)
     if (!pane.writable) return 'that pane is read-only'
+    let echoed = false
     try {
-      await api.text(pane.address, text)
-      if (enter) await api.key(pane.address, 'Enter')
+      echoed = await this.type(pane, enter ? [{ text }, { key: 'Enter' }] : [{ text }])
     } catch (e) {
       return await this.failed(e, 'POST input')
     }
-    this.flash = { text: enter ? 'sent from the phone, Enter' : 'typed from the phone', until: Date.now() + FLASH_MS }
-    this.later(FLASH_MS)
-    this.offset = 0
-    await this.redraw()
-    await this.readPanes(true)
+    await this.sent(enter ? 'sent from the phone, Enter' : 'typed from the phone', echoed)
     return ''
   }
 
@@ -1517,18 +1539,14 @@ export class App {
     this.voice = null
     this.stack.pop()
     let words = enter ? 'sent what you said, Enter' : 'typed what you said'
+    let echoed = false
     try {
-      await api.text(pane.address, text)
-      if (enter) await api.key(pane.address, 'Enter')
+      echoed = await this.type(pane, enter ? [{ text }, { key: 'Enter' }] : [{ text }])
       this.log(`sent ${text.length} characters you said to ${paneName(pane)}`, 'ok')
     } catch (e) {
       words = await this.failed(e, 'POST input')
     }
-    this.flash = { text: words, until: Date.now() + FLASH_MS }
-    this.later(FLASH_MS)
-    this.offset = 0
-    await this.redraw()
-    await this.readPanes(true)
+    await this.sent(words, echoed)
   }
 
   // ------------------------------------------------------------------- pages
