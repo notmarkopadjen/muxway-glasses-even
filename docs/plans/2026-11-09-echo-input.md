@@ -173,10 +173,21 @@ sequence diagram, the reading rules), this plan.
 
 ## Review (after implementation)
 
-- [ ] Diff matches the plan, deviations explained here
-- [ ] Security rules (AGENTS.md section 2) hold
-- [ ] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
-- [ ] Docs and diagrams updated
+- [x] Diff matches the plan, deviations explained here
+- [x] Security rules (AGENTS.md section 2) hold
+- [x] Privacy check passed: `scripts/prepush-check.sh` clean and diff read
+- [x] Docs and diagrams updated
+
+Deviations: none in the behaviour. The three send paths share two
+helpers the plan did not name, `type` (the pieces, each answer through
+`took`) and `sent` (the flash, the draw, the read at once unless
+echoed). The harness also stamps every traced page with the time it
+arrived (`sim.timed()`), which F13 and S73 need to say a page came
+before or after a request. S73 first expected a listing right after
+*each* input answered as a stranger's; the second input's ask finds the
+first's listing in flight, which is the listing's one-in-flight rule,
+so the test accepts a listing between the first input and 1.5 s after
+each.
 
 ## Test run
 

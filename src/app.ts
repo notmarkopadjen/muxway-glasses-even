@@ -406,7 +406,7 @@ export class App {
       if (p.text === undefined && p.key === undefined) continue
       const a = p.text !== undefined ? await api.text(pane.address, p.text) : await api.key(pane.address, p.key!)
       echoed = a.status === 200 && this.took(pane, a, 'POST input')
-      if (a.status === 200) this.log(`POST input 200 ${a.body.length} chars`)
+      if (echoed) this.log(`POST input 200 ${a.body.length} chars`)
     }
     return echoed
   }
