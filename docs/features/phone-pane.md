@@ -43,7 +43,8 @@ would go to (`mail to review`). **send ⏎** posts the text and then
 `Enter`; **type only** posts the text alone. Control characters are
 removed and the text is cut to 4096 bytes before it goes, since the hub
 refuses both. The glasses flash `sent from the phone, Enter` in the head and
-read the pane at once. **mail** leaves the text for the pane's process
+show the screen that came back with the input ([the echo](screens.md#the-pane),
+`?read=1`); on a hub before it they read the pane at once. **mail** leaves the text for the pane's process
 instead, never typed: the glasses show `mail this to review?` with the
 first words and Cancel / Confirm, and Confirm posts it
 ([messages and mail](messages.md)). While the glasses ask for a new

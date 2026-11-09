@@ -35,7 +35,7 @@ preflight such a page needs. The glasses see only what the page draws.
 | `POST /v1/windows/{host}/{session}/{window}/panes` | JSON `{"direction"}` | *+ pane*, confirmed; the new pane opens from the answer |
 | `POST /v1/hosts/{host}/sessions` | JSON `{"name"}` | a session from the host's line, confirmed; its first pane opens |
 | `GET /v1/panes/{address}` | text mode, `?lines=50..500&width=400&charset=latin1` (or `utf-8`), `If-None-Match` / `ETag`, `Accept: text/plain`; the answer's `Muxway-Pane` names the pane that answered | the open pane and the columns: unwrapped rows the app wraps by pixels, in the glyphs the font has; rows named as another pane's are not drawn and the listing is asked for at once |
-| `POST /v1/panes/{address}/input` | JSON `{"text"}` or `{"key"}`, one request per piece | answers, the suggestion, the phone's text, a spoken reply |
+| `POST /v1/panes/{address}/input?read=1` | JSON `{"text"}` or `{"key"}`, one request per piece, with the pane read's `lines`, `width` and `charset`; `Accept: text/plain`; the answer is the read's (`200` with the rows, `ETag`, `Muxway-Pane`) or `204` from a hub before the echo | answers, the suggestion, the phone's text, a spoken reply; a `200` is drawn as the pane's screen at once, checked as a read is; a `204` reads the pane at once as before |
 | `POST /v1/panes/{address}/answer` | JSON `{"choice"}` | a question's choice, to the process that asked |
 | `POST /v1/panes/{address}/later` | JSON `{"later": true}` or `false` | the menu's Later and Wake; the wake when a parked pane is opened |
 | `GET /v1/events` | JSON long poll: `?limit=50` for the cursor and the recent events, then `?after=N&wait=25&limit=50` | notifications, with a question's `choices`; what was working at start; a `desk` event asks for the listing, which reads the desk |
@@ -203,9 +203,11 @@ sequenceDiagram
     H-->>A: event: permission on work/1.0
     A->>A: toast, mark, list read
     W->>A: tap, pick "y, Enter", Confirm
-    A->>H: POST input {"text":"y"}
-    A->>H: POST input {"key":"Enter"}
-    A->>H: GET the pane at once
+    A->>H: POST input?read=1&lines=200&width=400&charset=latin1 {"text":"y"}
+    H-->>A: 200, the rows with y typed, Muxway-Pane
+    A->>H: POST input?read=1&… {"key":"Enter"}
+    H-->>A: 200, the rows after Enter, Muxway-Pane
+    A->>A: the rows drawn with the flash; the next read when the timer says
 ```
 
 - `fetch` with a 20 s abort, 45 s for the long poll; at most 256 KiB of
@@ -221,7 +223,11 @@ sequenceDiagram
   a pane gone while its host is there closes its pages with a word. A
   read whose `Muxway-Pane` is not the pane's id is a stranger's answer
   (the host renumbered since the listing): nothing of it is taken, and
-  the listing is asked for at once.
+  the listing is asked for at once. An input asks for the screen with
+  `?read=1`, and its `200` is taken exactly as a read's answer, so a
+  key's echo is on the page one round trip after the last piece; a
+  `204` (a hub or host before the echo) reads the pane at once as
+  before. The follow timer is not touched by an input.
 - A spoken clip goes to `POST /v1/transcribe` as a 16 kHz mono WAV, at
   most 60 s, and the text comes back for review before it is typed.
 - `401` forgets the token at once and stops polling: a refused token is

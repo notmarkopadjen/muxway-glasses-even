@@ -18,7 +18,8 @@ sequenceDiagram
     H-->>A: text, cleaned
     A->>W: heard this: the text
     W->>A: tap
-    A->>H: POST input text, then Enter
+    A->>H: POST input?read=1 text, then Enter
+    H-->>A: 200, the screen with the text in it
 ```
 
 ## On the glasses
@@ -45,8 +46,9 @@ opens with **» Say it**. It leads through three pages:
   how long it was. The hub forwards it to the transcriber its owner set.
 - **Heard this**: the text in a framed box under a title line with the
   clip's length. Reading it is the confirmation:
-  **tap** sends it and then `Enter`, like the phone's send, and the pane
-  is read at once. The menu has **Type without Enter** and **Say it
+  **tap** sends it and then `Enter`, like the phone's send, and the
+  screen that came back with the input is drawn at once ([the
+  echo](screens.md#the-pane)). The menu has **Type without Enter** and **Say it
   again**; a **double tap** cancels and nothing is sent.
 - Any failure (the transcriber down, a refusal) is the top line, with
   `say it again` in the hint; a tap tries again.

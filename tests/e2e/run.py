@@ -238,7 +238,7 @@ def s03(run, name):
     sim.shot("pane")
     status, body = direct(proxy.url, tok, "POST", f"/v1/panes/{HOST}/work/0.0/input", '{"text":"y"}')
     check(status == 403, f"a direct write got {status}")
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") and r["headers"].get("Origin") is not None for r in proxy.requests), "the app wrote")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") and r["headers"].get("Origin") is not None for r in proxy.requests), "the app wrote")
 
 
 @test("S04", "A 1 MiB body, bytes that are not UTF-8 and control characters", "e2e-security")
@@ -289,7 +289,7 @@ def s05(run, name):
     sim.shot("hostile-confirm")
     sim.tap()
     sim.head('sent "box', "the flash", 10)
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(posts == [{"text": "box [31mred[0m bell nul"}, {"key": "Enter"}], str(posts))
     check(posts[0]["text"] == shown, f"sent {posts[0]['text']!r}, showed {shown!r}")
     check(all(r["path"].startswith("/v1/panes/alice-laptop/work/0.0/") for r in proxy.requests if r["method"] == "POST"), "a write to another pane")
@@ -334,7 +334,7 @@ def s08(run, name):
         return sim.head("answer test-pane", "the answers")
 
     def no_writes(proxy):
-        check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "the app wrote")
+        check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "the app wrote")
 
     def teardown():
         for fn in reversed(run.cleanups):
@@ -367,7 +367,7 @@ def s08(run, name):
     sim.shot("claude-confirm")
     sim.tap()
     sim.head("sent ", "the flash", 10)
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(posts == [{"text": shown}, {"key": "Enter"}], f"sent {posts}, showed {shown!r}")
 
 
@@ -448,7 +448,7 @@ def s40(run, name):
     check(ask.poll() is None, "the ask ended although nothing answered it")
     posts = [r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/answer") and r["headers"].get("Origin") is not None]
     check(len(posts) == 1 and json.loads(posts[0]["body"]) == {"choice": "yes"}, str([(p["path"], p["body"]) for p in posts]))
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
     ask.kill()
 
 
@@ -594,7 +594,7 @@ def s25(run, name):
     page = sim.head("hub unreachable", "the error", 10)
     check("say it again" in page["hint"], page["hint"])
     sim.shot("stt-failed")
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was sent")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "something was sent")
 
 
 @test("S26", "A transcript with escapes and 10 KiB: shown cleaned and cut, only printable text sent", "e2e-security")
@@ -611,7 +611,7 @@ def s26(run, name):
     sim.shot("heard-hostile")
     sim.tap()
     sim.head("sent what you said", "the flash", 10)
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(len(posts) == 2 and "text" in posts[0] and posts[1] == {"key": "Enter"}, str(posts)[:200])
     sent = posts[0]["text"]
     check(not re.search(r"[\x00-\x1f\x7f]", sent) and len(sent.encode()) <= 4096, f"sent {len(sent)} chars")
@@ -637,7 +637,7 @@ def f20(run, name):
     wait_for("typed", lambda: "run the tests again" in core.pane(), 5)
     sim.expect(lambda p: any("run the tests again" in l for l in (sim.block("body", p) or [])), "the pane after", 8)
     sim.shot("sent")
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(posts == [{"text": "run the tests again"}, {"key": "Enter"}], str(posts))
     hub = (run.logs(name) / "hub.log").read_text()
     check("audit transcribe" in hub and "run the tests again" not in hub, "the hub log")
@@ -672,7 +672,7 @@ def f22(run, name):
     sim.menu(0)
     sim.head("typed what you said", "typed without Enter", 10)
     wait_for("typed", lambda: "run the tests again" in core.pane(), 5)
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(posts == [{"text": "run the tests again"}], str(posts))
     core.keys("C-u")
     say_it(sim)
@@ -682,7 +682,7 @@ def f22(run, name):
     sim.back()
     wait_for("back on the pane", lambda: following(sim) or "paused" in sim.state(), 10)
     time.sleep(1)
-    check(len([r for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]) == 1, "the cancelled transcript was sent")
+    check(len([r for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]) == 1, "the cancelled transcript was sent")
     sim.shot("cancelled")
 
 
@@ -766,13 +766,27 @@ def f13(run, name):
     page = sim.head("send y, Enter to test-pane?", "the confirmation")
     check(page["items"] == ["Cancel", "Confirm"], page["items"])
     sim.shot("confirm")
+    # The confirmation follows the pane too: right after a read the next one is a follow interval away, so what the
+    # page shows between the inputs and that read came from the inputs' own answers.
+    reads = lambda: [r for r in proxy.paths(f"/v1/panes/{HOST}/", "GET")]
+    seen = len(reads())
+    wait_for("a read", lambda: len(reads()) > seen, 10)
     sim.choose(1)
     sim.head("sent y, Enter", "the flash", 10)
     wait_for("y typed", lambda: "y: command not found" in core.pane(), 5)
-    sim.expect(lambda p: any("y: command not found" in l for l in (sim.block("body", p) or [])), "the pane after", 8)
+    echoed = lambda p: any("y: command not found" in l for l in (sim.block("body", p) or []))
+    sim.expect(echoed, "the pane after", 8)
     sim.shot("pane-after")
     posts = [r for r in proxy.requests if r["method"] == "POST"]
     check([json.loads(r["body"]) for r in posts] == [{"text": "y"}, {"key": "Enter"}], f"posts: {[r['body'] for r in posts]}")
+    # The echo rode on the inputs' answers: each asked for the screen with the read's own query and was answered 200, and
+    # the first page with the row reached the harness before any read of the pane made after the last input.
+    for r in posts:
+        check(re.search(r"/input\?read=1&lines=\d+&width=400&charset=(latin1|utf-8)$", r["path"]), r["path"])
+        check(r["status"] == 200, f"the hub answered the input {r['status']}")
+    shown = next(at for at, p in sim.timed() if echoed(p))
+    after = [r["at"] for r in reads() if r["at"] > posts[-1]["at"]]
+    check(not any(t < shown for t in after), f"a read of the pane {shown - min(after):.2f} s before the row was drawn")
     sim.tap()
     sim.head("answer test-pane", "the answers again")
     sim.choose(0)
@@ -822,7 +836,7 @@ def f14(run, name):
     sim.tap()
     sim.head('sent "fix the typo in README"', "the flash", 10)
     wait_for("typed", lambda: "fix the typo in README" in core.pane(), 5)
-    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(posts == [{"text": "fix the typo in README"}, {"key": "Enter"}], str(posts))
     sim.shot("offer-sent")
 
@@ -955,7 +969,7 @@ def f40(run, name):
     check(ask.stdout.read().strip() == "no", "the ask did not print the choice")
     posts = [json.loads(r["body"]) for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/answer")]
     check(posts == [{"choice": "no"}], str(posts))
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
     wait_for("the state cleared", lambda: following(sim), 10)
     sim.shot("answered")
     sim.back()
@@ -1101,7 +1115,7 @@ def f44(run, name):
     pick_menu("Wake")
     wait_for("the flash", lambda: sim.state() == "woken", 10)
     wait_for("awake", lambda: sim.state() == "asks a question", 15)
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "something was typed into the pane")
     sim.shot("pane-woken")
 
 
@@ -1307,9 +1321,9 @@ def titled(text):
 
 
 def posts(proxy, suffix):
-    """The app's POSTs with the path's suffix: the page's requests carry an Origin, a direct one does not."""
+    """The app's POSTs whose path, without its query, ends so: the page's requests carry an Origin, a direct one does not."""
     return [(r["path"], json.loads(r["body"]) if r["body"] else {}) for r in proxy.requests
-            if r["method"] == "POST" and r["path"].endswith(suffix) and r["headers"].get("Origin") is not None]
+            if r["method"] == "POST" and r["bare"].endswith(suffix) and r["headers"].get("Origin") is not None]
 
 
 def origin(core, target="work:0.0"):
@@ -1317,7 +1331,7 @@ def origin(core, target="work:0.0"):
 
 
 def no_typing(proxy):
-    check(not any(r["method"] == "POST" and r["path"].endswith("/input") for r in proxy.requests), "something was typed into a pane")
+    check(not any(r["method"] == "POST" and r["bare"].endswith("/input") for r in proxy.requests), "something was typed into a pane")
 
 
 @test("S60", "A read-only token: no Later, Close or + pane in the menu, no mail back, no commands; the feed and the mailbox read; mail, close, split and a session refused directly and from the glasses", "e2e-security")
@@ -1929,7 +1943,7 @@ def s66(run, name):
     sim.head("sent y, Enter", "the flash", 10)
     wait_for("y typed into second", lambda: "y: command not found" in core.pane("work:0.0"), 5)
     check("y: command not found" not in core.pane("work:0.1"), "the answer reached third")
-    inputs = [r["path"] for r in proxy.requests if r["method"] == "POST" and r["path"].endswith("/input")]
+    inputs = [r["path"] for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
     check(inputs and all(f"/{HOST}/work/0.0/input" in path for path in inputs), inputs)
     sim.shot("answered")
     pages = sim.trace()
@@ -1964,6 +1978,54 @@ def s72(run, name):
     sim.expect(lambda p: any("PLAIN-MARK" in l for l in (sim.block("body", p) or [])), "the pane's rows without the header", 15)
     sim.shot("plain")
     check(not any("STRANGER-ROW" in l for p in sim.trace() for l in (sim.block("body", p) or [])), "a stranger's rows drawn at any time")
+
+
+@test("S73", "A hostile answer to an input, another pane's rows named as another pane: nothing of them is drawn, the listing is asked for at once, and the pane's own rows come with the read that follows; a 204, as from a hub before the echo: the row comes from a read made right after the input", "e2e-security")
+def s73(run, name):
+    core, proxy, sim, tok = setup(run, name, mode="echo-stranger")
+    open_pane(sim)
+    inputs = lambda: [r for r in proxy.requests if r["method"] == "POST" and r["bare"].endswith("/input")]
+    listings = lambda: [r["at"] for r in proxy.requests if r["method"] == "GET" and r["bare"] == "/v1/panes"]
+    reads = lambda: [r["at"] for r in proxy.paths(f"/v1/panes/{HOST}/", "GET")]
+    has = lambda text: lambda p: any(text in l for l in (sim.block("body", p) or []))
+    sim.tap()
+    sim.head("answer test-pane", "the answers")
+    sim.choose(1)
+    sim.head("send y, Enter to test-pane?", "the confirmation")
+    sim.choose(1)
+    sim.head("sent y, Enter", "the flash", 10)
+    wait_for("y typed", lambda: "y: command not found" in core.pane(), 5)
+    # The stranger's answer is not taken; the pane's own rows come with the read at once that follows an answer not taken.
+    sim.expect(has("y: command not found"), "the pane's own rows", 10)
+    sim.shot("own-rows")
+    sent = inputs()
+    check(len(sent) == 2 and all(r["status"] == 200 for r in sent), [(r["path"], r["status"]) for r in sent])
+    check(not any(has("ECHO-STRANGER")(p) for p in sim.trace()), "a stranger's rows drawn")
+    # Each input answered as a stranger's asks for the listing at once; the second's ask found the first's in flight.
+    for r in sent:
+        check(any(sent[0]["at"] < l < r["at"] + 1.5 for l in listings()), "no listing within 1.5 s of the input answered as a stranger's")
+    wait_for("following", lambda: following(sim), 10)
+    # An older hub: the input answers 204 and the row comes from the read made right after it.
+    proxy.mode = "echo-204"
+    core.keys("clear", "Enter", target="work:0.0")
+    sim.expect(lambda p: not has("y: command not found")(p) and sim.block("body", p) is not None, "the cleared pane", 10)
+    sim.tap()
+    sim.head("answer test-pane", "the answers again")
+    sim.choose(1)
+    sim.head("send y, Enter to test-pane?", "the confirmation again")
+    before = len(inputs())
+    sim.choose(1)
+    sim.head("sent y, Enter", "the flash again", 10)
+    sim.expect(has("y: command not found"), "the row after the 204", 10)
+    sim.shot("after-204")
+    again = inputs()[before:]
+    check(len(again) == 2 and all(r["status"] == 204 for r in again), [(r["path"], r["status"]) for r in again])
+    last = again[-1]["at"]
+    read_after = [t for t in reads() if t > last]
+    check(read_after and read_after[0] < last + 1.5, f"no read within 1.5 s of the 204: {[round(t - last, 2) for t in read_after]}")
+    shown = next(at for at, p in sim.timed() if at > last and has("y: command not found")(p))
+    check(shown >= read_after[0], "the row came before the read that was to bring it")
+    check(not any(has("ECHO-STRANGER")(p) for p in sim.trace()), "a stranger's rows drawn at any time")
 
 
 @test("F69", "A pane page follows its pane when the host renumbers, with a blank body until its own rows, and closes with a word when the pane is gone; the columns follow too", "UI")

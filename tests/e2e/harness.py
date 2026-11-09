@@ -262,12 +262,15 @@ class Proxy:
             def forward(self):
                 body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 path = self.path
-                proxy.requests.append({"method": self.command, "path": path, "body": body, "headers": dict(self.headers),
-                                       "at": time.time()})
+                bare = path.split("?")[0]
+                # The record: the path with its query, the path without one (bare), and once answered the status (status).
+                self.record = {"method": self.command, "path": path, "bare": bare, "body": body, "headers": dict(self.headers),
+                               "at": time.time(), "status": None}
+                proxy.requests.append(self.record)
                 proxy.log.write(f"{time.strftime('%H:%M:%S')} {self.command} {path} headers={sorted(k.lower() for k in self.headers.keys())} body={len(body)}\n")
                 proxy.log.flush()
-                bare = path.split("?")[0]
                 is_read = self.command == "GET" and bare.startswith("/v1/panes/")
+                is_input = self.command == "POST" and bare.startswith("/v1/panes/") and bare.endswith("/input")
                 if proxy.mode == "slow-list" and bare == "/v1/panes" and self.command == "GET" and not proxy.slowed:
                     # The first listing takes a while: the app has to say so meanwhile.
                     proxy.slowed = True
@@ -438,10 +441,18 @@ class Proxy:
                 if proxy.mode == "no-pane-header":
                     # A hub before Muxway-Pane: the read names no pane.
                     keep = tuple(k for k in keep if k != "muxway-pane")
+                if proxy.mode == "echo-stranger" and is_input and r.status == 200:
+                    # The input's answer carries another pane's rows, named as another pane: the app draws nothing of them.
+                    return self.reply(200, b"$ echo ECHO-STRANGER\nECHO-STRANGER\n$ \n",
+                                      {"Content-Type": "text/plain; charset=utf-8", "ETag": '"echo-stranger"', "Muxway-Pane": "%4242", **CORS})
+                if proxy.mode == "echo-204" and is_input and r.status == 200:
+                    # A hub before the echo: the input answers 204 and nothing else.
+                    return self.reply(204, b"", {k: v for k, v in r.getheaders() if k.lower().startswith("access-control")})
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})
 
             def reply(self, status, data, headers):
                 proxy.log.write(f"    -> {status} {len(data)} bytes\n")
+                self.record["status"] = status
                 try:
                     self.send_response(status)
                     for k, v in headers.items():
@@ -532,7 +543,9 @@ class Static:
                 m = re.fullmatch(r"/trace/([a-z0-9]{1,32})", self.path)
                 if m:
                     try:
-                        static.traces.setdefault(m.group(1), []).append(json.loads(body))
+                        entry = json.loads(body)
+                        entry["at"] = time.time()
+                        static.traces.setdefault(m.group(1), []).append(entry)
                     except ValueError:
                         pass
                 self.send_response(204)
@@ -544,6 +557,10 @@ class Static:
 
     def pages(self, trace_id):
         return [t["page"] for t in sorted(self.traces.get(trace_id, []), key=lambda t: t["seq"])]
+
+    def timed(self, trace_id):
+        """The pages with the time the harness received each, oldest first: (at, page)."""
+        return [(t["at"], t["page"]) for t in sorted(self.traces.get(trace_id, []), key=lambda t: t["seq"])]
 
     def close(self):
         self.server.shutdown()
@@ -633,6 +650,10 @@ class Sim:
         """Every page the app drew, oldest first, as the app posted them to the harness.
         The simulator's own console drops lines under load, so it is read only for errors."""
         return self.static.pages(self.id)
+
+    def timed(self):
+        """Every page with the time it reached the harness, oldest first: (at, page)."""
+        return self.static.timed(self.id)
 
     def last(self):
         t = self.trace()
