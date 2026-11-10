@@ -319,6 +319,13 @@ input box is not drawn; what it holds is the first answer.
 
 - **Following**: at the bottom, the pane is read every *follow* seconds
   with `If-None-Match`, and a `304` costs nothing on the glasses.
+- **The echo**: every text and key the glasses send asks for the screen
+  with it (`POST …/input?read=1`, with the read's `lines`, `width` and
+  `charset`), and the hub answers `200` with the rows as a read gives
+  them, taken 30 ms after the keys landed, so the result is on the page
+  with the flash, one round trip after the last piece, and the follow
+  timer goes on unchanged. A hub or host before the echo answers `204`,
+  and the pane is read at once as before.
 - **Scroll up** pages back and pauses following; **scroll down** pages
   forward, and past the last page following resumes.
 - **Tap** opens the answers on a writable pane; on a read-only pane it
@@ -369,12 +376,12 @@ listing gives the pane, so a confirmation taken after a renumber
 reaches the pane, not its old address.
 
 A read names its pane: the hub answers every read, `200` or `304`,
-with `Muxway-Pane`, the id of the pane that answered. The page checks
-it against the pane it holds; when another pane answers (the host
-renumbered since the listing, and another pane sits at the address
-now), nothing of those rows is drawn or kept, and the listing is asked
-for at once, so the page follows its pane within a second. A hub
-without the header is read as before.
+and every input's echo, with `Muxway-Pane`, the id of the pane that
+answered. The page checks it against the pane it holds; when another
+pane answers (the host renumbered since the listing, and another pane
+sits at the address now), nothing of those rows is drawn or kept, and
+the listing is asked for at once, so the page follows its pane within a
+second. A hub without the header is read as before.
 
 ```mermaid
 sequenceDiagram
@@ -476,8 +483,10 @@ comes from the [phone pane](phone-pane.md) or your voice.
 A tap on a fixed answer opens the confirmation, a two-row list with
 **Cancel** first and highlighted, **Confirm** second, the question in the
 hint (`send y, Enter to build?`). Confirm posts to
-`POST /v1/panes/{address}/input`, one request per piece, goes back to
-the pane, reads it at once and flashes the result. A double tap on
+`POST /v1/panes/{address}/input?read=1`, one request per piece, goes
+back to the pane and flashes the result over the screen the last
+piece's answer brought ([the echo](#the-pane); a `204` from an older
+hub, and the pane is read at once instead). A double tap on
 either page goes back without sending. The same two rows ask before
 anything else the glasses do to a host: a mail, a pane closed, a pane
 or a session started.
@@ -560,6 +569,9 @@ send this to build?
   are never drawn under a pane's title, whatever the hub or anything
   between answers (S72); a read without the header is taken as before,
   so a hub that drops it can only make the app show as much as it did.
+  An input's echo is a read's answer and is treated as one: capped,
+  decoded, cleaned and checked against the pane's id the same way, so a
+  forged echo is never drawn under the pane's title either (S73).
 - Pictures are drawn by the app from numbers it computed; nothing from
   the network is read as an image. The only one left is the loudness
   graph while listening.
