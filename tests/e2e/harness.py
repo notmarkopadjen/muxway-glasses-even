@@ -441,11 +441,12 @@ class Proxy:
                 if proxy.mode == "no-pane-header":
                     # A hub before Muxway-Pane: the read names no pane.
                     keep = tuple(k for k in keep if k != "muxway-pane")
-                if proxy.mode == "echo-stranger" and is_input and r.status == 200:
+                if proxy.mode == "echo-stranger" and is_input and 200 <= r.status < 300:
                     # The input's answer carries another pane's rows, named as another pane: the app draws nothing of them.
+                    # Forged over whatever the hub answered, so the test holds on a hub that answers 204 too.
                     return self.reply(200, b"$ echo ECHO-STRANGER\nECHO-STRANGER\n$ \n",
                                       {"Content-Type": "text/plain; charset=utf-8", "ETag": '"echo-stranger"', "Muxway-Pane": "%4242", **CORS})
-                if proxy.mode == "echo-204" and is_input and r.status == 200:
+                if proxy.mode == "echo-204" and is_input and 200 <= r.status < 300:
                     # A hub before the echo: the input answers 204 and nothing else.
                     return self.reply(204, b"", {k: v for k, v in r.getheaders() if k.lower().startswith("access-control")})
                 self.reply(r.status, data, {k: v for k, v in r.getheaders() if k.lower() in keep})

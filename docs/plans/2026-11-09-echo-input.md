@@ -3,8 +3,8 @@
 > Status: planned on 2026-11-09 for #98. The core answers an input with
 > the pane's screen (`?read=1`): JSON mode merged in core #327, text
 > mode in core PR #329 (`docs/protocol/v1.md`, the input endpoint;
-> `docs/ui-guideline.md` §1.4, the *reading* row). This pull request is
-> a draft until core PR #329 is merged.
+> `docs/ui-guideline.md` §1.4, the *reading* row; merged into the core's
+> main on 2026-11-10 as e5cffb3).
 
 ## 1. Goal
 
@@ -144,7 +144,7 @@ real host, person or secret.
 | 1 | S73: `echo-stranger`: the input's `200` answers a marker row named as `%999`; then `echo-204` | e2e-security | with the stranger: no page ever holds the marker, the proxy saw a listing asked right after the input, and the pane's own rows come with the read that follows; with `204`: the row comes from a `GET` read made right after the input, the flash and the page as today |
 | 2 | S03, S40: a read-only token and a pane the proxy calls writable | e2e-security | unchanged: no input leaves the app under a read-only token; a `403` is said in words |
 | 3 | S63, S66: what is sent, and where | e2e-security | unchanged in what they check; the paths now carry `?read=1` and the read's query, and the inputs after a renumber still go to the pane's address |
-| 4 | F13, tightened: Confirm on `y, Enter` | UI | both inputs answered `200` by the hub, the first page holding `y: command not found` was drawn before any `GET` read of the pane that followed the last input, screenshots `answers`, `confirm`, `pane-after` as today |
+| 4 | F13, tightened: Confirm on `y, Enter` | UI | on a hub with the echo, both inputs answered `200` and the first page holding `y: command not found` was drawn before any `GET` read of the pane that followed the last input; on a hub before it (`204` to both), the read at once came within 1.5 s and the row's page after it; screenshots `answers`, `confirm`, `pane-after` as today |
 | 5 | the request, unit | unit | `sendText('y', true)` posts `{"text":"y"}` then `{"key":"Enter"}` to `…/input?read=1&lines=200&width=400&charset=latin1` with `Accept: text/plain` |
 | 6 | a `200` answer, unit | unit | the page drawn when `sendText` resolves holds the echo's rows; no `GET` of the pane came after the last `POST` |
 | 7 | a `204` answer, unit | unit | the pane is read at once after the last `POST`, and the rows drawn are the read's |
@@ -187,7 +187,11 @@ before or after a request. S73 first expected a listing right after
 *each* input answered as a stranger's; the second input's ask finds the
 first's listing in flight, which is the listing's one-in-flight rule,
 so the test accepts a listing between the first input and 1.5 s after
-each.
+each. The proxy's two echo modes forge over whatever the hub answered,
+and F13 checks the echo on a hub that gives one and the read at once on
+a hub that answers `204`, so the suite holds on a core before PR #329
+as well: the pull request's first CI run met one and failed F13 and S73
+on the hub's `204`.
 
 ## Test run
 

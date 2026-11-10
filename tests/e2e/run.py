@@ -779,14 +779,20 @@ def f13(run, name):
     sim.shot("pane-after")
     posts = [r for r in proxy.requests if r["method"] == "POST"]
     check([json.loads(r["body"]) for r in posts] == [{"text": "y"}, {"key": "Enter"}], f"posts: {[r['body'] for r in posts]}")
-    # The echo rode on the inputs' answers: each asked for the screen with the read's own query and was answered 200, and
-    # the first page with the row reached the harness before any read of the pane made after the last input.
+    # Each input asked for the screen with the read's own query. On a hub with the echo (core PR #329 and after) both
+    # were answered 200 and the first page with the row reached the harness before any read of the pane made after the
+    # last input; a hub before it answers 204 in text mode, and then the row came from the read made at once.
     for r in posts:
         check(re.search(r"/input\?read=1&lines=\d+&width=400&charset=(latin1|utf-8)$", r["path"]), r["path"])
-        check(r["status"] == 200, f"the hub answered the input {r['status']}")
+    statuses = [r["status"] for r in posts]
     shown = next(at for at, p in sim.timed() if echoed(p))
     after = [r["at"] for r in reads() if r["at"] > posts[-1]["at"]]
-    check(not any(t < shown for t in after), f"a read of the pane {shown - min(after):.2f} s before the row was drawn")
+    if statuses == [200, 200]:
+        check(not any(t < shown for t in after), f"a read of the pane {shown - min(after):.2f} s before the row was drawn")
+    else:
+        check(statuses == [204, 204], f"the hub answered the inputs {statuses}")
+        check(after and after[0] < posts[-1]["at"] + 1.5, "no read at once after a 204")
+        check(shown >= after[0], "the row came before the read that was to bring it on a hub without the echo")
     sim.tap()
     sim.head("answer test-pane", "the answers again")
     sim.choose(0)
