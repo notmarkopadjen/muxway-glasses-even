@@ -195,10 +195,16 @@ on the hub's `204`.
 
 ## Test run
 
-Run 20261109-184158-69a3155, local, the full suite against the core at
-7239d54 (the head of core PR #329): 165 tests, none failed, the unit
+Run 20261110-080421-b042f30, local, the full suite against the core's
+main at e5cffb3 (core PR #329 merged): 165 tests, none failed, the unit
 suite (101) and the secret scan among them, recorded as
-[#99](https://github.com/notmarkopadjen/muxway-glasses-even/issues/99).
+[#101](https://github.com/notmarkopadjen/muxway-glasses-even/issues/101).
+Before it, run 20261109-184158-69a3155 against the head of core PR
+#329 passed the same 165 on the code before the tests were made to
+hold on a hub without the echo, recorded as
+[#99](https://github.com/notmarkopadjen/muxway-glasses-even/issues/99),
+and the chosen run 20261110-080254-e18867e passed F13 and S73 against
+the core at e347b0c, before the echo.
 Before it, the full run 20261109-182150-c4882a2 passed the same 165 on
 the commit before the review's log-line change, and the chosen run
 20261109-181756-cb4e64d failed S73 alone, on the per-input listing
